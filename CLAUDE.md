@@ -1,0 +1,107 @@
+# Evolve Dashboard — Claude Code Instructions
+
+## Proyecto
+Dashboard financiero multiusuario SaaS. Next.js 15+ App Router, Supabase (auth + DB + RLS), Finnhub (quotes en tiempo real), Yahoo Finance v8 (históricos sin API key).
+
+## Reglas
+- Do what has been asked; nothing more, nothing less
+- NEVER create files unless absolutely necessary — prefer editing existing files
+- NEVER create documentation files unless explicitly requested
+- ALWAYS read a file before editing it
+- Keep files under 500 lines
+- NEVER commit secrets, credentials, or .env files
+
+## Stack
+- **Framework**: Next.js 16.2.5 (Turbopack), React 19, TypeScript
+- **Estilos**: Tailwind CSS + shadcn/ui (Radix UI)
+- **Tabla**: TanStack Table v8
+- **Data fetching**: TanStack Query v5 (`refetchInterval: 5000` para precios)
+- **Auth + DB**: Supabase (`@supabase/ssr` para SSR con cookies)
+- **Precios**: Finnhub API (`FINNHUB_API_KEY` en `.env.local`)
+- **Históricos**: Yahoo Finance v8 REST (`https://query1.finance.yahoo.com/v8/finance/chart/`) — sin API key
+- **Temas**: `next-themes`, `defaultTheme: 'dark'`
+
+## Convenciones importantes
+
+### Next.js 16 — middleware
+El archivo de protección de rutas se llama `proxy.ts` (NO `middleware.ts`). La función exportada se llama `proxy` (NO `middleware`). Esto es un cambio de Next.js 16.
+
+### Supabase — tipos de cookies
+En `lib/supabase/middleware.ts` y `lib/supabase/server.ts` NO usar `CookieMethodsServer['setAll']` porque es opcional y `Parameters<>` falla. Usar el tipo explícito:
+```typescript
+type CookiesToSet = Array<{ name: string; value: string; options?: Record<string, unknown> }>
+```
+
+### Supabase — cliente admin en API routes
+El `createClient` de supabase-js NO debe llamarse a nivel de módulo en API routes. Siempre dentro de una función factory llamada dentro del handler:
+```typescript
+function getAdminClient() {
+  return createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
+}
+```
+
+### RLS (Row Level Security)
+| Tabla | Política |
+|---|---|
+| `profiles` | Solo el propio usuario (select/insert/update) |
+| `watchlists` | Solo el propio usuario (`user_id = auth.uid()`) |
+| `watchlist_assets` | Via join con watchlists del usuario |
+| `assets_metadata` | SELECT público + INSERT para usuarios autenticados |
+| `price_cache` | SELECT público, escritura solo vía service role |
+
+### Flash animation de precios
+`useRealtimePrices` compara precio anterior con `useRef`, setea `'up'|'down'` en `flashStates`, se limpia a los 1.5s. Las clases CSS `animate-flash-green` y `animate-flash-red` están definidas en `tailwind.config.ts`.
+
+## Estructura de archivos clave
+```
+app/
+  (auth)/login/page.tsx          # Login + registro dual-mode
+  (dashboard)/
+    layout.tsx                   # Server component — verifica auth, renderiza DashboardShell
+    page.tsx                     # Overview / redirect a primera watchlist
+    watchlist/[id]/page.tsx      # Server component — carga watchlist y assets
+  api/market/
+    quote/route.ts               # Proxy Finnhub + cache en price_cache (TTL 60s)
+    history/route.ts             # Yahoo Finance v8 históricos
+    search/route.ts              # Búsqueda Finnhub
+components/dashboard/
+  DashboardShell.tsx             # Sidebar + nav (client)
+  WatchlistView.tsx              # Bridge server→client para watchlist
+  WatchlistTable.tsx             # TanStack Table con todas las columnas
+  WatchlistManager.tsx           # CRUD watchlists en sidebar
+  TickerSearch.tsx               # Búsqueda con debounce 300ms
+  PriceCell.tsx                  # Celda con flash verde/rojo
+  MetricsSelector.tsx            # Toggle columnas (persiste en JSONB)
+  AssetDetailModal.tsx           # Modal con gráfico Recharts + peers
+hooks/
+  useWatchlistAssets.ts          # useWatchlists + useWatchlistAssets
+  useRealtimePrices.ts           # Polling 5s + flash states
+  usePerformanceMetrics.ts       # Cálculo retornos históricos
+lib/
+  supabase/{client,server,middleware}.ts
+  market/{finnhub,history}.ts
+  utils/{formatters,performance}.ts
+types/index.ts                   # Todos los tipos + METRIC_DEFINITIONS
+supabase/schema.sql              # DDL completo — correr en Supabase SQL Editor
+proxy.ts                         # Protección de rutas (Next.js 16)
+```
+
+## Variables de entorno requeridas
+```
+NEXT_PUBLIC_SUPABASE_URL=
+NEXT_PUBLIC_SUPABASE_ANON_KEY=
+SUPABASE_SERVICE_ROLE_KEY=      # Importante: empieza con eyJ (no eeyJ)
+FINNHUB_API_KEY=                 # Si es 'your-finnhub-api-key' → modo mock con 10 tickers hardcoded
+```
+
+## Comandos
+```bash
+npm run dev    # Desarrollo con Turbopack
+npm run build  # Verificar TypeScript + build
+```
+
+## Notas de arquitectura
+- El caché de precios vive en Supabase `price_cache` (no en memoria) — serverless-safe
+- `yahoo-finance2` fue removido; se usa la v8 REST API directamente para evitar imports de archivos de test
+- Los históricos de Yahoo Finance usan `User-Agent: Mozilla/5.0` para evitar 403
+- Los retornos YTD usan `range=ytd` de Yahoo que calcula el último día hábil del año anterior automáticamente

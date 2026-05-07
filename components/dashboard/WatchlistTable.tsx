@@ -1,0 +1,307 @@
+'use client'
+
+import { useState, useMemo, useCallback } from 'react'
+import {
+  useReactTable,
+  getCoreRowModel,
+  getSortedRowModel,
+  flexRender,
+  createColumnHelper,
+  type SortingState,
+  type VisibilityState,
+} from '@tanstack/react-table'
+import { ArrowUpDown, ArrowUp, ArrowDown, X } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { Skeleton } from '@/components/ui/skeleton'
+import { PriceCell } from './PriceCell'
+import { MetricsSelector } from './MetricsSelector'
+import { TickerSearch } from './TickerSearch'
+import { AssetDetailModal } from './AssetDetailModal'
+import { useRealtimePrices } from '@/hooks/useRealtimePrices'
+import { usePerformanceMetrics } from '@/hooks/usePerformanceMetrics'
+import { createClient } from '@/lib/supabase/client'
+import { formatPercent, formatMarketCap, formatRatio, percentColor } from '@/lib/utils/formatters'
+import { METRIC_DEFINITIONS } from '@/types'
+import type { AssetMetadata, MetricKey, Watchlist, AssetType } from '@/types'
+import { computeInitialPeers } from '@/lib/market/peer-taxonomy'
+
+interface WatchlistTableProps {
+  watchlist: Watchlist
+  assets: AssetMetadata[]
+  onRemoveAsset: (ticker: string) => Promise<void>
+  onAddAsset: (ticker: string, name: string, type: AssetType) => Promise<void>
+  onMetricsChange: (metrics: MetricKey[]) => void
+  allAssets: AssetMetadata[]
+}
+
+const helper = createColumnHelper<AssetMetadata>()
+
+export function WatchlistTable({
+  watchlist,
+  assets,
+  onRemoveAsset,
+  onAddAsset,
+  onMetricsChange,
+  allAssets,
+}: WatchlistTableProps) {
+  const [sorting, setSorting] = useState<SortingState>([])
+  const [selectedAsset, setSelectedAsset] = useState<AssetMetadata | null>(null)
+  const [modalOpen, setModalOpen] = useState(false)
+
+  const tickers = useMemo(() => assets.map((a) => a.ticker), [assets])
+  const { prices, flashStates } = useRealtimePrices(tickers)
+  const activeMetrics = watchlist.selected_metrics as MetricKey[]
+  const { returns } = usePerformanceMetrics(tickers, prices, activeMetrics)
+
+  const supabase = createClient()
+
+  // Build column visibility from watchlist.selected_metrics
+  const columnVisibility = useMemo<VisibilityState>(() => {
+    const vis: VisibilityState = {}
+    METRIC_DEFINITIONS.forEach((def) => {
+      vis[def.key] = activeMetrics.includes(def.key)
+    })
+    return vis
+  }, [activeMetrics])
+
+  const handleMetricsChange = useCallback(
+    async (next: MetricKey[]) => {
+      onMetricsChange(next)
+      await supabase
+        .from('watchlists')
+        .update({ selected_metrics: next })
+        .eq('id', watchlist.id)
+    },
+    [supabase, watchlist.id, onMetricsChange]
+  )
+
+  const handleRowClick = useCallback(
+    (asset: AssetMetadata) => {
+      setSelectedAsset(asset)
+      setModalOpen(true)
+    },
+    []
+  )
+
+  const columns = useMemo(
+    () => [
+      helper.accessor('ticker', {
+        header: 'Ticker',
+        cell: ({ row }) => (
+          <span className="font-mono font-semibold">{row.original.ticker}</span>
+        ),
+      }),
+      helper.accessor('name', {
+        header: 'Name',
+        cell: ({ getValue }) => (
+          <span className="truncate text-muted-foreground">{getValue()}</span>
+        ),
+      }),
+      helper.display({
+        id: 'price',
+        header: 'Price',
+        cell: ({ row }) => {
+          const t = row.original.ticker
+          return <PriceCell price={prices[t]?.price} flashState={flashStates[t] ?? null} />
+        },
+      }),
+      helper.display({
+        id: '1D',
+        header: '1D %',
+        cell: ({ row }) => {
+          const t = row.original.ticker
+          const v = prices[t]?.change_percent
+          return <span className={percentColor(v)}>{formatPercent(v)}</span>
+        },
+      }),
+      ...(['1W', '1M', 'YTD', '1Y', '3Y', '5Y', '10Y', 'MAX'] as MetricKey[]).map((period) =>
+        helper.display({
+          id: period,
+          header: `${period} %`,
+          cell: ({ row }) => {
+            const t = row.original.ticker
+            const v = returns[t]?.[period]
+            return <span className={percentColor(v)}>{formatPercent(v)}</span>
+          },
+        })
+      ),
+      helper.display({
+        id: 'marketCap',
+        header: 'Mkt Cap',
+        cell: ({ row }) => {
+          const t = row.original.ticker
+          const mc = prices[t]?.market_cap
+          return <span className="tabular-nums">{formatMarketCap(mc ?? undefined)}</span>
+        },
+      }),
+      helper.display({
+        id: 'pe',
+        header: 'P/E',
+        cell: ({ row }) => {
+          const t = row.original.ticker
+          const pe = prices[t]?.pe
+          return (
+            <span className="tabular-nums">
+              {pe != null ? formatRatio(pe) : <span className="text-muted-foreground">—</span>}
+            </span>
+          )
+        },
+      }),
+      helper.display({
+        id: 'dividendYield',
+        header: 'Div Yield',
+        cell: ({ row }) => {
+          const t = row.original.ticker
+          const dy = prices[t]?.dividend_yield
+          return (
+            <span className="tabular-nums">
+              {dy != null && dy > 0
+                ? formatPercent(dy)
+                : <span className="text-muted-foreground">—</span>}
+            </span>
+          )
+        },
+      }),
+      helper.display({
+        id: 'from52wHigh',
+        header: '52W High',
+        cell: ({ row }) => {
+          const t = row.original.ticker
+          const price = prices[t]?.price
+          const high = prices[t]?.high_52w
+          if (!price || !high) return <span className="text-muted-foreground">—</span>
+          const pct = ((price - high) / high) * 100
+          return <span className={percentColor(pct)}>{formatRatio(pct)}%</span>
+        },
+      }),
+      helper.display({
+        id: 'actions',
+        header: '',
+        cell: ({ row }) => (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-6 w-6 p-0 opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive"
+            onClick={(e) => {
+              e.stopPropagation()
+              onRemoveAsset(row.original.ticker)
+            }}
+          >
+            <X className="h-3 w-3" />
+          </Button>
+        ),
+      }),
+    ],
+    [prices, flashStates, returns, onRemoveAsset]
+  )
+
+  const table = useReactTable({
+    data: assets,
+    columns,
+    state: { sorting, columnVisibility },
+    onSortingChange: setSorting,
+    getCoreRowModel: getCoreRowModel(),
+    getSortedRowModel: getSortedRowModel(),
+  })
+
+  const initialPeers = useMemo(
+    () => (selectedAsset ? computeInitialPeers(selectedAsset, allAssets) : []),
+    [selectedAsset, allAssets]
+  )
+
+  return (
+    <div className="flex flex-col gap-4">
+      {/* Toolbar */}
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="flex-1 min-w-48 max-w-80">
+          <TickerSearch onAdd={onAddAsset} existingTickers={tickers} />
+        </div>
+        <MetricsSelector selected={activeMetrics} onChange={handleMetricsChange} />
+      </div>
+
+      {/* Table */}
+      <div className="overflow-x-auto rounded-lg border">
+        <table className="w-full text-sm">
+          <thead>
+            {table.getHeaderGroups().map((hg) => (
+              <tr key={hg.id} className="border-b bg-muted/30">
+                {hg.headers.map((header) => (
+                  <th
+                    key={header.id}
+                    className="px-3 py-2 text-left font-medium text-muted-foreground whitespace-nowrap"
+                  >
+                    {header.isPlaceholder ? null : (
+                      <button
+                        className="flex items-center gap-1"
+                        onClick={header.column.getToggleSortingHandler()}
+                      >
+                        {flexRender(header.column.columnDef.header, header.getContext())}
+                        {header.column.getCanSort() && (
+                          <>
+                            {header.column.getIsSorted() === 'asc' && (
+                              <ArrowUp className="h-3 w-3" />
+                            )}
+                            {header.column.getIsSorted() === 'desc' && (
+                              <ArrowDown className="h-3 w-3" />
+                            )}
+                            {!header.column.getIsSorted() && (
+                              <ArrowUpDown className="h-3 w-3 opacity-40" />
+                            )}
+                          </>
+                        )}
+                      </button>
+                    )}
+                  </th>
+                ))}
+              </tr>
+            ))}
+          </thead>
+          <tbody>
+            {assets.length === 0 ? (
+              <tr>
+                <td
+                  colSpan={table.getAllColumns().length}
+                  className="py-12 text-center text-muted-foreground"
+                >
+                  No assets yet. Use the search above to add tickers.
+                </td>
+              </tr>
+            ) : (
+              table.getRowModel().rows.map((row) => (
+                <tr
+                  key={row.id}
+                  className="group border-b cursor-pointer transition-colors hover:bg-accent/50 last:border-0"
+                  onClick={() => handleRowClick(row.original)}
+                >
+                  {row.getVisibleCells().map((cell) => (
+                    <td key={cell.id} className="px-3 py-2 whitespace-nowrap">
+                      {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                    </td>
+                  ))}
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Loading skeletons */}
+      {tickers.length > 0 && Object.keys(prices).length === 0 && (
+        <div className="space-y-2">
+          {tickers.map((t) => (
+            <Skeleton key={t} className="h-10 w-full" />
+          ))}
+        </div>
+      )}
+
+      {/* Detail Modal */}
+      <AssetDetailModal
+        asset={selectedAsset}
+        quote={selectedAsset ? (prices[selectedAsset.ticker] ?? null) : null}
+        open={modalOpen}
+        onClose={() => setModalOpen(false)}
+        initialPeers={initialPeers}
+      />
+    </div>
+  )
+}

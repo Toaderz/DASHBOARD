@@ -1,0 +1,370 @@
+'use client'
+
+import { useState, useEffect, useCallback, useMemo } from 'react'
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import { Badge } from '@/components/ui/badge'
+import { Skeleton } from '@/components/ui/skeleton'
+import { X } from 'lucide-react'
+import {
+  AreaChart,
+  Area,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+} from 'recharts'
+import { TickerSearch } from './TickerSearch'
+import { formatPrice, formatPercent, percentColor } from '@/lib/utils/formatters'
+import type { AssetMetadata, HistoricalDataPoint, QuoteData, AssetType } from '@/types'
+
+const PEER_PERIOD_OPTIONS = ['1W', '1M', 'YTD', '1Y', '3Y', '5Y', '10Y', 'MAX'] as const
+type PeerPeriod = typeof PEER_PERIOD_OPTIONS[number]
+
+const CHART_PERIODS = ['1M', 'YTD', '1Y', '3Y', '10Y', 'MAX'] as const
+type ChartPeriod = typeof CHART_PERIODS[number]
+
+const TYPE_COLORS: Record<string, string> = {
+  stock: 'bg-blue-500/10 text-blue-600 dark:text-blue-400',
+  etf: 'bg-purple-500/10 text-purple-600 dark:text-purple-400',
+  index: 'bg-amber-500/10 text-amber-600 dark:text-amber-400',
+  fund: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400',
+  crypto: 'bg-orange-500/10 text-orange-600 dark:text-orange-400',
+}
+
+type ReturnMap = Partial<Record<PeerPeriod, number | null>>
+
+interface AssetDetailModalProps {
+  asset: AssetMetadata | null
+  quote: QuoteData | null
+  open: boolean
+  onClose: () => void
+  initialPeers: AssetMetadata[]
+}
+
+export function AssetDetailModal({
+  asset,
+  quote,
+  open,
+  onClose,
+  initialPeers,
+}: AssetDetailModalProps) {
+  const [history, setHistory] = useState<HistoricalDataPoint[]>([])
+  const [loadingChart, setLoadingChart] = useState(false)
+  const [chartPeriod, setChartPeriod] = useState<ChartPeriod>('1Y')
+
+  const [peerMetrics, setPeerMetrics] = useState<PeerPeriod[]>(['1M', 'YTD', '1Y'])
+
+  const [customPeers, setCustomPeers] = useState<AssetMetadata[]>([])
+  const [removedInitialTickers, setRemovedInitialTickers] = useState<Set<string>>(new Set())
+
+  const allPeers = useMemo(() => {
+    const seen = new Set(initialPeers.map((p) => p.ticker))
+    seen.add(asset?.ticker ?? '')
+    const filtered = initialPeers.filter((p) => !removedInitialTickers.has(p.ticker))
+    return [...filtered, ...customPeers.filter((p) => !seen.has(p.ticker))]
+  }, [initialPeers, customPeers, asset, removedInitialTickers])
+
+  const [peerQuotes, setPeerQuotes] = useState<Record<string, QuoteData>>({})
+  const [peerReturns, setPeerReturns] = useState<Record<string, ReturnMap>>({})
+
+  // Reset on close
+  useEffect(() => {
+    if (!open) {
+      setCustomPeers([])
+      setRemovedInitialTickers(new Set())
+      setPeerQuotes({})
+      setPeerReturns({})
+    }
+  }, [open])
+
+  // Chart fetch
+  useEffect(() => {
+    if (!asset || !open) return
+    setLoadingChart(true)
+    setHistory([])
+    fetch(`/api/market/history?ticker=${encodeURIComponent(asset.ticker)}&period=${chartPeriod}`)
+      .then((r) => r.json())
+      .then((d) => setHistory(d.data ?? []))
+      .finally(() => setLoadingChart(false))
+  }, [asset, open, chartPeriod])
+
+  // Peer quotes fetch
+  useEffect(() => {
+    if (!open || allPeers.length === 0) return
+    const tickers = allPeers.map((p) => p.ticker).join(',')
+    fetch(`/api/market/quote?tickers=${encodeURIComponent(tickers)}`)
+      .then((r) => r.json())
+      .then((data) => setPeerQuotes(data))
+  }, [open, allPeers])
+
+  // Peer returns fetch
+  useEffect(() => {
+    if (!open || allPeers.length === 0 || peerMetrics.length === 0) return
+    const pairs = allPeers.flatMap((peer) =>
+      peerMetrics.map((period) => ({ ticker: peer.ticker, period }))
+    )
+    Promise.allSettled(
+      pairs.map(({ ticker, period }) =>
+        fetch(
+          `/api/market/history?ticker=${encodeURIComponent(ticker)}&period=${period}&mode=return`
+        )
+          .then((r) => r.json())
+          .then((d) => ({ ticker, period, value: (d.return ?? null) as number | null }))
+      )
+    ).then((results) => {
+      const map: Record<string, ReturnMap> = {}
+      for (const r of results) {
+        if (r.status !== 'fulfilled') continue
+        const { ticker, period, value } = r.value
+        if (!map[ticker]) map[ticker] = {}
+        map[ticker][period] = value
+      }
+      setPeerReturns((prev) => ({ ...prev, ...map }))
+    })
+  }, [open, allPeers, peerMetrics])
+
+  const handleAddCustomPeer = useCallback(
+    async (ticker: string, name: string, type: AssetType) => {
+      setCustomPeers((prev) => {
+        if (prev.some((p) => p.ticker === ticker)) return prev
+        return [
+          ...prev,
+          { ticker, name, type, sector: null, region: null, industry: null, benchmark: null, manager: null },
+        ]
+      })
+    },
+    []
+  )
+
+  const handleRemovePeer = useCallback((ticker: string) => {
+    setCustomPeers((prev) => prev.filter((p) => p.ticker !== ticker))
+  }, [])
+
+  const togglePeerMetric = (period: PeerPeriod) => {
+    setPeerMetrics((prev) =>
+      prev.includes(period) ? prev.filter((p) => p !== period) : [...prev, period]
+    )
+  }
+
+  if (!asset) return null
+
+  const isPositive = (quote?.change_percent ?? 0) >= 0
+  const existingPeerTickers = allPeers.map((p) => p.ticker)
+  const customPeerTickers = new Set(customPeers.map((p) => p.ticker))
+
+  return (
+    <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
+      <DialogContent
+        className="max-w-3xl w-full max-h-[90vh] flex flex-col"
+        aria-describedby={undefined}
+      >
+        <DialogHeader className="shrink-0">
+          <DialogTitle className="flex items-center gap-3">
+            <span className="font-mono text-2xl font-bold">{asset.ticker}</span>
+            <span className="text-base font-normal text-muted-foreground">{asset.name}</span>
+            <Badge
+              variant="outline"
+              className={`border-0 text-xs ${TYPE_COLORS[asset.type] ?? ''}`}
+            >
+              {asset.type}
+            </Badge>
+          </DialogTitle>
+        </DialogHeader>
+
+        <div className="flex-1 overflow-y-auto space-y-4 pr-1">
+          {/* Price header */}
+          {quote && (
+            <div className="flex items-baseline gap-3">
+              <span className="text-3xl font-bold tabular-nums">{formatPrice(quote.price)}</span>
+              <span className={`text-lg font-semibold ${percentColor(quote.change_percent)}`}>
+                {formatPercent(quote.change_percent)}
+              </span>
+              <span className="text-sm text-muted-foreground">1D</span>
+            </div>
+          )}
+
+          {/* Chart period selector + chart */}
+          <div>
+            <div className="mb-2 flex gap-1">
+              {CHART_PERIODS.map((p) => (
+                <button
+                  key={p}
+                  onClick={() => setChartPeriod(p)}
+                  className={`rounded px-2 py-0.5 text-xs font-medium transition-colors ${
+                    chartPeriod === p
+                      ? 'bg-foreground text-background'
+                      : 'text-muted-foreground hover:text-foreground'
+                  }`}
+                >
+                  {p}
+                </button>
+              ))}
+            </div>
+            <div className="h-48">
+              {loadingChart ? (
+                <Skeleton className="h-full w-full" />
+              ) : history.length > 0 ? (
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={history} margin={{ top: 4, right: 4, left: 4, bottom: 4 }}>
+                    <defs>
+                      <linearGradient id="colorClose" x1="0" y1="0" x2="0" y2="1">
+                        <stop
+                          offset="5%"
+                          stopColor={isPositive ? '#22c55e' : '#ef4444'}
+                          stopOpacity={0.3}
+                        />
+                        <stop
+                          offset="95%"
+                          stopColor={isPositive ? '#22c55e' : '#ef4444'}
+                          stopOpacity={0}
+                        />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                    <XAxis
+                      dataKey="date"
+                      tick={{ fontSize: 10 }}
+                      tickLine={false}
+                      axisLine={false}
+                      tickFormatter={(v: string) => v.slice(5)}
+                    />
+                    <YAxis
+                      tick={{ fontSize: 10 }}
+                      tickLine={false}
+                      axisLine={false}
+                      tickFormatter={(v: number) => `$${v.toFixed(0)}`}
+                      domain={['auto', 'auto']}
+                    />
+                    <Tooltip
+                      contentStyle={{ fontSize: 12 }}
+                      formatter={(v: number) => [formatPrice(v), 'Price']}
+                    />
+                    <Area
+                      type="monotone"
+                      dataKey="close"
+                      stroke={isPositive ? '#22c55e' : '#ef4444'}
+                      strokeWidth={2}
+                      fill="url(#colorClose)"
+                      dot={false}
+                    />
+                  </AreaChart>
+                </ResponsiveContainer>
+              ) : (
+                <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+                  No chart data available
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Peers section */}
+          <div>
+            {/* Peers header: title + period toggles + search */}
+            <div className="mb-3 flex flex-wrap items-center gap-2">
+              <span className="text-sm font-semibold shrink-0">Peers</span>
+
+              <div className="flex flex-wrap gap-1">
+                {PEER_PERIOD_OPTIONS.map((period) => (
+                  <button
+                    key={period}
+                    onClick={() => togglePeerMetric(period)}
+                    className={`rounded border px-2 py-0.5 text-xs font-medium transition-colors ${
+                      peerMetrics.includes(period)
+                        ? 'bg-foreground text-background border-foreground'
+                        : 'border-border text-muted-foreground hover:border-foreground hover:text-foreground'
+                    }`}
+                  >
+                    {period}
+                  </button>
+                ))}
+              </div>
+
+              <div className="flex-1 min-w-48 relative z-[100]">
+                <TickerSearch
+                  onAdd={handleAddCustomPeer}
+                  existingTickers={existingPeerTickers}
+                />
+              </div>
+            </div>
+
+            {allPeers.length > 0 ? (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b text-xs text-muted-foreground">
+                      <th className="pb-1 text-left font-medium">Ticker</th>
+                      <th className="pb-1 text-left font-medium">Name</th>
+                      <th className="pb-1 text-right font-medium">Price</th>
+                      <th className="pb-1 text-right font-medium">1D %</th>
+                      {peerMetrics.map((p) => (
+                        <th key={p} className="pb-1 text-right font-medium">
+                          {p} %
+                        </th>
+                      ))}
+                      <th className="pb-1 w-5" />
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {allPeers.map((peer) => {
+                      const pq = peerQuotes[peer.ticker]
+                      const isCustom = customPeerTickers.has(peer.ticker)
+                      return (
+                        <tr key={peer.ticker} className="group border-b last:border-0">
+                          <td className="py-1 font-mono font-semibold">{peer.ticker}</td>
+                          <td className="py-1 text-muted-foreground max-w-[140px] truncate">
+                            {peer.name}
+                          </td>
+                          <td className="py-1 text-right tabular-nums">
+                            {formatPrice(pq?.price)}
+                          </td>
+                          <td
+                            className={`py-1 text-right tabular-nums ${percentColor(pq?.change_percent)}`}
+                          >
+                            {formatPercent(pq?.change_percent)}
+                          </td>
+                          {peerMetrics.map((period) => {
+                            const v = peerReturns[peer.ticker]?.[period]
+                            return (
+                              <td
+                                key={period}
+                                className={`py-1 text-right tabular-nums ${percentColor(v)}`}
+                              >
+                                {formatPercent(v)}
+                              </td>
+                            )
+                          })}
+                          <td className="py-1 text-right">
+                            <button
+                              onClick={() =>
+                                isCustom
+                                  ? handleRemovePeer(peer.ticker)
+                                  : setRemovedInitialTickers((prev) => new Set([...prev, peer.ticker]))
+                              }
+                              className="text-muted-foreground hover:text-destructive opacity-0 group-hover:opacity-100 transition-opacity"
+                            >
+                              <X className="h-3 w-3" />
+                            </button>
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                No peers found. Use the search to add them manually.
+              </p>
+            )}
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  )
+}
