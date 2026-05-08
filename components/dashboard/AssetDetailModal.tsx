@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import {
   Dialog,
   DialogContent,
@@ -20,7 +20,7 @@ import {
   ResponsiveContainer,
 } from 'recharts'
 import { TickerSearch } from './TickerSearch'
-import { formatPrice, formatPercent, percentColor } from '@/lib/utils/formatters'
+import { formatPrice, formatPercent, percentColor, annualizeReturn } from '@/lib/utils/formatters'
 import type { AssetMetadata, HistoricalDataPoint, QuoteData, AssetType } from '@/types'
 
 const PEER_PERIOD_OPTIONS = ['1W', '1M', 'YTD', '1Y', '3Y', '5Y', '10Y', 'MAX'] as const
@@ -28,6 +28,9 @@ type PeerPeriod = typeof PEER_PERIOD_OPTIONS[number]
 
 const CHART_PERIODS = ['1M', 'YTD', '1Y', '3Y', '10Y', 'MAX'] as const
 type ChartPeriod = typeof CHART_PERIODS[number]
+
+// Periods > 1Y with a fixed known duration — annualizable
+const ANNUALIZE_YEARS: Partial<Record<string, number>> = { '3Y': 3, '5Y': 5, '10Y': 10 }
 
 const TYPE_COLORS: Record<string, string> = {
   stock: 'bg-blue-500/10 text-blue-600 dark:text-blue-400',
@@ -57,6 +60,8 @@ export function AssetDetailModal({
   const [history, setHistory] = useState<HistoricalDataPoint[]>([])
   const [loadingChart, setLoadingChart] = useState(false)
   const [chartPeriod, setChartPeriod] = useState<ChartPeriod>('1Y')
+  const [chartPeriodReturn, setChartPeriodReturn] = useState<number | null>(null)
+  const [annualize, setAnnualize] = useState(false)
 
   const [peerMetrics, setPeerMetrics] = useState<PeerPeriod[]>(['1M', 'YTD', '1Y'])
 
@@ -80,6 +85,8 @@ export function AssetDetailModal({
       setRemovedInitialTickers(new Set())
       setPeerQuotes({})
       setPeerReturns({})
+      setChartPeriodReturn(null)
+      setAnnualize(false)
     }
   }, [open])
 
@@ -92,6 +99,16 @@ export function AssetDetailModal({
       .then((r) => r.json())
       .then((d) => setHistory(d.data ?? []))
       .finally(() => setLoadingChart(false))
+  }, [asset, open, chartPeriod])
+
+  // Fetch return for the selected chart period so the header stays in sync
+  useEffect(() => {
+    if (!asset || !open) return
+    setChartPeriodReturn(null)
+    fetch(`/api/market/history?ticker=${encodeURIComponent(asset.ticker)}&period=${chartPeriod}&mode=return`)
+      .then((r) => r.json())
+      .then((d) => setChartPeriodReturn(d.return ?? null))
+      .catch(() => setChartPeriodReturn(null))
   }, [asset, open, chartPeriod])
 
   // Peer quotes fetch
@@ -154,7 +171,7 @@ export function AssetDetailModal({
 
   if (!asset) return null
 
-  const isPositive = (quote?.change_percent ?? 0) >= 0
+  const isPositive = (chartPeriodReturn ?? quote?.change_percent ?? 0) >= 0
   const existingPeerTickers = allPeers.map((p) => p.ticker)
   const customPeerTickers = new Set(customPeers.map((p) => p.ticker))
 
@@ -178,14 +195,26 @@ export function AssetDetailModal({
         </DialogHeader>
 
         <div className="flex-1 overflow-y-auto space-y-4 pr-1">
-          {/* Price header */}
+          {/* Price header — return synced with selected chart period */}
           {quote && (
             <div className="flex items-baseline gap-3">
               <span className="text-3xl font-bold tabular-nums">{formatPrice(quote.price)}</span>
-              <span className={`text-lg font-semibold ${percentColor(quote.change_percent)}`}>
-                {formatPercent(quote.change_percent)}
-              </span>
-              <span className="text-sm text-muted-foreground">1D</span>
+              {(() => {
+                const years = ANNUALIZE_YEARS[chartPeriod]
+                const displayReturn = annualize && years
+                  ? annualizeReturn(chartPeriodReturn, years)
+                  : chartPeriodReturn
+                return (
+                  <>
+                    <span className={`text-lg font-semibold ${percentColor(displayReturn)}`}>
+                      {formatPercent(displayReturn)}
+                    </span>
+                    <span className="text-sm text-muted-foreground">
+                      {chartPeriod}{annualize && years ? ' ann' : ''}
+                    </span>
+                  </>
+                )
+              })()}
             </div>
           )}
 
@@ -265,7 +294,7 @@ export function AssetDetailModal({
 
           {/* Peers section */}
           <div>
-            {/* Peers header: title + period toggles + search */}
+            {/* Peers header: title + period toggles + ann toggle + search */}
             <div className="mb-3 flex flex-wrap items-center gap-2">
               <span className="text-sm font-semibold shrink-0">Peers</span>
 
@@ -284,6 +313,18 @@ export function AssetDetailModal({
                   </button>
                 ))}
               </div>
+
+              <button
+                onClick={() => setAnnualize((v) => !v)}
+                title="Annualize returns for 3Y, 5Y, 10Y periods"
+                className={`rounded border px-2 py-0.5 text-xs font-medium transition-colors ${
+                  annualize
+                    ? 'bg-foreground text-background border-foreground'
+                    : 'border-border text-muted-foreground hover:border-foreground hover:text-foreground'
+                }`}
+              >
+                Ann.
+              </button>
 
               <div className="flex-1 min-w-48 relative z-[100]">
                 <TickerSearch
@@ -304,7 +345,7 @@ export function AssetDetailModal({
                       <th className="pb-1 text-right font-medium">1D %</th>
                       {peerMetrics.map((p) => (
                         <th key={p} className="pb-1 text-right font-medium">
-                          {p} %
+                          {p} %{annualize && ANNUALIZE_YEARS[p] ? <span className="text-[10px] text-muted-foreground ml-0.5">ann</span> : null}
                         </th>
                       ))}
                       <th className="pb-1 w-5" />
@@ -329,7 +370,9 @@ export function AssetDetailModal({
                             {formatPercent(pq?.change_percent)}
                           </td>
                           {peerMetrics.map((period) => {
-                            const v = peerReturns[peer.ticker]?.[period]
+                            const raw = peerReturns[peer.ticker]?.[period]
+                            const years = ANNUALIZE_YEARS[period]
+                            const v = annualize && years ? annualizeReturn(raw, years) : raw
                             return (
                               <td
                                 key={period}

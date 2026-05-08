@@ -20,7 +20,7 @@ import { AssetDetailModal } from './AssetDetailModal'
 import { useRealtimePrices } from '@/hooks/useRealtimePrices'
 import { usePerformanceMetrics } from '@/hooks/usePerformanceMetrics'
 import { createClient } from '@/lib/supabase/client'
-import { formatPercent, formatMarketCap, formatRatio, percentColor } from '@/lib/utils/formatters'
+import { formatPercent, formatMarketCap, formatRatio, percentColor, annualizeReturn } from '@/lib/utils/formatters'
 import { METRIC_DEFINITIONS } from '@/types'
 import type { AssetMetadata, MetricKey, Watchlist, AssetType } from '@/types'
 import { computeInitialPeers } from '@/lib/market/peer-taxonomy'
@@ -47,6 +47,10 @@ export function WatchlistTable({
   const [sorting, setSorting] = useState<SortingState>([])
   const [selectedAsset, setSelectedAsset] = useState<AssetMetadata | null>(null)
   const [modalOpen, setModalOpen] = useState(false)
+  const [annualize, setAnnualize] = useState(false)
+
+  // Years for annualizable periods (>1Y with fixed duration)
+  const ANNUALIZE_YEARS: Partial<Record<string, number>> = { '3Y': 3, '5Y': 5, '10Y': 10 }
 
   const tickers = useMemo(() => assets.map((a) => a.ticker), [assets])
   const { prices, flashStates } = useRealtimePrices(tickers)
@@ -117,10 +121,15 @@ export function WatchlistTable({
       ...(['1W', '1M', 'YTD', '1Y', '3Y', '5Y', '10Y', 'MAX'] as MetricKey[]).map((period) =>
         helper.display({
           id: period,
-          header: `${period} %`,
+          header: () => {
+            const years = ANNUALIZE_YEARS[period]
+            return <span>{period} %{annualize && years ? <span className="text-[10px] text-muted-foreground ml-0.5">ann</span> : null}</span>
+          },
           cell: ({ row }) => {
             const t = row.original.ticker
-            const v = returns[t]?.[period]
+            const raw = returns[t]?.[period]
+            const years = ANNUALIZE_YEARS[period]
+            const v = annualize && years ? annualizeReturn(raw, years) : raw
             return <span className={percentColor(v)}>{formatPercent(v)}</span>
           },
         })
@@ -192,7 +201,7 @@ export function WatchlistTable({
         ),
       }),
     ],
-    [prices, flashStates, returns, onRemoveAsset]
+    [prices, flashStates, returns, onRemoveAsset, annualize]
   )
 
   const table = useReactTable({
@@ -216,6 +225,17 @@ export function WatchlistTable({
         <div className="flex-1 min-w-48 max-w-80">
           <TickerSearch onAdd={onAddAsset} existingTickers={tickers} />
         </div>
+        <button
+          onClick={() => setAnnualize((v) => !v)}
+          title="Annualize returns for 3Y, 5Y, 10Y periods"
+          className={`rounded border px-2 py-1 text-xs font-medium transition-colors ${
+            annualize
+              ? 'bg-foreground text-background border-foreground'
+              : 'border-border text-muted-foreground hover:border-foreground hover:text-foreground'
+          }`}
+        >
+          Ann.
+        </button>
         <MetricsSelector selected={activeMetrics} onChange={handleMetricsChange} />
       </div>
 

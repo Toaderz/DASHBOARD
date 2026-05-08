@@ -35,6 +35,12 @@ export function formatVolume(value: number | undefined | null): string {
   return String(value)
 }
 
+// Converts a cumulative return (%) over `years` to annualized CAGR (%)
+export function annualizeReturn(value: number | null | undefined, years: number): number | null {
+  if (value == null) return null
+  return (Math.pow(1 + value / 100, 1 / years) - 1) * 100
+}
+
 export function percentColor(value: number | undefined | null): string {
   if (value == null) return 'text-muted-foreground'
   if (value > 0) return 'text-green-500'
