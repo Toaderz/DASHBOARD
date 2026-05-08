@@ -85,9 +85,9 @@ export async function calculateReturn(
   ticker: string,
   period: PeriodKey,
   _currentPrice: number
-): Promise<number | null> {
+): Promise<{ value: number | null; years: number | null }> {
   const history = await fetchHistoricalData(ticker, period)
-  if (history.length < 2) return null
+  if (history.length < 2) return { value: null, years: null }
 
   // Use adjclose for both endpoints so splits and dividends are factored in
   // consistently (total return methodology). Mixing adjclose base with a live
@@ -95,6 +95,12 @@ export async function calculateReturn(
   const baseClose = history[0].close
   const endClose = history[history.length - 1].close
 
-  if (!baseClose || baseClose === 0) return null
-  return ((endClose - baseClose) / baseClose) * 100
+  if (!baseClose || baseClose === 0) return { value: null, years: null }
+
+  const value = ((endClose - baseClose) / baseClose) * 100
+  const startMs = new Date(history[0].date).getTime()
+  const endMs = new Date(history[history.length - 1].date).getTime()
+  const years = (endMs - startMs) / (365.25 * 24 * 60 * 60 * 1000)
+
+  return { value, years }
 }

@@ -55,7 +55,7 @@ export function WatchlistTable({
   const tickers = useMemo(() => assets.map((a) => a.ticker), [assets])
   const { prices, flashStates } = useRealtimePrices(tickers)
   const activeMetrics = watchlist.selected_metrics as MetricKey[]
-  const { returns } = usePerformanceMetrics(tickers, prices, activeMetrics)
+  const { returns, maxYears } = usePerformanceMetrics(tickers, prices, activeMetrics)
 
   const supabase = createClient()
 
@@ -122,13 +122,13 @@ export function WatchlistTable({
         helper.display({
           id: period,
           header: () => {
-            const years = ANNUALIZE_YEARS[period]
-            return <span>{period} %{annualize && years ? <span className="text-[10px] text-muted-foreground ml-0.5">ann</span> : null}</span>
+            const isAnnualizable = !!ANNUALIZE_YEARS[period] || period === 'MAX'
+            return <span>{period} %{annualize && isAnnualizable ? <span className="text-[10px] text-muted-foreground ml-0.5">ann</span> : null}</span>
           },
           cell: ({ row }) => {
             const t = row.original.ticker
             const raw = returns[t]?.[period]
-            const years = ANNUALIZE_YEARS[period]
+            const years = ANNUALIZE_YEARS[period] ?? (period === 'MAX' ? (maxYears[t] ?? null) : null)
             const v = annualize && years ? annualizeReturn(raw, years) : raw
             return <span className={percentColor(v)}>{formatPercent(v)}</span>
           },
@@ -201,7 +201,7 @@ export function WatchlistTable({
         ),
       }),
     ],
-    [prices, flashStates, returns, onRemoveAsset, annualize]
+    [prices, flashStates, returns, maxYears, onRemoveAsset, annualize]
   )
 
   const table = useReactTable({

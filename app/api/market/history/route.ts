@@ -19,8 +19,8 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid or missing period' }, { status: 400 })
     }
 
-    const returnValue = await calculateReturn(ticker, period, 0)
-    return NextResponse.json({ ticker, period, return: returnValue })
+    const { value: returnValue, years } = await calculateReturn(ticker, period, 0)
+    return NextResponse.json({ ticker, period, return: returnValue, years })
   }
 
   // Default mode: chart data

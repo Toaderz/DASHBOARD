@@ -61,6 +61,7 @@ export function AssetDetailModal({
   const [loadingChart, setLoadingChart] = useState(false)
   const [chartPeriod, setChartPeriod] = useState<ChartPeriod>('1Y')
   const [chartPeriodReturn, setChartPeriodReturn] = useState<number | null>(null)
+  const [chartYears, setChartYears] = useState<number | null>(null)
   const [annualize, setAnnualize] = useState(false)
 
   const [peerMetrics, setPeerMetrics] = useState<PeerPeriod[]>(['1M', 'YTD', '1Y'])
@@ -77,6 +78,7 @@ export function AssetDetailModal({
 
   const [peerQuotes, setPeerQuotes] = useState<Record<string, QuoteData>>({})
   const [peerReturns, setPeerReturns] = useState<Record<string, ReturnMap>>({})
+  const [peerMaxYears, setPeerMaxYears] = useState<Record<string, number | null>>({})
 
   // Reset on close
   useEffect(() => {
@@ -85,7 +87,9 @@ export function AssetDetailModal({
       setRemovedInitialTickers(new Set())
       setPeerQuotes({})
       setPeerReturns({})
+      setPeerMaxYears({})
       setChartPeriodReturn(null)
+      setChartYears(null)
       setAnnualize(false)
     }
   }, [open])
@@ -105,10 +109,14 @@ export function AssetDetailModal({
   useEffect(() => {
     if (!asset || !open) return
     setChartPeriodReturn(null)
+    setChartYears(null)
     fetch(`/api/market/history?ticker=${encodeURIComponent(asset.ticker)}&period=${chartPeriod}&mode=return`)
       .then((r) => r.json())
-      .then((d) => setChartPeriodReturn(d.return ?? null))
-      .catch(() => setChartPeriodReturn(null))
+      .then((d) => {
+        setChartPeriodReturn(d.return ?? null)
+        setChartYears(d.years ?? null)
+      })
+      .catch(() => { setChartPeriodReturn(null); setChartYears(null) })
   }, [asset, open, chartPeriod])
 
   // Peer quotes fetch
@@ -132,17 +140,20 @@ export function AssetDetailModal({
           `/api/market/history?ticker=${encodeURIComponent(ticker)}&period=${period}&mode=return`
         )
           .then((r) => r.json())
-          .then((d) => ({ ticker, period, value: (d.return ?? null) as number | null }))
+          .then((d) => ({ ticker, period, value: (d.return ?? null) as number | null, years: (d.years ?? null) as number | null }))
       )
     ).then((results) => {
       const map: Record<string, ReturnMap> = {}
+      const yearsMap: Record<string, number | null> = {}
       for (const r of results) {
         if (r.status !== 'fulfilled') continue
-        const { ticker, period, value } = r.value
+        const { ticker, period, value, years } = r.value
         if (!map[ticker]) map[ticker] = {}
         map[ticker][period] = value
+        if (period === 'MAX') yearsMap[ticker] = years
       }
       setPeerReturns((prev) => ({ ...prev, ...map }))
+      setPeerMaxYears((prev) => ({ ...prev, ...yearsMap }))
     })
   }, [open, allPeers, peerMetrics])
 
@@ -200,7 +211,7 @@ export function AssetDetailModal({
             <div className="flex items-baseline gap-3">
               <span className="text-3xl font-bold tabular-nums">{formatPrice(quote.price)}</span>
               {(() => {
-                const years = ANNUALIZE_YEARS[chartPeriod]
+                const years = ANNUALIZE_YEARS[chartPeriod] ?? (chartPeriod === 'MAX' ? chartYears : null)
                 const displayReturn = annualize && years
                   ? annualizeReturn(chartPeriodReturn, years)
                   : chartPeriodReturn
@@ -345,7 +356,7 @@ export function AssetDetailModal({
                       <th className="pb-1 text-right font-medium">1D %</th>
                       {peerMetrics.map((p) => (
                         <th key={p} className="pb-1 text-right font-medium">
-                          {p} %{annualize && ANNUALIZE_YEARS[p] ? <span className="text-[10px] text-muted-foreground ml-0.5">ann</span> : null}
+                          {p} %{annualize && (ANNUALIZE_YEARS[p] || p === 'MAX') ? <span className="text-[10px] text-muted-foreground ml-0.5">ann</span> : null}
                         </th>
                       ))}
                       <th className="pb-1 w-5" />
@@ -371,7 +382,7 @@ export function AssetDetailModal({
                           </td>
                           {peerMetrics.map((period) => {
                             const raw = peerReturns[peer.ticker]?.[period]
-                            const years = ANNUALIZE_YEARS[period]
+                            const years = ANNUALIZE_YEARS[period] ?? (period === 'MAX' ? (peerMaxYears[peer.ticker] ?? null) : null)
                             const v = annualize && years ? annualizeReturn(raw, years) : raw
                             return (
                               <td
