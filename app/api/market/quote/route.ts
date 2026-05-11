@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { fetchBatchQuotes } from '@/lib/market/finnhub'
+import { fetchBatchQuotes, fetchFundamentals } from '@/lib/market/finnhub'
 
 const CACHE_TTL_MS = 60_000
 
@@ -9,6 +9,23 @@ function getAdminClient() {
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
   )
+}
+
+function rowToQuote(row: Record<string, unknown>) {
+  return {
+    ticker: row.ticker,
+    price: row.price,
+    change_percent: row.change_percent,
+    volume: row.volume,
+    high_52w: row.high_52w,
+    low_52w: row.low_52w,
+    market_cap: row.market_cap,
+    pe: row.pe,
+    dividend_yield: row.dividend_yield,
+    expense_ratio: row.expense_ratio ?? null,
+    aum: row.aum ?? null,
+    last_updated: row.last_updated,
+  }
 }
 
 export async function GET(request: NextRequest) {
@@ -31,28 +48,20 @@ export async function GET(request: NextRequest) {
   const now = Date.now()
   const freshMap = new Map<string, object>()
   const staleOrMissing: string[] = []
+  const needsFundamentals: string[] = []
 
   for (const ticker of tickers) {
-    const row = cached?.find((c) => c.ticker === ticker)
-    if (row && now - new Date(row.last_updated).getTime() < CACHE_TTL_MS) {
-      freshMap.set(ticker, {
-        ticker: row.ticker,
-        price: row.price,
-        change_percent: row.change_percent,
-        volume: row.volume,
-        high_52w: row.high_52w,
-        low_52w: row.low_52w,
-        market_cap: row.market_cap,
-        pe: row.pe,
-        dividend_yield: row.dividend_yield,
-        last_updated: row.last_updated,
-      })
+    const row = cached?.find((c: Record<string, unknown>) => c.ticker === ticker)
+    if (row && now - new Date(row.last_updated as string).getTime() < CACHE_TTL_MS) {
+      freshMap.set(ticker, rowToQuote(row))
+      if (row.expense_ratio == null) needsFundamentals.push(ticker)
     } else {
       staleOrMissing.push(ticker)
+      if (!row || row.expense_ratio == null) needsFundamentals.push(ticker)
     }
   }
 
-  // 2. Batch-fetch stale/missing from Yahoo Finance v7
+  // 2. Batch-fetch stale/missing prices from Yahoo Finance
   if (staleOrMissing.length > 0) {
     let yahooFailed = false
     try {
@@ -60,7 +69,7 @@ export async function GET(request: NextRequest) {
       const upsertRows: object[] = []
 
       fetched.forEach((q) => {
-        freshMap.set(q.ticker, q)
+        freshMap.set(q.ticker, { ...q, expense_ratio: null, aum: null })
         upsertRows.push({
           ticker: q.ticker,
           price: q.price,
@@ -75,7 +84,6 @@ export async function GET(request: NextRequest) {
         })
       })
 
-      // 3. Upsert to price_cache
       if (upsertRows.length > 0) {
         const { error: upsertErr } = await supabaseAdmin
           .from('price_cache')
@@ -87,29 +95,39 @@ export async function GET(request: NextRequest) {
       yahooFailed = true
     }
 
-    // If Yahoo failed, fall back to stale cache data so the UI still shows something
     if (yahooFailed) {
       const { data: staleRows } = await supabaseAdmin
         .from('price_cache')
         .select('*')
         .in('ticker', staleOrMissing)
-      for (const row of staleRows ?? []) {
-        if (!freshMap.has(row.ticker)) {
-          freshMap.set(row.ticker, {
-            ticker: row.ticker,
-            price: row.price,
-            change_percent: row.change_percent,
-            volume: row.volume,
-            high_52w: row.high_52w,
-            low_52w: row.low_52w,
-            market_cap: row.market_cap,
-            pe: row.pe,
-            dividend_yield: row.dividend_yield,
-            last_updated: row.last_updated,
-          })
+      for (const row of (staleRows ?? []) as Record<string, unknown>[]) {
+        if (!freshMap.has(row.ticker as string)) {
+          freshMap.set(row.ticker as string, rowToQuote(row))
         }
       }
     }
+  }
+
+  // 3. Fetch fundamentals (expense_ratio, aum) for tickers missing them — fire in parallel
+  if (needsFundamentals.length > 0) {
+    const results = await Promise.allSettled(
+      needsFundamentals.map(async (ticker) => {
+        const f = await fetchFundamentals(ticker)
+        if (f.expense_ratio != null || f.aum != null) {
+          // Merge into freshMap
+          const existing = freshMap.get(ticker) as Record<string, unknown> | undefined
+          if (existing) freshMap.set(ticker, { ...existing, ...f })
+          // Upsert only the fundamentals columns (preserves price data)
+          await supabaseAdmin
+            .from('price_cache')
+            .upsert({ ticker, ...f }, { onConflict: 'ticker' })
+            .catch(() => {})
+        }
+      })
+    )
+    results.forEach((r) => {
+      if (r.status === 'rejected') console.error('[quote] Fundamentals fetch error:', r.reason)
+    })
   }
 
   return NextResponse.json(Object.fromEntries(freshMap))

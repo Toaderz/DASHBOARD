@@ -14,6 +14,8 @@ export type MetricKey =
   | 'pe'
   | 'dividendYield'
   | 'from52wHigh'
+  | 'expenseRatio'
+  | 'aum'
 
 export interface Profile {
   id: string
@@ -67,6 +69,8 @@ export interface QuoteData {
   market_cap?: number | null
   pe?: number | null
   dividend_yield?: number | null
+  expense_ratio?: number | null
+  aum?: number | null
   last_updated: string
 }
 
@@ -120,4 +124,6 @@ export const METRIC_DEFINITIONS: MetricDefinition[] = [
   { key: 'pe', label: 'P/E', description: 'Price to Earnings Ratio', format: 'ratio' },
   { key: 'dividendYield', label: 'Div Yield', description: 'Dividend Yield', format: 'percent' },
   { key: 'from52wHigh', label: '52W High', description: 'Distance from 52-Week High', format: 'percent' },
+  { key: 'expenseRatio', label: 'Exp. Ratio', description: 'Expense Ratio (net)', format: 'percent' },
+  { key: 'aum', label: 'AUM', description: 'Assets Under Management', format: 'currency' },
 ]

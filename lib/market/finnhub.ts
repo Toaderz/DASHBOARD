@@ -41,6 +41,31 @@ async function fetchQuoteV8Chart(ticker: string): Promise<QuoteData | null> {
   }
 }
 
+interface Fundamentals {
+  expense_ratio: number | null
+  aum: number | null
+}
+
+export async function fetchFundamentals(ticker: string): Promise<Fundamentals> {
+  try {
+    const url = `${YAHOO_BASE}/v10/finance/quoteSummary/${encodeURIComponent(ticker)}?modules=defaultKeyStatistics`
+    const res = await fetch(url, {
+      headers: { 'User-Agent': UA },
+      next: { revalidate: 0 },
+    })
+    if (!res.ok) return { expense_ratio: null, aum: null }
+    const data = await res.json()
+    const stats = data?.quoteSummary?.result?.[0]?.defaultKeyStatistics
+    if (!stats) return { expense_ratio: null, aum: null }
+    return {
+      expense_ratio: stats.annualReportExpenseRatio?.raw ?? null,
+      aum: stats.totalAssets?.raw ?? null,
+    }
+  } catch {
+    return { expense_ratio: null, aum: null }
+  }
+}
+
 export async function fetchBatchQuotes(tickers: string[]): Promise<Map<string, QuoteData>> {
   if (tickers.length === 0) return new Map()
 

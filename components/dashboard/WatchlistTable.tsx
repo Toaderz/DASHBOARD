@@ -20,7 +20,7 @@ import { AssetDetailModal } from './AssetDetailModal'
 import { useRealtimePrices } from '@/hooks/useRealtimePrices'
 import { usePerformanceMetrics } from '@/hooks/usePerformanceMetrics'
 import { createClient } from '@/lib/supabase/client'
-import { formatPercent, formatMarketCap, formatRatio, percentColor, annualizeReturn } from '@/lib/utils/formatters'
+import { formatPercent, formatMarketCap, formatRatio, formatExpenseRatio, percentColor, annualizeReturn } from '@/lib/utils/formatters'
 import { METRIC_DEFINITIONS } from '@/types'
 import type { AssetMetadata, AssetWithCategory, MetricKey, Watchlist, AssetType } from '@/types'
 import { computeInitialPeers } from '@/lib/market/peer-taxonomy'
@@ -182,6 +182,28 @@ export function WatchlistTable({
           if (!price || !high) return <span className="text-muted-foreground">—</span>
           const pct = ((price - high) / high) * 100
           return <span className={percentColor(pct)}>{formatRatio(pct)}%</span>
+        },
+      }),
+      helper.display({
+        id: 'expenseRatio',
+        header: 'Exp. Ratio',
+        cell: ({ row }) => {
+          const t = row.original.ticker
+          const er = prices[t]?.expense_ratio
+          return (
+            <span className="tabular-nums">
+              {er != null ? formatExpenseRatio(er) : <span className="text-muted-foreground">—</span>}
+            </span>
+          )
+        },
+      }),
+      helper.display({
+        id: 'aum',
+        header: 'AUM',
+        cell: ({ row }) => {
+          const t = row.original.ticker
+          const a = prices[t]?.aum
+          return <span className="tabular-nums">{formatMarketCap(a ?? undefined)}</span>
         },
       }),
       helper.display({

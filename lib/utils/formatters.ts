@@ -43,6 +43,11 @@ export function annualizeReturn(value: number | null | undefined, years: number)
   return (Math.pow(1 + value / 100, 1 / years) - 1) * 100
 }
 
+export function formatExpenseRatio(value: number | undefined | null): string {
+  if (value == null) return '—'
+  return `${(value * 100).toFixed(2)}%`
+}
+
 export function percentColor(value: number | undefined | null): string {
   if (value == null) return 'text-muted-foreground'
   if (value > 0) return 'text-green-500'
