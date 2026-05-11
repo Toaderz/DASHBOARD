@@ -121,7 +121,6 @@ export async function GET(request: NextRequest) {
           await supabaseAdmin
             .from('price_cache')
             .upsert({ ticker, ...f }, { onConflict: 'ticker' })
-            .catch(() => {})
         }
       })
     )
