@@ -48,18 +48,19 @@ interface Fundamentals {
 
 export async function fetchFundamentals(ticker: string): Promise<Fundamentals> {
   try {
-    const url = `${YAHOO_BASE}/v10/finance/quoteSummary/${encodeURIComponent(ticker)}?modules=defaultKeyStatistics`
+    const url = `${YAHOO_BASE}/v10/finance/quoteSummary/${encodeURIComponent(ticker)}?modules=defaultKeyStatistics%2CfundProfile`
     const res = await fetch(url, {
       headers: { 'User-Agent': UA },
       next: { revalidate: 0 },
     })
     if (!res.ok) return { expense_ratio: null, aum: null }
     const data = await res.json()
-    const stats = data?.quoteSummary?.result?.[0]?.defaultKeyStatistics
-    if (!stats) return { expense_ratio: null, aum: null }
+    const result = data?.quoteSummary?.result?.[0]
+    const stats = result?.defaultKeyStatistics
+    const profile = result?.fundProfile
     return {
-      expense_ratio: stats.annualReportExpenseRatio?.raw ?? null,
-      aum: stats.totalAssets?.raw ?? null,
+      expense_ratio: profile?.annualReportExpenseRatio?.raw ?? stats?.annualReportExpenseRatio?.raw ?? null,
+      aum: stats?.totalAssets?.raw ?? null,
     }
   } catch {
     return { expense_ratio: null, aum: null }
