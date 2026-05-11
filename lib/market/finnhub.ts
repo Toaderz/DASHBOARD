@@ -67,7 +67,6 @@ const EMPTY_FUNDAMENTALS: Fundamentals = {
 
 export async function fetchFundamentals(ticker: string): Promise<Fundamentals> {
   try {
-    // Use all modules needed to cover equity, ETF/fund, and index in one request
     const modules = 'defaultKeyStatistics%2CfundProfile%2CtopHoldings%2CsummaryDetail%2Cprice'
     const url = `${YAHOO_BASE}/v10/finance/quoteSummary/${encodeURIComponent(ticker)}?modules=${modules}`
     const res = await fetch(url, { headers: { 'User-Agent': UA }, next: { revalidate: 0 } })
@@ -84,22 +83,27 @@ export async function fetchFundamentals(ticker: string): Promise<Fundamentals> {
     const price    = result.price ?? {}
     const quoteType = (price.quoteType ?? '').toLowerCase()
 
+    // These fields are available for both equities and ETFs — extracted before branching
+    const pe            = summary.trailingPE?.raw ?? null
+    const beta          = stats.beta?.raw ?? null
+    const divRaw        = summary.dividendYield?.raw ?? summary.yield?.raw ?? null
+    const dividend_yield = divRaw != null ? divRaw * 100 : null
+
     if (quoteType === 'equity') {
+      const pmRaw = stats.profitMargins?.raw ?? null
       return {
         ...EMPTY_FUNDAMENTALS,
         market_cap:     price.marketCap?.raw ?? null,
-        // trailingPE lives in summaryDetail, not defaultKeyStatistics
-        pe:             summary.trailingPE?.raw ?? null,
-        // dividendYield from summaryDetail is a fraction (0.012 = 1.2%) — multiply to percent
-        dividend_yield: summary.dividendYield?.raw != null ? summary.dividendYield.raw * 100 : null,
-        beta:           stats.beta?.raw ?? null,
-        // profitMargins is a fraction (0.25 = 25%) — multiply to percent
-        profit_margins: stats.profitMargins?.raw != null ? stats.profitMargins.raw * 100 : null,
+        pe,
+        dividend_yield,
+        beta,
+        profit_margins: pmRaw != null ? pmRaw * 100 : null,
       }
     }
 
     if (quoteType === 'etf' || quoteType === 'mutualfund') {
-      // sectorWeightings: [{realestate: {raw: 0.03}}, {technology: {raw: 0.24}}, ...]
+      const aum = stats.totalAssets?.raw ?? stats.netAssets?.raw ?? null
+
       const sectorWeightings: SectorWeight[] = (holdings.sectorWeightings ?? [])
         .map((item: Record<string, { raw: number }>) => {
           const [sector, val] = Object.entries(item)[0] as [string, { raw: number }]
@@ -107,7 +111,6 @@ export async function fetchFundamentals(ticker: string): Promise<Fundamentals> {
         })
         .filter((s: SectorWeight) => s.weight > 0)
 
-      // topHoldings: [{symbol, holdingName, holdingPercent: {raw}}]
       const topHoldings: Holding[] = (holdings.holdings ?? []).map(
         (h: { symbol?: string; holdingName?: string; holdingPercent?: { raw: number } }) => ({
           symbol: h.symbol ?? null,
@@ -118,21 +121,20 @@ export async function fetchFundamentals(ticker: string): Promise<Fundamentals> {
 
       return {
         ...EMPTY_FUNDAMENTALS,
-        market_cap:      price.marketCap?.raw ?? null,
-        // dividendYield / yield: fraction → percent
-        dividend_yield:  summary.dividendYield?.raw != null
-          ? summary.dividendYield.raw * 100
-          : summary.yield?.raw != null ? summary.yield.raw * 100 : null,
-        // expense_ratio: annualReportExpenseRatio is nested inside feesExpensesInvestment
+        // ETFs rarely have price.marketCap in Yahoo; use AUM as the sentinel so the
+        // cache trigger (market_cap == null && expense_ratio == null && aum == null)
+        // evaluates to false after the first successful fetch.
+        market_cap:      aum,
+        pe,
+        beta,
+        dividend_yield,
         expense_ratio:   fees.annualReportExpenseRatio?.raw ?? null,
-        // AUM: totalAssets in defaultKeyStatistics, fallback to netAssets
-        aum:             stats.totalAssets?.raw ?? stats.netAssets?.raw ?? null,
+        aum,
         sector_weightings: sectorWeightings.length > 0 ? sectorWeightings : null,
         top_holdings:    topHoldings.length > 0 ? topHoldings : null,
       }
     }
 
-    // INDEX and others: no financial statements — only price-level data available
     return EMPTY_FUNDAMENTALS
   } catch {
     return EMPTY_FUNDAMENTALS

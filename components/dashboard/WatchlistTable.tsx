@@ -140,7 +140,7 @@ export function WatchlistTable({
         header: 'Mkt Cap',
         cell: ({ row }) => {
           const t = row.original.ticker
-          const mc = prices[t]?.market_cap
+          const mc = prices[t]?.market_cap ?? prices[t]?.aum
           return <span className="tabular-nums">{formatMarketCap(mc ?? undefined)}</span>
         },
       }),
