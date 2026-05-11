@@ -59,8 +59,10 @@ export async function fetchFundamentals(ticker: string): Promise<Fundamentals> {
     const stats = result?.defaultKeyStatistics
     const profile = result?.fundProfile
     return {
-      expense_ratio: profile?.annualReportExpenseRatio?.raw ?? stats?.annualReportExpenseRatio?.raw ?? null,
-      aum: stats?.totalAssets?.raw ?? null,
+      // expense_ratio lives inside feesExpensesInvestment in fundProfile, not at root level
+      expense_ratio: profile?.feesExpensesInvestment?.annualReportExpenseRatio?.raw ?? null,
+      // AUM: totalAssets in defaultKeyStatistics, fallback to netAssets
+      aum: stats?.totalAssets?.raw ?? stats?.netAssets?.raw ?? null,
     }
   } catch {
     return { expense_ratio: null, aum: null }
