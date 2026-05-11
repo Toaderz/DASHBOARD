@@ -129,7 +129,8 @@ export function WatchlistTable({
             const t = row.original.ticker
             const raw = returns[t]?.[period]
             const years = ANNUALIZE_YEARS[period] ?? (period === 'MAX' ? (maxYears[t] ?? null) : null)
-            const v = annualize && years ? annualizeReturn(raw, years) : raw
+            const canAnnualize = years != null && years >= 1
+            const v = annualize && canAnnualize ? annualizeReturn(raw, years!) : raw
             return <span className={percentColor(v)}>{formatPercent(v)}</span>
           },
         })

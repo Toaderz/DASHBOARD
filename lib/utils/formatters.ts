@@ -35,9 +35,11 @@ export function formatVolume(value: number | undefined | null): string {
   return String(value)
 }
 
-// Converts a cumulative return (%) over `years` to annualized CAGR (%)
+// Converts a cumulative return (%) over `years` to annualized CAGR (%).
+// Requires at least 1 full year of data — sub-annual CAGR is mathematically
+// explosive and misleading (e.g. 20% over 0.1 yr → 520% annualized).
 export function annualizeReturn(value: number | null | undefined, years: number): number | null {
-  if (value == null) return null
+  if (value == null || years < 1) return null
   return (Math.pow(1 + value / 100, 1 / years) - 1) * 100
 }
 

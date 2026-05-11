@@ -88,7 +88,8 @@ export function TickerSearch({ onAdd, existingTickers }: TickerSearchProps) {
             return (
               <div
                 key={result.ticker}
-                className="flex items-center justify-between px-3 py-2 hover:bg-accent"
+                className={`flex items-center justify-between px-3 py-2 hover:bg-accent ${!alreadyAdded && adding !== result.ticker ? 'cursor-pointer' : 'cursor-default'}`}
+                onClick={() => { if (!alreadyAdded && adding !== result.ticker) handleAdd(result) }}
               >
                 <div className="flex items-center gap-2 min-w-0">
                   <span className="font-mono text-sm font-semibold">{result.ticker}</span>
@@ -104,7 +105,7 @@ export function TickerSearch({ onAdd, existingTickers }: TickerSearchProps) {
                   size="sm"
                   variant="ghost"
                   disabled={alreadyAdded || adding === result.ticker}
-                  onClick={() => handleAdd(result)}
+                  onClick={(e) => { e.stopPropagation(); handleAdd(result) }}
                   className="ml-2 h-7 w-7 shrink-0 p-0"
                 >
                   {adding === result.ticker ? (
