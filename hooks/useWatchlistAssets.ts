@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import type { AssetMetadata, Watchlist } from '@/types'
+import type { AssetMetadata, AssetWithCategory, Watchlist } from '@/types'
 
 export function useWatchlists() {
   const [watchlists, setWatchlists] = useState<Watchlist[]>([])
@@ -63,7 +63,7 @@ export function useWatchlists() {
 }
 
 export function useWatchlistAssets(watchlistId: string) {
-  const [assets, setAssets] = useState<AssetMetadata[]>([])
+  const [assets, setAssets] = useState<AssetWithCategory[]>([])
   const [loading, setLoading] = useState(true)
   const supabase = createClient()
 
@@ -72,12 +72,17 @@ export function useWatchlistAssets(watchlistId: string) {
     setLoading(true)
     const { data } = await supabase
       .from('watchlist_assets')
-      .select('asset_ticker, assets_metadata(*)')
+      .select('asset_ticker, category, sort_order, assets_metadata(*)')
       .eq('watchlist_id', watchlistId)
+      .order('sort_order', { ascending: true, nullsFirst: false })
+      .order('added_at', { ascending: true })
 
-    const mapped = (data ?? []).map((row: { asset_ticker: string; assets_metadata: AssetMetadata | AssetMetadata[] | null }) => {
+    const mapped = (data ?? []).map((row: { asset_ticker: string; category: string | null; sort_order: number | null; assets_metadata: AssetMetadata | AssetMetadata[] | null }) => {
       const meta = Array.isArray(row.assets_metadata) ? row.assets_metadata[0] : row.assets_metadata
-      return meta ?? { ticker: row.asset_ticker, name: row.asset_ticker, type: 'stock' as const, sector: null, region: null, industry: null, benchmark: null, manager: null }
+      return {
+        ...(meta ?? { ticker: row.asset_ticker, name: row.asset_ticker, type: 'stock' as const, sector: null, region: null, industry: null, benchmark: null, manager: null }),
+        category: row.category ?? null,
+      }
     })
 
     setAssets(mapped)

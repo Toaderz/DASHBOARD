@@ -44,10 +44,16 @@ export interface Watchlist {
   updated_at: string
 }
 
+export interface AssetWithCategory extends AssetMetadata {
+  category: string | null
+}
+
 export interface WatchlistAsset {
   watchlist_id: string
   asset_ticker: string
   added_at: string
+  category: string | null
+  sort_order: number | null
   asset?: AssetMetadata
 }
 

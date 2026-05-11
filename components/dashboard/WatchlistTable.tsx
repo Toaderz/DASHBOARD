@@ -22,19 +22,19 @@ import { usePerformanceMetrics } from '@/hooks/usePerformanceMetrics'
 import { createClient } from '@/lib/supabase/client'
 import { formatPercent, formatMarketCap, formatRatio, percentColor, annualizeReturn } from '@/lib/utils/formatters'
 import { METRIC_DEFINITIONS } from '@/types'
-import type { AssetMetadata, MetricKey, Watchlist, AssetType } from '@/types'
+import type { AssetMetadata, AssetWithCategory, MetricKey, Watchlist, AssetType } from '@/types'
 import { computeInitialPeers } from '@/lib/market/peer-taxonomy'
 
 interface WatchlistTableProps {
   watchlist: Watchlist
-  assets: AssetMetadata[]
+  assets: AssetWithCategory[]
   onRemoveAsset: (ticker: string) => Promise<void>
   onAddAsset: (ticker: string, name: string, type: AssetType) => Promise<void>
   onMetricsChange: (metrics: MetricKey[]) => void
   allAssets: AssetMetadata[]
 }
 
-const helper = createColumnHelper<AssetMetadata>()
+const helper = createColumnHelper<AssetWithCategory>()
 
 export function WatchlistTable({
   watchlist,
@@ -219,6 +219,10 @@ export function WatchlistTable({
     [selectedAsset, allAssets]
   )
 
+  // Show category separators only when the table is in default (unsorted) order
+  const showCategories = sorting.length === 0
+  const visibleColCount = table.getVisibleLeafColumns().length
+
   return (
     <div className="flex flex-col gap-4">
       {/* Toolbar */}
@@ -288,19 +292,41 @@ export function WatchlistTable({
                 </td>
               </tr>
             ) : (
-              table.getRowModel().rows.map((row) => (
-                <tr
-                  key={row.id}
-                  className="group border-b cursor-pointer transition-colors hover:bg-accent/50 last:border-0"
-                  onClick={() => handleRowClick(row.original)}
-                >
-                  {row.getVisibleCells().map((cell) => (
-                    <td key={cell.id} className="px-3 py-2 whitespace-nowrap">
-                      {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                    </td>
-                  ))}
-                </tr>
-              ))
+              table.getRowModel().rows.flatMap((row, i, rows) => {
+                const cat = row.original.category
+                const prevCat = i > 0 ? rows[i - 1].original.category : undefined
+                const showHeader = showCategories && cat != null && cat !== prevCat
+                const elements = []
+
+                if (showHeader) {
+                  elements.push(
+                    <tr key={`cat-${cat}`} className="bg-muted/20 border-b border-border/50">
+                      <td
+                        colSpan={visibleColCount}
+                        className="px-3 py-1.5 text-[11px] font-semibold uppercase tracking-widest text-muted-foreground"
+                      >
+                        {cat}
+                      </td>
+                    </tr>
+                  )
+                }
+
+                elements.push(
+                  <tr
+                    key={row.id}
+                    className="group border-b cursor-pointer transition-colors hover:bg-accent/50 last:border-0"
+                    onClick={() => handleRowClick(row.original)}
+                  >
+                    {row.getVisibleCells().map((cell) => (
+                      <td key={cell.id} className="px-3 py-2 whitespace-nowrap">
+                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                      </td>
+                    ))}
+                  </tr>
+                )
+
+                return elements
+              })
             )}
           </tbody>
         </table>
