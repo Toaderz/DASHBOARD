@@ -1,4 +1,4 @@
-import type { QuoteData, SearchResult, AssetType } from '@/types'
+import type { QuoteData, SearchResult, AssetType, SectorWeight, Holding } from '@/types'
 
 const YAHOO_BASE = 'https://query1.finance.yahoo.com'
 const UA =
@@ -42,30 +42,100 @@ async function fetchQuoteV8Chart(ticker: string): Promise<QuoteData | null> {
 }
 
 interface Fundamentals {
+  market_cap: number | null
+  pe: number | null
+  dividend_yield: number | null
+  beta: number | null
+  profit_margins: number | null
   expense_ratio: number | null
   aum: number | null
+  sector_weightings: SectorWeight[] | null
+  top_holdings: Holding[] | null
+}
+
+const EMPTY_FUNDAMENTALS: Fundamentals = {
+  market_cap: null,
+  pe: null,
+  dividend_yield: null,
+  beta: null,
+  profit_margins: null,
+  expense_ratio: null,
+  aum: null,
+  sector_weightings: null,
+  top_holdings: null,
 }
 
 export async function fetchFundamentals(ticker: string): Promise<Fundamentals> {
   try {
-    const url = `${YAHOO_BASE}/v10/finance/quoteSummary/${encodeURIComponent(ticker)}?modules=defaultKeyStatistics%2CfundProfile`
-    const res = await fetch(url, {
-      headers: { 'User-Agent': UA },
-      next: { revalidate: 0 },
-    })
-    if (!res.ok) return { expense_ratio: null, aum: null }
+    // Use all modules needed to cover equity, ETF/fund, and index in one request
+    const modules = 'defaultKeyStatistics%2CfundProfile%2CtopHoldings%2CsummaryDetail%2Cprice'
+    const url = `${YAHOO_BASE}/v10/finance/quoteSummary/${encodeURIComponent(ticker)}?modules=${modules}`
+    const res = await fetch(url, { headers: { 'User-Agent': UA }, next: { revalidate: 0 } })
+    if (!res.ok) return EMPTY_FUNDAMENTALS
     const data = await res.json()
     const result = data?.quoteSummary?.result?.[0]
-    const stats = result?.defaultKeyStatistics
-    const profile = result?.fundProfile
-    return {
-      // expense_ratio lives inside feesExpensesInvestment in fundProfile, not at root level
-      expense_ratio: profile?.feesExpensesInvestment?.annualReportExpenseRatio?.raw ?? null,
-      // AUM: totalAssets in defaultKeyStatistics, fallback to netAssets
-      aum: stats?.totalAssets?.raw ?? stats?.netAssets?.raw ?? null,
+    if (!result) return EMPTY_FUNDAMENTALS
+
+    const stats    = result.defaultKeyStatistics ?? {}
+    const profile  = result.fundProfile ?? {}
+    const fees     = profile.feesExpensesInvestment ?? {}
+    const holdings = result.topHoldings ?? {}
+    const summary  = result.summaryDetail ?? {}
+    const price    = result.price ?? {}
+    const quoteType = (price.quoteType ?? '').toLowerCase()
+
+    if (quoteType === 'equity') {
+      return {
+        ...EMPTY_FUNDAMENTALS,
+        market_cap:     price.marketCap?.raw ?? null,
+        // trailingPE lives in summaryDetail, not defaultKeyStatistics
+        pe:             summary.trailingPE?.raw ?? null,
+        // dividendYield from summaryDetail is a fraction (0.012 = 1.2%) — multiply to percent
+        dividend_yield: summary.dividendYield?.raw != null ? summary.dividendYield.raw * 100 : null,
+        beta:           stats.beta?.raw ?? null,
+        // profitMargins is a fraction (0.25 = 25%) — multiply to percent
+        profit_margins: stats.profitMargins?.raw != null ? stats.profitMargins.raw * 100 : null,
+      }
     }
+
+    if (quoteType === 'etf' || quoteType === 'mutualfund') {
+      // sectorWeightings: [{realestate: {raw: 0.03}}, {technology: {raw: 0.24}}, ...]
+      const sectorWeightings: SectorWeight[] = (holdings.sectorWeightings ?? [])
+        .map((item: Record<string, { raw: number }>) => {
+          const [sector, val] = Object.entries(item)[0] as [string, { raw: number }]
+          return { sector, weight: val?.raw ?? 0 }
+        })
+        .filter((s: SectorWeight) => s.weight > 0)
+
+      // topHoldings: [{symbol, holdingName, holdingPercent: {raw}}]
+      const topHoldings: Holding[] = (holdings.holdings ?? []).map(
+        (h: { symbol?: string; holdingName?: string; holdingPercent?: { raw: number } }) => ({
+          symbol: h.symbol ?? null,
+          name:   h.holdingName ?? null,
+          pct:    h.holdingPercent?.raw != null ? h.holdingPercent.raw * 100 : null,
+        })
+      )
+
+      return {
+        ...EMPTY_FUNDAMENTALS,
+        market_cap:      price.marketCap?.raw ?? null,
+        // dividendYield / yield: fraction → percent
+        dividend_yield:  summary.dividendYield?.raw != null
+          ? summary.dividendYield.raw * 100
+          : summary.yield?.raw != null ? summary.yield.raw * 100 : null,
+        // expense_ratio: annualReportExpenseRatio is nested inside feesExpensesInvestment
+        expense_ratio:   fees.annualReportExpenseRatio?.raw ?? null,
+        // AUM: totalAssets in defaultKeyStatistics, fallback to netAssets
+        aum:             stats.totalAssets?.raw ?? stats.netAssets?.raw ?? null,
+        sector_weightings: sectorWeightings.length > 0 ? sectorWeightings : null,
+        top_holdings:    topHoldings.length > 0 ? topHoldings : null,
+      }
+    }
+
+    // INDEX and others: no financial statements — only price-level data available
+    return EMPTY_FUNDAMENTALS
   } catch {
-    return { expense_ratio: null, aum: null }
+    return EMPTY_FUNDAMENTALS
   }
 }
 

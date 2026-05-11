@@ -19,11 +19,15 @@ function rowToQuote(row: Record<string, unknown>) {
     volume: row.volume,
     high_52w: row.high_52w,
     low_52w: row.low_52w,
-    market_cap: row.market_cap,
-    pe: row.pe,
-    dividend_yield: row.dividend_yield,
+    market_cap: row.market_cap ?? null,
+    pe: row.pe ?? null,
+    dividend_yield: row.dividend_yield ?? null,
     expense_ratio: row.expense_ratio ?? null,
     aum: row.aum ?? null,
+    beta: row.beta ?? null,
+    profit_margins: row.profit_margins ?? null,
+    sector_weightings: row.sector_weightings ?? null,
+    top_holdings: row.top_holdings ?? null,
     last_updated: row.last_updated,
   }
 }
@@ -54,10 +58,15 @@ export async function GET(request: NextRequest) {
     const row = cached?.find((c: Record<string, unknown>) => c.ticker === ticker)
     if (row && now - new Date(row.last_updated as string).getTime() < CACHE_TTL_MS) {
       freshMap.set(ticker, rowToQuote(row))
-      if (row.expense_ratio == null) needsFundamentals.push(ticker)
+      // Fetch fundamentals if neither stock metrics (market_cap) nor fund metrics (expense_ratio/aum) are cached
+      if (row.market_cap == null && row.expense_ratio == null && row.aum == null) {
+        needsFundamentals.push(ticker)
+      }
     } else {
       staleOrMissing.push(ticker)
-      if (!row || row.expense_ratio == null) needsFundamentals.push(ticker)
+      if (!row || (row.market_cap == null && row.expense_ratio == null && row.aum == null)) {
+        needsFundamentals.push(ticker)
+      }
     }
   }
 
@@ -108,20 +117,19 @@ export async function GET(request: NextRequest) {
     }
   }
 
-  // 3. Fetch fundamentals (expense_ratio, aum) for tickers missing them — fire in parallel
+  // 3. Fetch all fundamentals (market_cap, pe, beta, profit_margins for stocks;
+  //    expense_ratio, aum, sector_weightings, top_holdings for ETFs) — fire in parallel
   if (needsFundamentals.length > 0) {
     const results = await Promise.allSettled(
       needsFundamentals.map(async (ticker) => {
         const f = await fetchFundamentals(ticker)
-        if (f.expense_ratio != null || f.aum != null) {
-          // Merge into freshMap
-          const existing = freshMap.get(ticker) as Record<string, unknown> | undefined
-          if (existing) freshMap.set(ticker, { ...existing, ...f })
-          // Upsert only the fundamentals columns (preserves price data)
-          await supabaseAdmin
-            .from('price_cache')
-            .upsert({ ticker, ...f }, { onConflict: 'ticker' })
-        }
+        // Always merge into freshMap so the response has the latest values
+        const existing = freshMap.get(ticker) as Record<string, unknown> | undefined
+        if (existing) freshMap.set(ticker, { ...existing, ...f })
+        // Upsert fundamentals columns only (preserves price/volume data in cache)
+        await supabaseAdmin
+          .from('price_cache')
+          .upsert({ ticker, ...f }, { onConflict: 'ticker' })
       })
     )
     results.forEach((r) => {

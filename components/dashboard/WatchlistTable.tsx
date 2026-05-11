@@ -207,6 +207,32 @@ export function WatchlistTable({
         },
       }),
       helper.display({
+        id: 'beta',
+        header: 'Beta',
+        cell: ({ row }) => {
+          const t = row.original.ticker
+          const b = prices[t]?.beta
+          return (
+            <span className="tabular-nums">
+              {b != null ? formatRatio(b) : <span className="text-muted-foreground">—</span>}
+            </span>
+          )
+        },
+      }),
+      helper.display({
+        id: 'profitMargins',
+        header: 'Net Margin',
+        cell: ({ row }) => {
+          const t = row.original.ticker
+          const pm = prices[t]?.profit_margins
+          return (
+            <span className="tabular-nums">
+              {pm != null ? formatPercent(pm) : <span className="text-muted-foreground">—</span>}
+            </span>
+          )
+        },
+      }),
+      helper.display({
         id: 'actions',
         header: '',
         cell: ({ row }) => (
