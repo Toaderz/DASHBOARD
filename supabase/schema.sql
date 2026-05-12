@@ -38,13 +38,18 @@ create table if not exists watchlists (
 );
 
 -- 4. WATCHLIST ASSETS (join table)
+-- PK is surrogate; unique constraint uses NULLS NOT DISTINCT so:
+--   • user lists (category IS NULL): same ticker blocked (NULL = NULL)
+--   • team seed lists (category set): same ticker in different categories allowed
 create table if not exists watchlist_assets (
+  id           bigserial,
   watchlist_id uuid not null references watchlists(id) on delete cascade,
   asset_ticker text not null references assets_metadata(ticker) on delete cascade,
-  category text,
-  sort_order integer,
-  added_at timestamptz default now(),
-  primary key (watchlist_id, asset_ticker)
+  category     text,
+  sort_order   integer,
+  added_at     timestamptz default now(),
+  primary key (id),
+  constraint watchlist_assets_unique unique nulls not distinct (watchlist_id, asset_ticker, category)
 );
 
 -- 5. PRICE CACHE (shared across users, TTL enforced in app layer)
@@ -372,20 +377,27 @@ begin
     (v_watchlist_id,'FPXE','Global International',505),
     (v_watchlist_id,'EMDM','Global International',506),
     (v_watchlist_id,'FTHF','Global International',507)
-  on conflict (watchlist_id, asset_ticker) do nothing;
+  on conflict on constraint watchlist_assets_unique do nothing;
 end;
 $$;
 
 -- ============================================================
 -- DEFAULT WATCHLISTS: Evolve Universe
 -- ============================================================
+-- Tickers skipped (ISIN-only or no Yahoo Finance ticker):
+--   LU0444973449 (CT Lux Global Tech), GB00BF0Q8L92 (CT Global Focus),
+--   GB0001448678 (CT Japan), GB0001445229 (CT European Select),
+--   MSCI ACWI, MSCI Japan, MSCI Europe, STOXX Europe 600,
+--   MSCI EM ex China, MSCI China
+-- Duplicate tickers across categories are intentional (allowed by
+--   watchlist_assets_unique constraint that includes category).
 
 create or replace function seed_evolve_universe_watchlist(p_user_id uuid)
 returns void
 language plpgsql
 security definer
 set search_path = public
-as $$
+as $seed_eu$
 declare
   v_watchlist_id uuid;
 begin
@@ -403,43 +415,46 @@ begin
   returning id into v_watchlist_id;
 
   insert into assets_metadata (ticker, name, type, sector, region) values
-    ('PSH.L',  'Pershing Square Holdings Ord',               'stock', 'Financials',    'UK'),
-    ('HHH',    'Howard Hughes Holdings Inc',                 'stock', 'Real Estate',   'US'),
-    ('^RUT',   'Russell 2000',                               'index', 'Equity',        'US'),
-    ('^SML',   'S&P SmallCap 600',                          'index', 'Equity',        'US'),
-    ('RECS',   'Columbia Research Enhanced Core ETF',        'etf',   'Equity',        'US'),
-    ('FAI',    'First Trust Bloomberg Artificial Intelligence ETF', 'etf', 'Technology', 'US'),
-    ('XCEM',   'Columbia EM Core ex-China ETF',              'etf',   'Equity',        'Emerging Markets'),
-    ('^TOPX',  'TOPIX',                                      'index', 'Equity',        'Japan')
+    ('PSH',   'Pershing Square Holdings Ord',                        'stock', 'Financials',    'UK'),
+    ('HHH',   'Howard Hughes Holdings Inc',                          'stock', 'Real Estate',   'US'),
+    ('^RUT',  'Russell 2000',                                        'index', 'Equity',        'US'),
+    ('^SML',  'S&P SmallCap 600',                                    'index', 'Equity',        'US'),
+    ('RECS',  'Columbia Research Enhanced Core ETF',                 'etf',   'Equity',        'US'),
+    ('FAI',   'First Trust Bloomberg Artificial Intelligence ETF',   'etf',   'Technology',    'US'),
+    ('XCEM',  'Columbia EM Core ex-China ETF',                       'etf',   'Equity',        'Emerging Markets'),
+    ('^TOPX', 'TOPIX',                                               'index', 'Equity',        'Japan')
   on conflict (ticker) do nothing;
 
   insert into watchlist_assets (watchlist_id, asset_ticker, category, sort_order) values
     -- US
-    (v_watchlist_id, 'PSH.L',  'US',                       100),
-    (v_watchlist_id, 'HHH',    'US',                       101),
-    (v_watchlist_id, '^GSPC',  'US',                       102),
-    (v_watchlist_id, 'RECS',   'US',                       103),
-    (v_watchlist_id, 'RDVY',   'US',                       104),
-    -- US Small Caps
-    (v_watchlist_id, 'SDVY',   'US Small Caps',            200),
-    (v_watchlist_id, '^RUT',   'US Small Caps',            201),
-    (v_watchlist_id, '^SML',   'US Small Caps',            202),
-    -- Tech
-    (v_watchlist_id, 'CIBR',   'Tech',                     300),
-    (v_watchlist_id, '^IXIC',  'Tech',                     301),
-    (v_watchlist_id, 'FAI',    'Tech',                     302),
-    -- Thematics
-    (v_watchlist_id, 'GRID',   'Thematics',                400),
-    -- Japan
-    (v_watchlist_id, 'FJP',    'Japan',                    500),
-    (v_watchlist_id, '^TOPX',  'Japan',                    501),
-    -- Europa
-    (v_watchlist_id, 'FEP',    'Europa',                   600),
-    -- Emerging Markets ex China
-    (v_watchlist_id, 'XCEM',   'Emerging Markets ex China', 700)
-  on conflict (watchlist_id, asset_ticker) do nothing;
+    (v_watchlist_id, 'PSH',   'US',                         100),
+    (v_watchlist_id, 'HHH',   'US',                         101),
+    (v_watchlist_id, '^GSPC', 'US',                         102),
+    (v_watchlist_id, 'RECS',  'US',                         103),
+    (v_watchlist_id, 'RDVY',  'US',                         104),
+    -- US SMALL CAPS
+    (v_watchlist_id, 'SDVY',  'US SMALL CAPS',              200),
+    (v_watchlist_id, '^RUT',  'US SMALL CAPS',              201),
+    (v_watchlist_id, '^SML',  'US SMALL CAPS',              202),
+    -- TECH
+    (v_watchlist_id, 'CIBR',  'TECH',                       300),
+    (v_watchlist_id, '^IXIC', 'TECH',                       301),
+    (v_watchlist_id, 'FAI',   'TECH',                       302),
+    -- THEMATICS (^GSPC, CIBR, FAI intentionally repeated from other categories)
+    (v_watchlist_id, '^GSPC', 'THEMATICS',                  400),
+    (v_watchlist_id, 'CIBR',  'THEMATICS',                  401),
+    (v_watchlist_id, 'GRID',  'THEMATICS',                  402),
+    (v_watchlist_id, 'FAI',   'THEMATICS',                  403),
+    -- JAPAN
+    (v_watchlist_id, 'FJP',   'JAPAN',                      500),
+    (v_watchlist_id, '^TOPX', 'JAPAN',                      501),
+    -- EUROPA
+    (v_watchlist_id, 'FEP',   'EUROPA',                     600),
+    -- EMERGING MARKETS EX CHINA
+    (v_watchlist_id, 'XCEM',  'EMERGING MARKETS EX CHINA',  700)
+  on conflict on constraint watchlist_assets_unique do nothing;
 end;
-$$;
+$seed_eu$;
 
 -- Trigger: seed default watchlists for every new user
 create or replace function handle_new_user_default_watchlists()
@@ -447,13 +462,13 @@ returns trigger
 language plpgsql
 security definer
 set search_path = public
-as $$
+as $trigger_seed$
 begin
   perform seed_first_trust_watchlist(new.id);
   perform seed_evolve_universe_watchlist(new.id);
   return new;
 end;
-$$;
+$trigger_seed$;
 
 drop trigger if exists on_profile_created_seed_watchlists on profiles;
 create trigger on_profile_created_seed_watchlists
@@ -461,7 +476,19 @@ create trigger on_profile_created_seed_watchlists
   for each row execute function handle_new_user_default_watchlists();
 
 -- ============================================================
--- BACKFILL: add Evolve Universe to all existing users
--- Run once in Supabase SQL Editor after deploying this migration:
---   select seed_evolve_universe_watchlist(id) from profiles;
+-- MIGRATION + BACKFILL (run in Supabase SQL Editor in this order)
+-- ============================================================
+-- Step 1 — Schema migration (once per DB):
+--   ALTER TABLE watchlist_assets DROP CONSTRAINT watchlist_assets_pkey;
+--   ALTER TABLE watchlist_assets ADD COLUMN IF NOT EXISTS id bigserial;
+--   ALTER TABLE watchlist_assets ADD PRIMARY KEY (id);
+--   ALTER TABLE watchlist_assets DROP CONSTRAINT IF EXISTS watchlist_assets_unique;
+--   ALTER TABLE watchlist_assets ADD CONSTRAINT watchlist_assets_unique
+--     UNIQUE NULLS NOT DISTINCT (watchlist_id, asset_ticker, category);
+--
+-- Step 2 — Deploy updated seed function (paste $seed_eu$ block above).
+--
+-- Step 3 — Backfill existing users (drops old list, re-seeds corrected one):
+--   DELETE FROM watchlists WHERE name = 'Evolve Universe';
+--   SELECT seed_evolve_universe_watchlist(id) FROM profiles;
 -- ============================================================
