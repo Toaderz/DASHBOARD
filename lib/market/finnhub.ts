@@ -162,7 +162,7 @@ export async function fetchFundamentals(ticker: string): Promise<Fundamentals> {
       const aum = totalAssets
       return {
         ...EMPTY_FUNDAMENTALS,
-        market_cap:     aum,    // sentinel: ensures cache knows fundamentals were fetched
+        market_cap:     null,
         pe:             data.summaryDetail?.trailingPE ?? null,
         beta:           data.defaultKeyStatistics?.beta3Year ?? null,
         dividend_yield: pct(data.summaryDetail?.yield),
