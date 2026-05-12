@@ -1,7 +1,7 @@
 # Evolve Dashboard — Claude Code Instructions
 
 ## Proyecto
-Dashboard financiero multiusuario SaaS. Next.js 15+ App Router, Supabase (auth + DB + RLS), Finnhub (quotes en tiempo real), Yahoo Finance v8 (históricos sin API key).
+Dashboard financiero multiusuario SaaS. Next.js 16 App Router, Supabase (auth + DB + RLS), Yahoo Finance (precios en tiempo real + fundamentals sin API key).
 
 ## Reglas
 - Do what has been asked; nothing more, nothing less
@@ -17,8 +17,9 @@ Dashboard financiero multiusuario SaaS. Next.js 15+ App Router, Supabase (auth +
 - **Tabla**: TanStack Table v8
 - **Data fetching**: TanStack Query v5 (`refetchInterval: 5000` para precios)
 - **Auth + DB**: Supabase (`@supabase/ssr` para SSR con cookies)
-- **Precios**: Finnhub API (`FINNHUB_API_KEY` en `.env.local`)
-- **Históricos**: Yahoo Finance v8 REST (`https://query1.finance.yahoo.com/v8/finance/chart/`) — sin API key
+- **Precios**: Yahoo Finance v8 REST (`https://query1.finance.yahoo.com/v8/finance/chart/`) — sin API key
+- **Fundamentals**: `yahoo-finance2` v3 (maneja crumb/cookies de Yahoo Finance automáticamente)
+- **Históricos**: Yahoo Finance v8 REST — sin API key
 - **Temas**: `next-themes`, `defaultTheme: 'dark'`
 
 ## Convenciones importantes
@@ -102,6 +103,13 @@ npm run build  # Verificar TypeScript + build
 
 ## Notas de arquitectura
 - El caché de precios vive en Supabase `price_cache` (no en memoria) — serverless-safe
-- `yahoo-finance2` fue removido; se usa la v8 REST API directamente para evitar imports de archivos de test
+- TTL de precios: 60s. TTL de fundamentals: 24h (`fundamentals_fetched_at` timestamptz en `price_cache`)
+- **Yahoo Finance v10 requiere auth**: La API v10 de Yahoo necesita crumb + cookies de sesión del navegador. Node.js no puede obtenerlos (Yahoo envía >16KB de Set-Cookie headers → `HPE_HEADER_OVERFLOW`). Por eso se usa `yahoo-finance2` que maneja esto internamente.
+- `yahoo-finance2` v3 usa constructor: `const yf = new YahooFinanceLib({ suppressNotices: [...], validation: { logErrors: false } })`. No usar el import default de versiones antiguas.
+- `validateResult: false` en `quoteSummary()`: Yahoo devuelve `fundProfile.brokerages` como array de strings (no objetos), lo que rompe la validación del schema. Este flag suprime el error y devuelve los datos de todas formas.
+- `serverExternalPackages: ['yahoo-finance2']` en `next.config.ts`: Evita que webpack intente bundlear el paquete (que tiene imports de archivos de test que fallan en build).
+- ETFs/fondos usan `beta3Year` (no `beta`), `summaryDetail.yield` (no `dividendYield`), `defaultKeyStatistics.totalAssets` para AUM.
+- Stocks usan `summaryDetail.marketCap` (no `defaultKeyStatistics.marketCap` — ese campo no existe en yahoo-finance2 v3 para equities).
 - Los históricos de Yahoo Finance usan `User-Agent: Mozilla/5.0` para evitar 403
 - Los retornos YTD usan `range=ytd` de Yahoo que calcula el último día hábil del año anterior automáticamente
+- Script de diagnóstico: `node scripts/diagnose.mjs <TICKER>` — verifica CAPA 1 (HTTP), CAPA 2 (JSON paths), CAPA 3 (API route)
