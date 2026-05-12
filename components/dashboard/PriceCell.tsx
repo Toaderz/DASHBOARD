@@ -7,9 +7,10 @@ import type { FlashState } from '@/types'
 interface PriceCellProps {
   price: number | undefined
   flashState: FlashState
+  currency?: string | null
 }
 
-export function PriceCell({ price, flashState }: PriceCellProps) {
+export function PriceCell({ price, flashState, currency }: PriceCellProps) {
   return (
     <span
       className={cn(
@@ -18,7 +19,7 @@ export function PriceCell({ price, flashState }: PriceCellProps) {
         flashState === 'down' && 'animate-flash-red'
       )}
     >
-      {formatPrice(price)}
+      {formatPrice(price, currency && currency !== 'GBX' ? currency : 'USD')}
     </span>
   )
 }

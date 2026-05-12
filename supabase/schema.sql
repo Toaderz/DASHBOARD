@@ -384,11 +384,13 @@ $$;
 -- ============================================================
 -- DEFAULT WATCHLISTS: Evolve Universe
 -- ============================================================
--- Tickers skipped (ISIN-only or no Yahoo Finance ticker):
---   LU0444973449 (CT Lux Global Tech), GB00BF0Q8L92 (CT Global Focus),
---   GB0001448678 (CT Japan), GB0001445229 (CT European Select),
---   MSCI ACWI, MSCI Japan, MSCI Europe, STOXX Europe 600,
---   MSCI EM ex China, MSCI China
+-- CT funds added with Yahoo Finance tickers:
+--   0P0000NCAC     = CT (Lux) Global Tech DU       (LU0444973449)
+--   GB0001448678.L = CT Japan Institutional Acc    (GB0001448678)
+--   GB0001445229.L = CT European Select Ins Acc    (GB0001445229)
+--   0P0001CZXM.L   = CT Global Focus Q Ins Grs Acc (GB00BF0Q8L92)
+-- Replaced non-working indices with ETF equivalents:
+--   ^SML → IJR, ^TOPX → EWJ
 -- Duplicate tickers across categories are intentional (allowed by
 --   watchlist_assets_unique constraint that includes category).
 
@@ -415,14 +417,23 @@ begin
   returning id into v_watchlist_id;
 
   insert into assets_metadata (ticker, name, type, sector, region) values
-    ('PSH',   'Pershing Square Holdings Ord',                        'stock', 'Financials',    'UK'),
-    ('HHH',   'Howard Hughes Holdings Inc',                          'stock', 'Real Estate',   'US'),
-    ('^RUT',  'Russell 2000',                                        'index', 'Equity',        'US'),
-    ('^SML',  'S&P SmallCap 600',                                    'index', 'Equity',        'US'),
-    ('RECS',  'Columbia Research Enhanced Core ETF',                 'etf',   'Equity',        'US'),
-    ('FAI',   'First Trust Bloomberg Artificial Intelligence ETF',   'etf',   'Technology',    'US'),
-    ('XCEM',  'Columbia EM Core ex-China ETF',                       'etf',   'Equity',        'Emerging Markets'),
-    ('^TOPX', 'TOPIX',                                               'index', 'Equity',        'Japan')
+    ('PSH',   'Pershing Square Holdings Ord',                        'stock', 'Financials',       'UK'),
+    ('HHH',   'Howard Hughes Holdings Inc',                          'stock', 'Real Estate',      'US'),
+    ('IJR',         'iShares Core S&P Small-Cap ETF',                      'etf',  'Equity',     'US'),
+    ('RECS',        'Columbia Research Enhanced Core ETF',                 'etf',  'Equity',     'US'),
+    ('0P0000NCAC',  'CT (Lux) Global Tech DU',                            'fund', 'Technology', 'Luxembourg'),
+    ('GB0001448678.L', 'CT Japan Institutional Acc',                      'fund', 'Equity',     'Japan'),
+    ('GB0001445229.L', 'CT European Select Ins Acc GBP',                  'fund', 'Equity',     'Europe'),
+    ('0P0001CZXM.L',  'CT Global Focus Q Ins Grs Acc GBP',               'fund', 'Equity',     'Global'),
+    ('FAI',   'First Trust Bloomberg Artificial Intelligence ETF',   'etf',   'Technology',       'US'),
+    ('ACWI',  'iShares MSCI ACWI ETF',                               'etf',   'Equity',           'Global'),
+    ('EWJ',   'iShares MSCI Japan ETF',                              'etf',   'Equity',           'Japan'),
+    ('DXJ',   'WisdomTree Japan Equity ETF USD Hedged',              'etf',   'Equity',           'Japan'),
+    ('IEUR',  'iShares Core MSCI Europe ETF',                        'etf',   'Equity',           'Europe'),
+    ('VGK',   'Vanguard FTSE Europe ETF',                            'etf',   'Equity',           'Europe'),
+    ('XCEM',  'Columbia EM Core ex-China ETF',                       'etf',   'Equity',           'Emerging Markets'),
+    ('EMXC',  'iShares MSCI Emerging Mkts ex China ETF',             'etf',   'Equity',           'Emerging Markets'),
+    ('MCHI',  'iShares MSCI China ETF',                              'etf',   'Equity',           'China')
   on conflict (ticker) do nothing;
 
   insert into watchlist_assets (watchlist_id, asset_ticker, category, sort_order) values
@@ -435,23 +446,35 @@ begin
     -- US SMALL CAPS
     (v_watchlist_id, 'SDVY',  'US SMALL CAPS',              200),
     (v_watchlist_id, '^RUT',  'US SMALL CAPS',              201),
-    (v_watchlist_id, '^SML',  'US SMALL CAPS',              202),
+    (v_watchlist_id, 'IJR',   'US SMALL CAPS',              202),
     -- TECH
-    (v_watchlist_id, 'CIBR',  'TECH',                       300),
-    (v_watchlist_id, '^IXIC', 'TECH',                       301),
-    (v_watchlist_id, 'FAI',   'TECH',                       302),
-    -- THEMATICS (^GSPC, CIBR, FAI intentionally repeated from other categories)
-    (v_watchlist_id, '^GSPC', 'THEMATICS',                  400),
-    (v_watchlist_id, 'CIBR',  'THEMATICS',                  401),
-    (v_watchlist_id, 'GRID',  'THEMATICS',                  402),
-    (v_watchlist_id, 'FAI',   'THEMATICS',                  403),
+    (v_watchlist_id, 'CIBR',         'TECH',                300),
+    (v_watchlist_id, '^IXIC',        'TECH',                301),
+    (v_watchlist_id, 'FAI',          'TECH',                302),
+    (v_watchlist_id, '0P0000NCAC',   'TECH',                303),
+    -- THEMATICS (^GSPC, CIBR, FAI, 0P0000NCAC intentionally repeated from other categories)
+    (v_watchlist_id, '^GSPC',        'THEMATICS',           400),
+    (v_watchlist_id, 'CIBR',         'THEMATICS',           401),
+    (v_watchlist_id, 'GRID',         'THEMATICS',           402),
+    (v_watchlist_id, 'FAI',          'THEMATICS',           403),
+    (v_watchlist_id, 'ACWI',         'THEMATICS',           404),
+    (v_watchlist_id, '0P0000NCAC',   'THEMATICS',           405),
+    (v_watchlist_id, '0P0001CZXM.L', 'THEMATICS',           406),
     -- JAPAN
-    (v_watchlist_id, 'FJP',   'JAPAN',                      500),
-    (v_watchlist_id, '^TOPX', 'JAPAN',                      501),
+    (v_watchlist_id, 'FJP',              'JAPAN',           500),
+    (v_watchlist_id, 'EWJ',              'JAPAN',           501),
+    (v_watchlist_id, 'DXJ',              'JAPAN',           502),
+    (v_watchlist_id, 'GB0001448678.L',   'JAPAN',           503),
     -- EUROPA
-    (v_watchlist_id, 'FEP',   'EUROPA',                     600),
+    (v_watchlist_id, 'FEP',              'EUROPA',          600),
+    (v_watchlist_id, 'IEUR',             'EUROPA',          601),
+    (v_watchlist_id, 'VGK',              'EUROPA',          602),
+    (v_watchlist_id, 'GB0001445229.L',   'EUROPA',          603),
     -- EMERGING MARKETS EX CHINA
-    (v_watchlist_id, 'XCEM',  'EMERGING MARKETS EX CHINA',  700)
+    (v_watchlist_id, 'XCEM',  'EMERGING MARKETS EX CHINA',  700),
+    (v_watchlist_id, 'EMXC',  'EMERGING MARKETS EX CHINA',  701),
+    -- CHINA
+    (v_watchlist_id, 'MCHI',  'CHINA',                      800)
   on conflict on constraint watchlist_assets_unique do nothing;
 end;
 $seed_eu$;
@@ -491,4 +514,7 @@ create trigger on_profile_created_seed_watchlists
 -- Step 3 — Backfill existing users (drops old list, re-seeds corrected one):
 --   DELETE FROM watchlists WHERE name = 'Evolve Universe';
 --   SELECT seed_evolve_universe_watchlist(id) FROM profiles;
+--
+-- Step 4 — Currency column (run once):
+--   ALTER TABLE price_cache ADD COLUMN IF NOT EXISTS currency text;
 -- ============================================================

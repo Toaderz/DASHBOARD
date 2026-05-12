@@ -39,6 +39,7 @@ async function fetchQuoteV8Chart(ticker: string): Promise<QuoteData | null> {
       market_cap: null,
       pe: null,
       dividend_yield: null,
+      currency: meta.currency ?? null,
       last_updated: new Date().toISOString(),
     }
   } catch {

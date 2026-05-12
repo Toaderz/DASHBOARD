@@ -20,7 +20,8 @@ import { AssetDetailModal } from './AssetDetailModal'
 import { useRealtimePrices } from '@/hooks/useRealtimePrices'
 import { usePerformanceMetrics } from '@/hooks/usePerformanceMetrics'
 import { createClient } from '@/lib/supabase/client'
-import { formatPercent, formatMarketCap, formatRatio, formatExpenseRatio, percentColor, annualizeReturn } from '@/lib/utils/formatters'
+import { formatPercent, formatMarketCap, formatRatio, formatExpenseRatio, percentColor, annualizeReturn, getCurrencySymbol } from '@/lib/utils/formatters'
+import { useFxData } from '@/hooks/useFxData'
 import { METRIC_DEFINITIONS } from '@/types'
 import type { AssetMetadata, AssetWithCategory, MetricKey, Watchlist, AssetType } from '@/types'
 import { computeInitialPeers } from '@/lib/market/peer-taxonomy'
@@ -48,6 +49,7 @@ export function WatchlistTable({
   const [selectedAsset, setSelectedAsset] = useState<AssetMetadata | null>(null)
   const [modalOpen, setModalOpen] = useState(false)
   const [annualize, setAnnualize] = useState(false)
+  const [usd, setUsd] = useState(false)
 
   // Years for annualizable periods (>1Y with fixed duration)
   const ANNUALIZE_YEARS: Partial<Record<string, number>> = { '3Y': 3, '5Y': 5, '10Y': 10 }
@@ -56,6 +58,59 @@ export function WatchlistTable({
   const { prices, flashStates } = useRealtimePrices(tickers)
   const activeMetrics = watchlist.selected_metrics as MetricKey[]
   const { returns, maxYears } = usePerformanceMetrics(tickers, prices, activeMetrics)
+
+  const RETURN_PERIODS_SET = new Set(['1W', '1M', 'YTD', '1Y', '3Y', '5Y', '10Y', 'MAX'])
+  const activePeriods = useMemo(
+    () => activeMetrics.filter((m): m is MetricKey => RETURN_PERIODS_SET.has(m)),
+    [activeMetrics]
+  )
+  const uniqueCurrencies = useMemo(
+    () => [...new Set(tickers.map((t) => prices[t]?.currency).filter((c): c is string => !!c))],
+    [tickers, prices]
+  )
+  const { fxRates, fxPeriodReturns } = useFxData(uniqueCurrencies, activePeriods)
+
+  const toUsd = useCallback(
+    (value: number | null | undefined, ticker: string): number | null => {
+      if (value == null || !usd) return value ?? null
+      const c = prices[ticker]?.currency
+      if (!c || c === 'USD') return value
+      const rate = fxRates[c]?.rate
+      return rate != null ? value * rate : value
+    },
+    [usd, prices, fxRates]
+  )
+
+  const adjReturn = useCallback(
+    (raw: number | null | undefined, ticker: string, period: MetricKey): number | null => {
+      if (raw == null) return null
+      if (!usd) return raw
+      const c = prices[ticker]?.currency
+      if (!c || c === 'USD') return raw
+      const fx = fxPeriodReturns[c]?.[period]
+      if (fx == null) return raw
+      return ((1 + raw / 100) * (1 + fx / 100) - 1) * 100
+    },
+    [usd, prices, fxPeriodReturns]
+  )
+
+  const adj1d = useCallback(
+    (raw: number | null | undefined, ticker: string): number | null => {
+      if (raw == null) return null
+      if (!usd) return raw
+      const c = prices[ticker]?.currency
+      if (!c || c === 'USD') return raw
+      const fxChange = fxRates[c]?.change1d
+      if (fxChange == null) return raw
+      return ((1 + raw / 100) * (1 + fxChange / 100) - 1) * 100
+    },
+    [usd, prices, fxRates]
+  )
+
+  const mcSymbol = useCallback(
+    (ticker: string) => usd ? '$' : getCurrencySymbol(prices[ticker]?.currency),
+    [usd, prices]
+  )
 
   const supabase = createClient()
 
@@ -106,7 +161,20 @@ export function WatchlistTable({
         header: 'Price',
         cell: ({ row }) => {
           const t = row.original.ticker
-          return <PriceCell price={prices[t]?.price} flashState={flashStates[t] ?? null} />
+          const q = prices[t]
+          const displayCurrency = usd ? 'USD' : (q?.currency ?? 'USD')
+          const displayPrice = usd ? toUsd(q?.price, t) ?? q?.price : q?.price
+          return <PriceCell price={displayPrice} flashState={flashStates[t] ?? null} currency={displayCurrency} />
+        },
+      }),
+      helper.display({
+        id: 'currency',
+        header: 'CCY',
+        cell: ({ row }) => {
+          const c = prices[row.original.ticker]?.currency
+          return c
+            ? <span className="text-[10px] font-mono text-muted-foreground">{c}</span>
+            : <span className="text-muted-foreground">—</span>
         },
       }),
       helper.display({
@@ -114,7 +182,7 @@ export function WatchlistTable({
         header: '1D %',
         cell: ({ row }) => {
           const t = row.original.ticker
-          const v = prices[t]?.change_percent
+          const v = adj1d(prices[t]?.change_percent, t)
           return <span className={percentColor(v)}>{formatPercent(v)}</span>
         },
       }),
@@ -127,7 +195,7 @@ export function WatchlistTable({
           },
           cell: ({ row }) => {
             const t = row.original.ticker
-            const raw = returns[t]?.[period]
+            const raw = adjReturn(returns[t]?.[period], t, period)
             const years = ANNUALIZE_YEARS[period] ?? (period === 'MAX' ? (maxYears[t] ?? null) : null)
             const canAnnualize = years != null && years >= 1
             const v = annualize && canAnnualize ? annualizeReturn(raw, years!) : raw
@@ -140,8 +208,8 @@ export function WatchlistTable({
         header: 'Mkt Cap',
         cell: ({ row }) => {
           const t = row.original.ticker
-          const mc = prices[t]?.market_cap
-          return <span className="tabular-nums">{formatMarketCap(mc ?? undefined)}</span>
+          const mc = toUsd(prices[t]?.market_cap, t)
+          return <span className="tabular-nums">{formatMarketCap(mc ?? undefined, mcSymbol(t))}</span>
         },
       }),
       helper.display({
@@ -202,8 +270,8 @@ export function WatchlistTable({
         header: 'AUM',
         cell: ({ row }) => {
           const t = row.original.ticker
-          const a = prices[t]?.aum
-          return <span className="tabular-nums">{formatMarketCap(a ?? undefined)}</span>
+          const a = toUsd(prices[t]?.aum, t)
+          return <span className="tabular-nums">{formatMarketCap(a ?? undefined, mcSymbol(t))}</span>
         },
       }),
       helper.display({
@@ -250,7 +318,7 @@ export function WatchlistTable({
         ),
       }),
     ],
-    [prices, flashStates, returns, maxYears, onRemoveAsset, annualize]
+    [prices, flashStates, returns, maxYears, onRemoveAsset, annualize, usd, toUsd, adjReturn, adj1d, mcSymbol]
   )
 
   const table = useReactTable({
@@ -288,6 +356,17 @@ export function WatchlistTable({
           }`}
         >
           Ann.
+        </button>
+        <button
+          onClick={() => setUsd((v) => !v)}
+          title="Convert all values to USD using live FX rates"
+          className={`rounded border px-2 py-1 text-xs font-medium transition-colors ${
+            usd
+              ? 'bg-foreground text-background border-foreground'
+              : 'border-border text-muted-foreground hover:border-foreground hover:text-foreground'
+          }`}
+        >
+          USD
         </button>
         <MetricsSelector selected={activeMetrics} onChange={handleMetricsChange} />
       </div>

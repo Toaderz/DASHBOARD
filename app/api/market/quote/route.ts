@@ -39,6 +39,7 @@ function rowToQuote(row: Record<string, unknown>) {
     treynor: row.treynor ?? null,
     sector_weightings: row.sector_weightings ?? null,
     top_holdings: row.top_holdings ?? null,
+    currency: row.currency ?? null,
     last_updated: row.last_updated,
   }
 }
@@ -110,6 +111,7 @@ export async function GET(request: NextRequest) {
           volume: q.volume ?? null,
           high_52w: q.high_52w ?? null,
           low_52w: q.low_52w ?? null,
+          currency: q.currency ?? null,
           last_updated: q.last_updated,
         })
       })

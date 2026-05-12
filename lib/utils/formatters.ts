@@ -14,12 +14,21 @@ export function formatPercent(value: number | undefined | null, decimals = 2): s
   return `${sign}${value.toFixed(decimals)}%`
 }
 
-export function formatMarketCap(value: number | undefined | null): string {
+export const CURRENCY_SYMBOLS: Record<string, string> = {
+  USD: '$', GBP: '£', GBX: '£', EUR: '€', JPY: '¥',
+  CHF: 'Fr', CAD: 'C$', AUD: 'A$', HKD: 'HK$',
+}
+
+export function getCurrencySymbol(currency?: string | null): string {
+  return CURRENCY_SYMBOLS[currency ?? ''] ?? '$'
+}
+
+export function formatMarketCap(value: number | undefined | null, symbol = '$'): string {
   if (value == null) return '—'
-  if (value >= 1e12) return `$${(value / 1e12).toFixed(2)}T`
-  if (value >= 1e9) return `$${(value / 1e9).toFixed(2)}B`
-  if (value >= 1e6) return `$${(value / 1e6).toFixed(2)}M`
-  return `$${value.toFixed(0)}`
+  if (value >= 1e12) return `${symbol}${(value / 1e12).toFixed(2)}T`
+  if (value >= 1e9) return `${symbol}${(value / 1e9).toFixed(2)}B`
+  if (value >= 1e6) return `${symbol}${(value / 1e6).toFixed(2)}M`
+  return `${symbol}${value.toFixed(0)}`
 }
 
 export function formatRatio(value: number | undefined | null): string {
