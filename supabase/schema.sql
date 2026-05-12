@@ -376,6 +376,71 @@ begin
 end;
 $$;
 
+-- ============================================================
+-- DEFAULT WATCHLISTS: Evolve Universe
+-- ============================================================
+
+create or replace function seed_evolve_universe_watchlist(p_user_id uuid)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_watchlist_id uuid;
+begin
+  if exists (select 1 from watchlists where user_id = p_user_id and name = 'Evolve Universe') then
+    return;
+  end if;
+
+  insert into watchlists (user_id, name, description, selected_metrics)
+  values (
+    p_user_id,
+    'Evolve Universe',
+    'Benchmarks and funds across global categories',
+    '["1D","1W","1M","YTD","1Y","3Y","5Y","MAX","dividendYield","expenseRatio","aum"]'::jsonb
+  )
+  returning id into v_watchlist_id;
+
+  insert into assets_metadata (ticker, name, type, sector, region) values
+    ('PSH.L',  'Pershing Square Holdings Ord',               'stock', 'Financials',    'UK'),
+    ('HHH',    'Howard Hughes Holdings Inc',                 'stock', 'Real Estate',   'US'),
+    ('^RUT',   'Russell 2000',                               'index', 'Equity',        'US'),
+    ('^SML',   'S&P SmallCap 600',                          'index', 'Equity',        'US'),
+    ('RECS',   'Columbia Research Enhanced Core ETF',        'etf',   'Equity',        'US'),
+    ('FAI',    'First Trust Bloomberg Artificial Intelligence ETF', 'etf', 'Technology', 'US'),
+    ('XCEM',   'Columbia EM Core ex-China ETF',              'etf',   'Equity',        'Emerging Markets'),
+    ('^TOPX',  'TOPIX',                                      'index', 'Equity',        'Japan')
+  on conflict (ticker) do nothing;
+
+  insert into watchlist_assets (watchlist_id, asset_ticker, category, sort_order) values
+    -- US
+    (v_watchlist_id, 'PSH.L',  'US',                       100),
+    (v_watchlist_id, 'HHH',    'US',                       101),
+    (v_watchlist_id, '^GSPC',  'US',                       102),
+    (v_watchlist_id, 'RECS',   'US',                       103),
+    (v_watchlist_id, 'RDVY',   'US',                       104),
+    -- US Small Caps
+    (v_watchlist_id, 'SDVY',   'US Small Caps',            200),
+    (v_watchlist_id, '^RUT',   'US Small Caps',            201),
+    (v_watchlist_id, '^SML',   'US Small Caps',            202),
+    -- Tech
+    (v_watchlist_id, 'CIBR',   'Tech',                     300),
+    (v_watchlist_id, '^IXIC',  'Tech',                     301),
+    (v_watchlist_id, 'FAI',    'Tech',                     302),
+    -- Thematics
+    (v_watchlist_id, 'GRID',   'Thematics',                400),
+    -- Japan
+    (v_watchlist_id, 'FJP',    'Japan',                    500),
+    (v_watchlist_id, '^TOPX',  'Japan',                    501),
+    -- Europa
+    (v_watchlist_id, 'FEP',    'Europa',                   600),
+    -- Emerging Markets ex China
+    (v_watchlist_id, 'XCEM',   'Emerging Markets ex China', 700)
+  on conflict (watchlist_id, asset_ticker) do nothing;
+end;
+$$;
+
 -- Trigger: seed default watchlists for every new user
 create or replace function handle_new_user_default_watchlists()
 returns trigger
@@ -385,6 +450,7 @@ set search_path = public
 as $$
 begin
   perform seed_first_trust_watchlist(new.id);
+  perform seed_evolve_universe_watchlist(new.id);
   return new;
 end;
 $$;
@@ -393,3 +459,9 @@ drop trigger if exists on_profile_created_seed_watchlists on profiles;
 create trigger on_profile_created_seed_watchlists
   after insert on profiles
   for each row execute function handle_new_user_default_watchlists();
+
+-- ============================================================
+-- BACKFILL: add Evolve Universe to all existing users
+-- Run once in Supabase SQL Editor after deploying this migration:
+--   select seed_evolve_universe_watchlist(id) from profiles;
+-- ============================================================
