@@ -482,6 +482,65 @@ begin
 end;
 $seed_eu$;
 
+-- ============================================================
+-- DEFAULT WATCHLISTS: Pershing Square
+-- ============================================================
+create or replace function seed_pershing_square_watchlist(p_user_id uuid)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $seed_ps$
+declare
+  v_watchlist_id uuid;
+begin
+  if exists (select 1 from watchlists where user_id = p_user_id and name = 'Pershing Square') then
+    return;
+  end if;
+
+  insert into watchlists (user_id, name, description, selected_metrics)
+  values (
+    p_user_id,
+    'Pershing Square',
+    'Pershing Square portfolio holdings',
+    '["1D","1W","1M","YTD","1Y","3Y","5Y","MAX","marketCap","pe","beta"]'::jsonb
+  )
+  returning id into v_watchlist_id;
+
+  insert into assets_metadata (ticker, name, type, sector, region) values
+    ('PSUS', 'Pershing Square USA, Ltd.',                                  'stock', 'Financials',   'US'),
+    ('HHH',  'Howard Hughes Holdings Inc',                                 'stock', 'Real Estate',  'US'),
+    ('BN',   'Brookfield Corp Registered Shs -A- Limited Vtg',            'stock', 'Financials',   'Canada'),
+    ('UBER', 'Uber Technologies Inc',                                      'stock', 'Technology',   'US'),
+    ('FNMA', 'Federal National Mortgage Association Fannie Mae',           'stock', 'Financials',   'US'),
+    ('FMCC', 'Federal Home Loan Mortgage Corp',                            'stock', 'Financials',   'US'),
+    ('AMZN', 'Amazon.com Inc',                                             'stock', 'Technology',   'US'),
+    ('UMG',  'Universal Music Group NV',                                   'stock', 'Communication','Netherlands'),
+    ('GOOG', 'Alphabet Inc Class C',                                       'stock', 'Technology',   'US'),
+    ('QSR',  'Restaurant Brands International Inc',                        'stock', 'Consumer',     'Canada'),
+    ('HTZ',  'Hertz Global Holdings Inc',                                  'stock', 'Consumer',     'US'),
+    ('META', 'Meta Platforms Inc Class A',                                 'stock', 'Technology',   'US'),
+    ('SEG',  'Seaport Entertainment Group Inc',                            'stock', 'Real Estate',  'US')
+  on conflict (ticker) do nothing;
+
+  insert into watchlist_assets (watchlist_id, asset_ticker, category, sort_order) values
+    (v_watchlist_id, 'PSUS', 'HOLDINGS', 100),
+    (v_watchlist_id, 'HHH',  'HOLDINGS', 101),
+    (v_watchlist_id, 'BN',   'HOLDINGS', 102),
+    (v_watchlist_id, 'UBER', 'HOLDINGS', 103),
+    (v_watchlist_id, 'FNMA', 'HOLDINGS', 104),
+    (v_watchlist_id, 'FMCC', 'HOLDINGS', 105),
+    (v_watchlist_id, 'AMZN', 'HOLDINGS', 106),
+    (v_watchlist_id, 'UMG',  'HOLDINGS', 107),
+    (v_watchlist_id, 'GOOG', 'HOLDINGS', 108),
+    (v_watchlist_id, 'QSR',  'HOLDINGS', 109),
+    (v_watchlist_id, 'HTZ',  'HOLDINGS', 110),
+    (v_watchlist_id, 'META', 'HOLDINGS', 111),
+    (v_watchlist_id, 'SEG',  'HOLDINGS', 112)
+  on conflict on constraint watchlist_assets_unique do nothing;
+end;
+$seed_ps$;
+
 -- Trigger: seed default watchlists for every new user
 create or replace function handle_new_user_default_watchlists()
 returns trigger
@@ -492,6 +551,7 @@ as $trigger_seed$
 begin
   perform seed_first_trust_watchlist(new.id);
   perform seed_evolve_universe_watchlist(new.id);
+  perform seed_pershing_square_watchlist(new.id);
   return new;
 end;
 $trigger_seed$;
@@ -520,4 +580,7 @@ create trigger on_profile_created_seed_watchlists
 --
 -- Step 4 — Currency column (run once):
 --   ALTER TABLE price_cache ADD COLUMN IF NOT EXISTS currency text;
+--
+-- Step 5 — Seed Pershing Square watchlist for existing users (run once):
+--   SELECT seed_pershing_square_watchlist(id) FROM profiles;
 -- ============================================================
