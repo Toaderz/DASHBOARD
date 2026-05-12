@@ -90,7 +90,19 @@ export async function GET(request: NextRequest) {
       const upsertRows: object[] = []
 
       fetched.forEach((q) => {
-        freshMap.set(q.ticker, { ...q, expense_ratio: null, aum: null })
+        // Preserve cached fundamentals — v8 chart always returns pe/dividend_yield/market_cap as null
+        const cachedRow = cached?.find((c: Record<string, unknown>) => c.ticker === q.ticker) as Record<string, unknown> | undefined
+        const base = cachedRow ? rowToQuote(cachedRow) : {}
+        freshMap.set(q.ticker, {
+          ...base,
+          ticker: q.ticker,
+          price: q.price,
+          change_percent: q.change_percent,
+          volume: q.volume ?? null,
+          high_52w: q.high_52w ?? null,
+          low_52w: q.low_52w ?? null,
+          last_updated: q.last_updated,
+        })
         upsertRows.push({
           ticker: q.ticker,
           price: q.price,
@@ -98,9 +110,6 @@ export async function GET(request: NextRequest) {
           volume: q.volume ?? null,
           high_52w: q.high_52w ?? null,
           low_52w: q.low_52w ?? null,
-          market_cap: q.market_cap ?? null,
-          pe: q.pe ?? null,
-          dividend_yield: q.dividend_yield ?? null,
           last_updated: q.last_updated,
         })
       })
