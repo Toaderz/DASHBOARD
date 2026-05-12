@@ -78,6 +78,7 @@ hooks/
   useWatchlistAssets.ts          # useWatchlists + useWatchlistAssets
   useRealtimePrices.ts           # Polling 5s + flash states
   usePerformanceMetrics.ts       # Cálculo retornos históricos
+  useFxData.ts                   # FX spot rates (1-min) + period returns (5-min) para conversión USD
 lib/
   supabase/{client,server,middleware}.ts
   market/{finnhub,history}.ts
@@ -104,6 +105,7 @@ npm run build  # Verificar TypeScript + build
 ## Notas de arquitectura
 - El caché de precios vive en Supabase `price_cache` (no en memoria) — serverless-safe
 - TTL de precios: 60s. TTL de fundamentals: 24h (`fundamentals_fetched_at` timestamptz en `price_cache`)
+- `price_cache` tiene columna `currency text` (migración: `ALTER TABLE price_cache ADD COLUMN IF NOT EXISTS currency text`) — se puebla desde `meta.currency` de Yahoo Finance v8
 - **Yahoo Finance v10 requiere auth**: La API v10 de Yahoo necesita crumb + cookies de sesión del navegador. Node.js no puede obtenerlos (Yahoo envía >16KB de Set-Cookie headers → `HPE_HEADER_OVERFLOW`). Por eso se usa `yahoo-finance2` que maneja esto internamente.
 - `yahoo-finance2` v3 usa constructor: `const yf = new YahooFinanceLib({ suppressNotices: [...], validation: { logErrors: false } })`. No usar el import default de versiones antiguas.
 - `validateResult: false` en `quoteSummary()`: Yahoo devuelve `fundProfile.brokerages` como array de strings (no objetos), lo que rompe la validación del schema. Este flag suprime el error y devuelve los datos de todas formas.
@@ -113,3 +115,6 @@ npm run build  # Verificar TypeScript + build
 - Los históricos de Yahoo Finance usan `User-Agent: Mozilla/5.0` para evitar 403
 - Los retornos YTD usan `range=ytd` de Yahoo que calcula el último día hábil del año anterior automáticamente
 - Script de diagnóstico: `node scripts/diagnose.mjs <TICKER>` — verifica CAPA 1 (HTTP), CAPA 2 (JSON paths), CAPA 3 (API route)
+- **Conversión USD**: `useFxData` obtiene tipos de cambio via `/api/market/quote` (pares como `GBPUSD=X`) y retornos históricos via `/api/market/history`. GBX (peniques) usa `GBPUSD=X` dividido entre 100. Fórmula retornos: `(1 + local%) × (1 + fx_period%) − 1`.
+- **Watchlists por defecto** (3): First Trust, Evolve Universe, Pershing Square — sembradas via trigger `on_profile_created_seed_watchlists`. Backfill manual: `SELECT seed_<name>_watchlist(id) FROM profiles`.
+- **CT funds tickers**: `0P0000NCAC` (Global Tech), `0P00000R12.L` (Japan), `0P00000R0U.L` (European), `0P0001CZXM.L` (Global Focus), `0P00000XBQ.L` (North American) — tickers internos de Yahoo Finance para fondos sin cotización directa.

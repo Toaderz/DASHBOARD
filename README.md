@@ -1,106 +1,76 @@
 # Evolve Dashboard
 
-Financial SaaS dashboard for portfolio monitoring, watchlist management, and peer comparison.
+Dashboard financiero multiusuario SaaS para monitoreo de portafolios globales en tiempo real.
 
 ## Stack
 
-- **Framework**: Next.js 16 (App Router, Turbopack), React 19, TypeScript
-- **Styles**: Tailwind CSS + shadcn/ui
-- **Table**: TanStack Table v8
-- **Auth & DB**: Supabase (RLS, SSR cookies)
-- **Prices**: Yahoo Finance v8 REST (no API key required)
-- **Fundamentals**: yahoo-finance2 (handles Yahoo Finance auth/crumb automatically)
-- **Charts**: Recharts
-- **Themes**: next-themes (dark by default)
+- **Framework**: Next.js 16.2.5 (Turbopack) + React 19 + TypeScript
+- **UI**: Tailwind CSS + shadcn/ui + TanStack Table v8
+- **Auth + DB**: Supabase (RLS, SSR cookies)
+- **Precios**: Yahoo Finance v8 REST (sin API key) — polling 5s
+- **Fundamentals**: `yahoo-finance2` v3 (crumb/cookies automáticos)
+- **Históricos**: Yahoo Finance v8 REST
 
-## Features
+## Funcionalidades principales
 
-- Multi-user authentication via Supabase
-- Multiple watchlists with customizable metric columns
-- Real-time price polling every 5 seconds with flash animations
-- Historical charts (1M, YTD, 1Y, 3Y, 10Y, MAX)
-- Peer comparison table with automatic peer discovery
-- Semi-dynamic peer taxonomy — classifies assets from DB metadata when not in the static taxonomy
-- Ticker search with debounce (Yahoo Finance search API)
-- Fundamentals for all asset types:
-  - **Stocks**: market cap, P/E, beta, profit margins, sector, industry
-  - **ETFs / Funds**: AUM, expense ratio, beta (3Y), NAV, fund family, dividend yield, sector weightings, top holdings, risk metrics (alpha, R², std dev, Sharpe, Treynor)
-  - **Indices**: price + change only (no fundamentals)
+- Watchlists por usuario con categorías y orden personalizable
+- Precios en tiempo real con flash verde/rojo al cambio
+- Columnas configurables: precio, retornos (1D/1W/1M/YTD/1Y/3Y/5Y/MAX), mkt cap, P/E, beta, AUM, expense ratio, dividend yield
+- **Anualizar retornos** (toggle "Ann.") — CAGR para periodos ≥1Y
+- **Convertir a USD** (toggle "USD") — convierte precio, AUM, mkt cap y retornos usando FX en tiempo real
+- **Columna CCY** — muestra la moneda nativa de cada activo
+- Modal de detalle con gráfico histórico (Recharts) y peers
+
+## Watchlists por defecto
+
+Todos los usuarios nuevos reciben automáticamente:
+
+| Watchlist | Descripción |
+|---|---|
+| **First Trust** | ETFs First Trust seleccionados |
+| **Evolve Universe** | Benchmarks y fondos globales (US, Small Caps, Tech, Japan, Europa, EM, China) |
+| **Pershing Square** | Holdings del portafolio Pershing Square (PSUS, HHH, BN, UBER, FNMA, FMCC, AMZN, UMGNF, GOOG, QSR, HTZ, META, SEG) |
 
 ## Setup
 
-### 1. Install dependencies
+### 1. Variables de entorno
+
+```bash
+NEXT_PUBLIC_SUPABASE_URL=
+NEXT_PUBLIC_SUPABASE_ANON_KEY=
+SUPABASE_SERVICE_ROLE_KEY=   # empieza con eyJ
+FINNHUB_API_KEY=             # 'your-finnhub-api-key' activa modo mock
+```
+
+### 2. Base de datos
+
+Corre `supabase/schema.sql` completo en el SQL Editor de Supabase. Incluye DDL, RLS, funciones seed y migraciones comentadas.
+
+### 3. Desarrollo
 
 ```bash
 npm install
+npm run dev    # Turbopack dev server
+npm run build  # TypeScript check + build
 ```
 
-### 2. Environment variables
-
-Copy `.env.local.example` to `.env.local` and fill in the values:
+## Arquitectura
 
 ```
-NEXT_PUBLIC_SUPABASE_URL=
-NEXT_PUBLIC_SUPABASE_ANON_KEY=
-SUPABASE_SERVICE_ROLE_KEY=
-FINNHUB_API_KEY=
+app/api/market/
+  quote/     → precios + fundamentals (cache 60s / 24h en price_cache)
+  history/   → retornos históricos + FX period returns
+  search/    → búsqueda de tickers
+hooks/
+  useFxData.ts             → spot FX rates (1-min) + period returns (5-min)
+  useRealtimePrices.ts     → polling 5s + flash states
+  usePerformanceMetrics.ts → cálculo retornos históricos
 ```
 
-> If `FINNHUB_API_KEY` is not set or is `your-finnhub-api-key`, the app runs in mock mode with 10 hardcoded tickers.
-
-### 3. Database
-
-Run `supabase/schema.sql` in the Supabase SQL Editor. This creates all tables, RLS policies, and seed data.
-
-> **Important**: If upgrading from an older version, run this migration to add the fundamentals columns:
-> ```sql
-> ALTER TABLE price_cache
-> ADD COLUMN IF NOT EXISTS nav numeric,
-> ADD COLUMN IF NOT EXISTS sector text,
-> ADD COLUMN IF NOT EXISTS industry text,
-> ADD COLUMN IF NOT EXISTS fund_family text,
-> ADD COLUMN IF NOT EXISTS alpha numeric,
-> ADD COLUMN IF NOT EXISTS r_squared numeric,
-> ADD COLUMN IF NOT EXISTS std_dev numeric,
-> ADD COLUMN IF NOT EXISTS sharpe numeric,
-> ADD COLUMN IF NOT EXISTS treynor numeric,
-> ADD COLUMN IF NOT EXISTS sector_weightings jsonb,
-> ADD COLUMN IF NOT EXISTS top_holdings jsonb,
-> ADD COLUMN IF NOT EXISTS fundamentals_fetched_at timestamptz;
-> ```
-
-### 4. Run
+## Diagnóstico
 
 ```bash
-npm run dev
+node scripts/diagnose.mjs <TICKER>
 ```
 
-## Project Structure
-
-```
-app/
-  (auth)/login/          # Login + register
-  (dashboard)/           # Protected routes
-    watchlist/[id]/      # Watchlist view
-  api/market/            # Proxy routes: quote, history, search
-components/dashboard/    # UI components
-hooks/                   # useWatchlistAssets, useRealtimePrices, usePerformanceMetrics
-lib/
-  market/                # Yahoo Finance (finnhub.ts) + peer taxonomy + history
-  supabase/              # Client, server, middleware helpers
-  utils/                 # Formatters
-scripts/
-  diagnose.mjs           # 3-layer diagnostic: HTTP → JSON paths → API route
-types/index.ts           # All shared types
-supabase/schema.sql      # Full DB schema
-proxy.ts                 # Route protection (Next.js 16)
-```
-
-## Notes
-
-- Route protection file is `proxy.ts` (not `middleware.ts`) — Next.js 16 requirement
-- Price cache lives in Supabase `price_cache` table (serverless-safe, TTL 60s for prices, 24h for fundamentals)
-- Fundamentals use `yahoo-finance2` (not direct Yahoo v10 fetch) — Yahoo Finance v10 requires browser crumb/cookies that Node.js cannot obtain; this library handles auth internally
-- `serverExternalPackages: ['yahoo-finance2']` in `next.config.ts` prevents webpack from bundling the package
-- Peer taxonomy is in `lib/market/peer-taxonomy.ts` — static entries for ~120 instruments, with runtime fallback using DB metadata fields
-- Diagnostic script: `node scripts/diagnose.mjs <TICKER>` — verifies data flow end to end
+Verifica HTTP (capa 1), paths JSON (capa 2) y API route (capa 3).
