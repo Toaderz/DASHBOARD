@@ -166,7 +166,7 @@ export async function fetchFundamentals(ticker: string): Promise<Fundamentals> {
         pe:             data.summaryDetail?.trailingPE ?? null,
         beta:           data.defaultKeyStatistics?.beta3Year ?? null,
         dividend_yield: pct(data.summaryDetail?.yield),
-        expense_ratio:  pct(data.fundProfile?.feesExpensesInvestment?.annualReportExpenseRatio),
+        expense_ratio:  data.fundProfile?.feesExpensesInvestment?.annualReportExpenseRatio ?? null,
         aum,
         nav:            data.price?.navPrice ?? null,
         fund_family:    data.defaultKeyStatistics?.fundFamily ?? data.fundProfile?.family ?? null,
