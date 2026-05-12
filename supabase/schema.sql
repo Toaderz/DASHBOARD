@@ -385,10 +385,11 @@ $$;
 -- DEFAULT WATCHLISTS: Evolve Universe
 -- ============================================================
 -- CT funds added with Yahoo Finance tickers:
---   0P0000NCAC     = CT (Lux) Global Tech DU       (LU0444973449)
---   GB0001448678.L = CT Japan Institutional Acc    (GB0001448678)
---   GB0001445229.L = CT European Select Ins Acc    (GB0001445229)
---   0P0001CZXM.L   = CT Global Focus Q Ins Grs Acc (GB00BF0Q8L92)
+--   0P0000NCAC     = CT (Lux) Global Tech DU             (LU0444973449)
+--   0P00000R12.L   = CT Japan Institutional Acc          (GB0001448678)
+--   0P00000R0U.L   = CT European Select Ins Acc GBP      (GB0001445229)
+--   0P0001CZXM.L   = CT Global Focus Q Ins Grs Acc GBP   (GB00BF0Q8L92)
+--   0P00000XBQ.L   = CT North American Systematic Eq 2 Acc
 -- Replaced non-working indices with ETF equivalents:
 --   ^SML → IJR, ^TOPX → EWJ
 -- Duplicate tickers across categories are intentional (allowed by
@@ -422,8 +423,9 @@ begin
     ('IJR',         'iShares Core S&P Small-Cap ETF',                      'etf',  'Equity',     'US'),
     ('RECS',        'Columbia Research Enhanced Core ETF',                 'etf',  'Equity',     'US'),
     ('0P0000NCAC',  'CT (Lux) Global Tech DU',                            'fund', 'Technology', 'Luxembourg'),
-    ('GB0001448678.L', 'CT Japan Institutional Acc',                      'fund', 'Equity',     'Japan'),
-    ('GB0001445229.L', 'CT European Select Ins Acc GBP',                  'fund', 'Equity',     'Europe'),
+    ('0P00000R12.L',   'CT Japan Institutional Acc',                      'fund', 'Equity',     'Japan'),
+    ('0P00000R0U.L',   'CT European Select Ins Acc GBP',                  'fund', 'Equity',     'Europe'),
+    ('0P00000XBQ.L',   'CT North American Systematic Eq 2 Acc',           'fund', 'Equity',     'US'),
     ('0P0001CZXM.L',  'CT Global Focus Q Ins Grs Acc GBP',               'fund', 'Equity',     'Global'),
     ('FAI',   'First Trust Bloomberg Artificial Intelligence ETF',   'etf',   'Technology',       'US'),
     ('ACWI',  'iShares MSCI ACWI ETF',                               'etf',   'Equity',           'Global'),
@@ -443,6 +445,7 @@ begin
     (v_watchlist_id, '^GSPC', 'US',                         102),
     (v_watchlist_id, 'RECS',  'US',                         103),
     (v_watchlist_id, 'RDVY',  'US',                         104),
+    (v_watchlist_id, '0P00000XBQ.L', 'US',                105),
     -- US SMALL CAPS
     (v_watchlist_id, 'SDVY',  'US SMALL CAPS',              200),
     (v_watchlist_id, '^RUT',  'US SMALL CAPS',              201),
@@ -464,12 +467,12 @@ begin
     (v_watchlist_id, 'FJP',              'JAPAN',           500),
     (v_watchlist_id, 'EWJ',              'JAPAN',           501),
     (v_watchlist_id, 'DXJ',              'JAPAN',           502),
-    (v_watchlist_id, 'GB0001448678.L',   'JAPAN',           503),
+    (v_watchlist_id, '0P00000R12.L',      'JAPAN',           503),
     -- EUROPA
     (v_watchlist_id, 'FEP',              'EUROPA',          600),
     (v_watchlist_id, 'IEUR',             'EUROPA',          601),
     (v_watchlist_id, 'VGK',              'EUROPA',          602),
-    (v_watchlist_id, 'GB0001445229.L',   'EUROPA',          603),
+    (v_watchlist_id, '0P00000R0U.L',      'EUROPA',          603),
     -- EMERGING MARKETS EX CHINA
     (v_watchlist_id, 'XCEM',  'EMERGING MARKETS EX CHINA',  700),
     (v_watchlist_id, 'EMXC',  'EMERGING MARKETS EX CHINA',  701),
