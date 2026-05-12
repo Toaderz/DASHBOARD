@@ -86,6 +86,15 @@ export interface QuoteData {
   aum?: number | null
   beta?: number | null
   profit_margins?: number | null
+  nav?: number | null
+  sector?: string | null
+  industry?: string | null
+  fund_family?: string | null
+  alpha?: number | null
+  r_squared?: number | null
+  std_dev?: number | null
+  sharpe?: number | null
+  treynor?: number | null
   sector_weightings?: SectorWeight[] | null
   top_holdings?: Holding[] | null
   last_updated: string

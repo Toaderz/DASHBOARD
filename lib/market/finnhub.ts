@@ -49,6 +49,15 @@ interface Fundamentals {
   profit_margins: number | null
   expense_ratio: number | null
   aum: number | null
+  nav: number | null
+  sector: string | null
+  industry: string | null
+  fund_family: string | null
+  alpha: number | null
+  r_squared: number | null
+  std_dev: number | null
+  sharpe: number | null
+  treynor: number | null
   sector_weightings: SectorWeight[] | null
   top_holdings: Holding[] | null
 }
@@ -61,81 +70,152 @@ const EMPTY_FUNDAMENTALS: Fundamentals = {
   profit_margins: null,
   expense_ratio: null,
   aum: null,
+  nav: null,
+  sector: null,
+  industry: null,
+  fund_family: null,
+  alpha: null,
+  r_squared: null,
+  std_dev: null,
+  sharpe: null,
+  treynor: null,
   sector_weightings: null,
   top_holdings: null,
 }
 
+const YAHOO_V10_BASE = 'https://query2.finance.yahoo.com'
+
 export async function fetchFundamentals(ticker: string): Promise<Fundamentals> {
   try {
-    const modules = 'defaultKeyStatistics%2CfundProfile%2CtopHoldings%2CsummaryDetail%2Cprice'
-    const url = `${YAHOO_BASE}/v10/finance/quoteSummary/${encodeURIComponent(ticker)}?modules=${modules}`
+    const modules = [
+      'summaryDetail',
+      'defaultKeyStatistics',
+      'summaryProfile',
+      'assetProfile',
+      'fundProfile',
+      'topHoldings',
+      'fundPerformance',
+      'price',
+    ].join(',')
+
+    const url = `${YAHOO_V10_BASE}/v10/finance/quoteSummary/${encodeURIComponent(ticker)}?modules=${encodeURIComponent(modules)}`
     const res = await fetch(url, { headers: { 'User-Agent': UA }, next: { revalidate: 0 } })
     if (!res.ok) return EMPTY_FUNDAMENTALS
-    const data = await res.json()
-    const result = data?.quoteSummary?.result?.[0]
-    if (!result) return EMPTY_FUNDAMENTALS
+    const json = await res.json()
+    const data = json?.quoteSummary?.result?.[0]
+    if (!data) return EMPTY_FUNDAMENTALS
 
-    const stats    = result.defaultKeyStatistics ?? {}
-    const profile  = result.fundProfile ?? {}
-    const fees     = profile.feesExpensesInvestment ?? {}
-    const holdings = result.topHoldings ?? {}
-    const summary  = result.summaryDetail ?? {}
-    const price    = result.price ?? {}
-    const quoteType = (price.quoteType ?? '').toLowerCase()
-
-    // These fields are available for both equities and ETFs — extracted before branching
-    const pe            = summary.trailingPE?.raw ?? null
-    const beta          = stats.beta?.raw ?? null
-    const divRaw        = summary.dividendYield?.raw ?? summary.yield?.raw ?? null
-    const dividend_yield = divRaw != null ? divRaw * 100 : null
-
-    if (quoteType === 'equity') {
-      const pmRaw = stats.profitMargins?.raw ?? null
-      return {
-        ...EMPTY_FUNDAMENTALS,
-        market_cap:     price.marketCap?.raw ?? null,
-        pe,
-        dividend_yield,
-        beta,
-        profit_margins: pmRaw != null ? pmRaw * 100 : null,
+    // Safe helper: traverses path on obj and unwraps .raw if present
+    const getRaw = (obj: unknown, path: string[]): number | null => {
+      let cur: unknown = obj
+      for (const key of path) {
+        if (cur == null || typeof cur !== 'object') return null
+        cur = (cur as Record<string, unknown>)[key]
       }
+      if (cur == null) return null
+      if (typeof cur === 'object' && 'raw' in (cur as object)) return (cur as { raw: number }).raw
+      return typeof cur === 'number' ? cur : null
     }
 
-    if (quoteType === 'etf' || quoteType === 'mutualfund') {
-      const aum = stats.totalAssets?.raw ?? stats.netAssets?.raw ?? null
+    const pct = (val: number | null) => (val != null ? val * 100 : null)
 
-      const sectorWeightings: SectorWeight[] = (holdings.sectorWeightings ?? [])
-        .map((item: Record<string, { raw: number }>) => {
-          const [sector, val] = Object.entries(item)[0] as [string, { raw: number }]
-          return { sector, weight: val?.raw ?? 0 }
-        })
-        .filter((s: SectorWeight) => s.weight > 0)
+    // Fields common to all asset types
+    const pe            = getRaw(data, ['summaryDetail', 'trailingPE'])
+    const beta          = getRaw(data, ['defaultKeyStatistics', 'beta'])
+    const divRaw        = getRaw(data, ['summaryDetail', 'dividendYield']) ?? getRaw(data, ['summaryDetail', 'yield'])
+    const dividend_yield = pct(divRaw)
 
-      const topHoldings: Holding[] = (holdings.holdings ?? []).map(
-        (h: { symbol?: string; holdingName?: string; holdingPercent?: { raw: number } }) => ({
-          symbol: h.symbol ?? null,
-          name:   h.holdingName ?? null,
-          pct:    h.holdingPercent?.raw != null ? h.holdingPercent.raw * 100 : null,
-        })
-      )
+    // Market cap: use defaultKeyStatistics first (works for equities and some ETFs),
+    // fall back to summaryDetail (sometimes populated for indices)
+    const marketCapRaw = getRaw(data, ['defaultKeyStatistics', 'marketCap'])
+      ?? getRaw(data, ['summaryDetail', 'marketCap'])
 
+    // AUM: correct path is fundProfile.feesExpensesInvestment.totalNetAssets
+    const aumRaw = getRaw(data, ['fundProfile', 'feesExpensesInvestment', 'totalNetAssets'])
+      ?? getRaw(data, ['defaultKeyStatistics', 'totalAssets'])
+
+    // NAV
+    const navRaw = getRaw(data, ['price', 'netAssetValue']) ?? getRaw(data, ['summaryDetail', 'navPrice'])
+
+    // Sector / industry (equities and some ETFs expose these via summaryProfile or assetProfile)
+    const sectorVal   = (data as Record<string, Record<string, unknown>>)?.summaryProfile?.sector as string | null
+      ?? (data as Record<string, Record<string, unknown>>)?.assetProfile?.sector as string | null
+      ?? null
+    const industryVal = (data as Record<string, Record<string, unknown>>)?.summaryProfile?.industry as string | null
+      ?? (data as Record<string, Record<string, unknown>>)?.assetProfile?.industry as string | null
+      ?? null
+
+    // Fund family
+    const profileData = (data as Record<string, Record<string, unknown>>)?.fundProfile ?? {}
+    const fundFamilyVal = (profileData.family ?? profileData.categoryName ?? null) as string | null
+
+    // Advanced risk stats (fundPerformance — ETFs/mutual funds only)
+    const riskStats = (data as Record<string, { riskOverviewStatistics?: { riskStatistics?: unknown[] } }>)
+      ?.fundPerformance?.riskOverviewStatistics?.riskStatistics?.[0] ?? {}
+    const alphaVal    = pct(getRaw(riskStats, ['alpha']))
+    const rSquaredVal = getRaw(riskStats, ['rSquared'])
+    const stdDevVal   = pct(getRaw(riskStats, ['stdDev']))
+    const sharpeVal   = getRaw(riskStats, ['sharpeRatio'])
+    const treynorVal  = getRaw(riskStats, ['treynorRatio'])
+
+    // Holdings / sector weights (ETFs/funds)
+    const holdingsData = (data as Record<string, { sectorWeightings?: unknown[]; holdings?: unknown[] }>)?.topHoldings ?? {}
+
+    const sectorWeightings: SectorWeight[] = ((holdingsData.sectorWeightings ?? []) as Record<string, { raw: number }>[])
+      .map((item) => {
+        const [sector, val] = Object.entries(item)[0] as [string, { raw: number }]
+        return { sector, weight: val?.raw ?? 0 }
+      })
+      .filter((s: SectorWeight) => s.weight > 0)
+
+    const topHoldings: Holding[] = ((holdingsData.holdings ?? []) as { symbol?: string; holdingName?: string; holdingPercent?: { raw: number } }[])
+      .map((h) => ({
+        symbol: h.symbol ?? null,
+        name:   h.holdingName ?? null,
+        pct:    h.holdingPercent?.raw != null ? h.holdingPercent.raw * 100 : null,
+      }))
+
+    // Detect asset type from price module; fall back to checking if fund-specific fields are present
+    const priceData = (data as Record<string, Record<string, unknown>>)?.price ?? {}
+    const rawQuoteType = ((priceData.quoteType ?? '') as string).toLowerCase()
+    const isFund = rawQuoteType === 'etf' || rawQuoteType === 'mutualfund'
+      || aumRaw != null || (holdingsData.holdings as unknown[] | undefined)?.length
+
+    if (isFund) {
       return {
         ...EMPTY_FUNDAMENTALS,
-        // ETFs rarely have price.marketCap in Yahoo; use AUM as the sentinel so the
+        // For ETFs, Yahoo rarely returns marketCap; use AUM as the sentinel so the
         // cache trigger (market_cap == null && expense_ratio == null && aum == null)
         // evaluates to false after the first successful fetch.
-        market_cap:      aum,
+        market_cap:      aumRaw,
         pe,
         beta,
         dividend_yield,
-        expense_ratio:   fees.annualReportExpenseRatio?.raw ?? null,
-        aum,
+        expense_ratio:   pct(getRaw(data, ['fundProfile', 'feesExpensesInvestment', 'annualReportExpenseRatio'])),
+        aum:             aumRaw,
+        nav:             navRaw,
+        fund_family:     fundFamilyVal,
+        alpha:           alphaVal,
+        r_squared:       rSquaredVal,
+        std_dev:         stdDevVal,
+        sharpe:          sharpeVal,
+        treynor:         treynorVal,
         sector_weightings: sectorWeightings.length > 0 ? sectorWeightings : null,
         top_holdings:    topHoldings.length > 0 ? topHoldings : null,
       }
     }
 
-    return EMPTY_FUNDAMENTALS
+    // Equity / index / other
+    return {
+      ...EMPTY_FUNDAMENTALS,
+      market_cap:     marketCapRaw,
+      pe,
+      dividend_yield,
+      beta,
+      profit_margins: pct(getRaw(data, ['defaultKeyStatistics', 'profitMargins'])),
+      sector:         sectorVal,
+      industry:       industryVal,
+    }
   } catch {
     return EMPTY_FUNDAMENTALS
   }
