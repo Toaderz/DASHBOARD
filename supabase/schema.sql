@@ -49,13 +49,33 @@ create table if not exists watchlist_assets (
 
 -- 5. PRICE CACHE (shared across users, TTL enforced in app layer)
 create table if not exists price_cache (
-  ticker text primary key,
-  price numeric,
-  change_percent numeric,
-  volume bigint,
-  high_52w numeric,
-  low_52w numeric,
-  last_updated timestamptz default now()
+  ticker                 text primary key,
+  price                  numeric,
+  change_percent         numeric,
+  volume                 bigint,
+  high_52w               numeric,
+  low_52w                numeric,
+  last_updated           timestamptz default now(),
+  -- fundamentals (populated by fetchFundamentals via yahoo-finance2)
+  market_cap             numeric,
+  pe                     numeric,
+  dividend_yield         numeric,
+  expense_ratio          numeric,
+  aum                    numeric,
+  beta                   numeric,
+  profit_margins         numeric,
+  nav                    numeric,
+  sector                 text,
+  industry               text,
+  fund_family            text,
+  alpha                  numeric,
+  r_squared              numeric,
+  std_dev                numeric,
+  sharpe                 numeric,
+  treynor                numeric,
+  sector_weightings      jsonb,
+  top_holdings           jsonb,
+  fundamentals_fetched_at timestamptz
 );
 
 -- ============================================================
