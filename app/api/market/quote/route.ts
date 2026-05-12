@@ -3,6 +3,8 @@ import { createClient } from '@supabase/supabase-js'
 import { fetchBatchQuotes, fetchFundamentals } from '@/lib/market/finnhub'
 
 const CACHE_TTL_MS = 60_000
+// Re-fetch fundamentals if they've never been fetched or are older than 24 h
+const FUNDAMENTALS_TTL_MS = 24 * 60 * 60_000
 
 function getAdminClient() {
   return createClient(
@@ -65,17 +67,18 @@ export async function GET(request: NextRequest) {
 
   for (const ticker of tickers) {
     const row = cached?.find((c: Record<string, unknown>) => c.ticker === ticker)
+    const fundamentalsFetchedAt = row?.fundamentals_fetched_at
+      ? new Date(row.fundamentals_fetched_at as string).getTime()
+      : null
+    const fundamentalsStale = fundamentalsFetchedAt == null
+      || now - fundamentalsFetchedAt > FUNDAMENTALS_TTL_MS
+
     if (row && now - new Date(row.last_updated as string).getTime() < CACHE_TTL_MS) {
       freshMap.set(ticker, rowToQuote(row))
-      // Fetch fundamentals if neither stock metrics (market_cap) nor fund metrics (expense_ratio/aum) are cached
-      if (row.market_cap == null && row.expense_ratio == null && row.aum == null) {
-        needsFundamentals.push(ticker)
-      }
+      if (fundamentalsStale) needsFundamentals.push(ticker)
     } else {
       staleOrMissing.push(ticker)
-      if (!row || (row.market_cap == null && row.expense_ratio == null && row.aum == null)) {
-        needsFundamentals.push(ticker)
-      }
+      if (fundamentalsStale) needsFundamentals.push(ticker)
     }
   }
 
@@ -135,10 +138,13 @@ export async function GET(request: NextRequest) {
         // Always merge into freshMap so the response has the latest values
         const existing = freshMap.get(ticker) as Record<string, unknown> | undefined
         if (existing) freshMap.set(ticker, { ...existing, ...f })
-        // Upsert fundamentals columns only (preserves price/volume data in cache)
-        await supabaseAdmin
+        // Upsert fundamentals columns only (preserves price/volume data in cache).
+        // fundamentals_fetched_at marks this row as "fundamentals attempted" so the
+        // cache trigger doesn't loop forever on partially-populated rows.
+        const { error: fundamentalsErr } = await supabaseAdmin
           .from('price_cache')
-          .upsert({ ticker, ...f }, { onConflict: 'ticker' })
+          .upsert({ ticker, ...f, fundamentals_fetched_at: new Date().toISOString() }, { onConflict: 'ticker' })
+        if (fundamentalsErr) console.error('[quote] Fundamentals upsert error:', ticker, fundamentalsErr.message)
       })
     )
     results.forEach((r) => {
