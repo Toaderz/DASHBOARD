@@ -21,7 +21,8 @@ import {
 } from 'recharts'
 import { TickerSearch } from './TickerSearch'
 import { formatPrice, formatPercent, percentColor, annualizeReturn } from '@/lib/utils/formatters'
-import type { AssetMetadata, HistoricalDataPoint, QuoteData, AssetType } from '@/types'
+import { useFxData } from '@/hooks/useFxData'
+import type { AssetMetadata, HistoricalDataPoint, QuoteData, AssetType, MetricKey } from '@/types'
 
 const PEER_PERIOD_OPTIONS = ['1W', '1M', 'YTD', '1Y', '3Y', '5Y', '10Y', 'MAX'] as const
 type PeerPeriod = typeof PEER_PERIOD_OPTIONS[number]
@@ -63,6 +64,7 @@ export function AssetDetailModal({
   const [chartPeriodReturn, setChartPeriodReturn] = useState<number | null>(null)
   const [chartYears, setChartYears] = useState<number | null>(null)
   const [annualize, setAnnualize] = useState(false)
+  const [usd, setUsd] = useState(false)
 
   const [peerMetrics, setPeerMetrics] = useState<PeerPeriod[]>(['1M', 'YTD', '1Y'])
 
@@ -91,6 +93,7 @@ export function AssetDetailModal({
       setChartPeriodReturn(null)
       setChartYears(null)
       setAnnualize(false)
+      setUsd(false)
     }
   }, [open])
 
@@ -119,20 +122,60 @@ export function AssetDetailModal({
       .catch(() => { setChartPeriodReturn(null); setChartYears(null) })
   }, [asset, open, chartPeriod])
 
-  // Peer quotes fetch
+  // FX data for USD conversion
+  const uniqueCurrencies = useMemo(() => {
+    const currencies = Object.values(peerQuotes).map((q) => q.currency).filter((c): c is string => !!c)
+    if (quote?.currency) currencies.push(quote.currency)
+    return [...new Set(currencies)]
+  }, [peerQuotes, quote])
+  const { fxRates, fxPeriodReturns } = useFxData(uniqueCurrencies, peerMetrics as MetricKey[])
+
+  const getCurrency = (ticker: string) =>
+    (ticker === asset?.ticker ? quote?.currency : peerQuotes[ticker]?.currency) ?? 'USD'
+
+  const toUsd = (value: number | null | undefined, ticker: string): number | null => {
+    if (value == null || !usd) return value ?? null
+    const c = getCurrency(ticker)
+    if (!c || c === 'USD') return value
+    const rate = fxRates[c]?.rate
+    return rate != null ? value * rate : value
+  }
+
+  const adjReturn = (raw: number | null | undefined, ticker: string, period: PeerPeriod): number | null => {
+    if (raw == null) return null
+    if (!usd) return raw
+    const c = getCurrency(ticker)
+    if (!c || c === 'USD') return raw
+    const fx = fxPeriodReturns[c]?.[period as MetricKey]
+    if (fx == null) return raw
+    return ((1 + raw / 100) * (1 + fx / 100) - 1) * 100
+  }
+
+  const adj1d = (raw: number | null | undefined, ticker: string): number | null => {
+    if (raw == null) return null
+    if (!usd) return raw
+    const c = getCurrency(ticker)
+    if (!c || c === 'USD') return raw
+    const fxChange = fxRates[c]?.change1d
+    if (fxChange == null) return raw
+    return ((1 + raw / 100) * (1 + fxChange / 100) - 1) * 100
+  }
+
+  // Peer quotes fetch — includes the pinned asset so its data is always in peerQuotes
   useEffect(() => {
-    if (!open || allPeers.length === 0) return
-    const tickers = allPeers.map((p) => p.ticker).join(',')
+    if (!open || !asset) return
+    const tickers = [asset.ticker, ...allPeers.map((p) => p.ticker)].join(',')
     fetch(`/api/market/quote?tickers=${encodeURIComponent(tickers)}`)
       .then((r) => r.json())
       .then((data) => setPeerQuotes(data))
-  }, [open, allPeers])
+  }, [open, allPeers, asset])
 
-  // Peer returns fetch
+  // Peer returns fetch — includes the pinned asset
   useEffect(() => {
-    if (!open || allPeers.length === 0 || peerMetrics.length === 0) return
-    const pairs = allPeers.flatMap((peer) =>
-      peerMetrics.map((period) => ({ ticker: peer.ticker, period }))
+    if (!open || !asset || peerMetrics.length === 0) return
+    const allTickers = [asset.ticker, ...allPeers.map((p) => p.ticker)]
+    const pairs = allTickers.flatMap((ticker) =>
+      peerMetrics.map((period) => ({ ticker, period }))
     )
     Promise.allSettled(
       pairs.map(({ ticker, period }) =>
@@ -155,7 +198,7 @@ export function AssetDetailModal({
       setPeerReturns((prev) => ({ ...prev, ...map }))
       setPeerMaxYears((prev) => ({ ...prev, ...yearsMap }))
     })
-  }, [open, allPeers, peerMetrics])
+  }, [open, allPeers, peerMetrics, asset])
 
   const handleAddCustomPeer = useCallback(
     async (ticker: string, name: string, type: AssetType) => {
@@ -337,6 +380,18 @@ export function AssetDetailModal({
                 Ann.
               </button>
 
+              <button
+                onClick={() => setUsd((v) => !v)}
+                title="Convert all values to USD using live FX rates"
+                className={`rounded border px-2 py-0.5 text-xs font-medium transition-colors ${
+                  usd
+                    ? 'bg-foreground text-background border-foreground'
+                    : 'border-border text-muted-foreground hover:border-foreground hover:text-foreground'
+                }`}
+              >
+                USD
+              </button>
+
               <div className="flex-1 min-w-48 relative z-[100]">
                 <TickerSearch
                   onAdd={handleAddCustomPeer}
@@ -345,77 +400,104 @@ export function AssetDetailModal({
               </div>
             </div>
 
-            {allPeers.length > 0 ? (
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b text-xs text-muted-foreground">
-                      <th className="pb-1 text-left font-medium">Ticker</th>
-                      <th className="pb-1 text-left font-medium">Name</th>
-                      <th className="pb-1 text-right font-medium">Price</th>
-                      <th className="pb-1 text-right font-medium">1D %</th>
-                      {peerMetrics.map((p) => (
-                        <th key={p} className="pb-1 text-right font-medium">
-                          {p} %{annualize && (ANNUALIZE_YEARS[p] || p === 'MAX') ? <span className="text-[10px] text-muted-foreground ml-0.5">ann</span> : null}
-                        </th>
-                      ))}
-                      <th className="pb-1 w-5" />
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b text-xs text-muted-foreground">
+                    <th className="pb-1 text-left font-medium">Ticker</th>
+                    <th className="pb-1 text-left font-medium">Name</th>
+                    <th className="pb-1 text-right font-medium">Price</th>
+                    <th className="pb-1 text-right font-medium">1D %</th>
+                    {peerMetrics.map((p) => (
+                      <th key={p} className="pb-1 text-right font-medium">
+                        {p} %{annualize && (ANNUALIZE_YEARS[p] || p === 'MAX') ? <span className="text-[10px] text-muted-foreground ml-0.5">ann</span> : null}
+                      </th>
+                    ))}
+                    <th className="pb-1 w-5" />
+                  </tr>
+                </thead>
+                <tbody>
+                  {/* Pinned row — the asset being viewed, always first, not removable */}
+                  {(() => {
+                    const pq = peerQuotes[asset.ticker]
+                    const displayPrice = usd ? toUsd(pq?.price ?? quote?.price, asset.ticker) : (pq?.price ?? quote?.price)
+                    const display1d = adj1d(pq?.change_percent ?? quote?.change_percent, asset.ticker)
+                    return (
+                      <tr key={asset.ticker} className="border-b bg-muted/30 font-semibold">
+                        <td className="py-1 font-mono">{asset.ticker}</td>
+                        <td className="py-1 max-w-[140px] truncate">{asset.name}</td>
+                        <td className="py-1 text-right tabular-nums">
+                          {formatPrice(displayPrice, usd ? 'USD' : (pq?.currency ?? quote?.currency ?? 'USD'))}
+                        </td>
+                        <td className={`py-1 text-right tabular-nums ${percentColor(display1d)}`}>
+                          {formatPercent(display1d)}
+                        </td>
+                        {peerMetrics.map((period) => {
+                          const raw = adjReturn(peerReturns[asset.ticker]?.[period], asset.ticker, period)
+                          const years = ANNUALIZE_YEARS[period] ?? (period === 'MAX' ? (peerMaxYears[asset.ticker] ?? null) : null)
+                          const v = annualize && years ? annualizeReturn(raw, years) : raw
+                          return (
+                            <td key={period} className={`py-1 text-right tabular-nums ${percentColor(v)}`}>
+                              {formatPercent(v)}
+                            </td>
+                          )
+                        })}
+                        <td className="py-1 w-5" />
+                      </tr>
+                    )
+                  })()}
+                  {allPeers.length === 0 && (
+                    <tr>
+                      <td colSpan={4 + peerMetrics.length + 1} className="py-3 text-center text-xs text-muted-foreground">
+                        No peers. Use the search above to add them.
+                      </td>
                     </tr>
-                  </thead>
-                  <tbody>
-                    {allPeers.map((peer) => {
-                      const pq = peerQuotes[peer.ticker]
-                      const isCustom = customPeerTickers.has(peer.ticker)
-                      return (
-                        <tr key={peer.ticker} className="group border-b last:border-0">
-                          <td className="py-1 font-mono font-semibold">{peer.ticker}</td>
-                          <td className="py-1 text-muted-foreground max-w-[140px] truncate">
-                            {peer.name}
-                          </td>
-                          <td className="py-1 text-right tabular-nums">
-                            {formatPrice(pq?.price)}
-                          </td>
-                          <td
-                            className={`py-1 text-right tabular-nums ${percentColor(pq?.change_percent)}`}
+                  )}
+                  {allPeers.map((peer) => {
+                    const pq = peerQuotes[peer.ticker]
+                    const isCustom = customPeerTickers.has(peer.ticker)
+                    const displayPrice = usd ? toUsd(pq?.price, peer.ticker) : pq?.price
+                    const display1d = adj1d(pq?.change_percent, peer.ticker)
+                    return (
+                      <tr key={peer.ticker} className="group border-b last:border-0">
+                        <td className="py-1 font-mono font-semibold">{peer.ticker}</td>
+                        <td className="py-1 text-muted-foreground max-w-[140px] truncate">
+                          {peer.name}
+                        </td>
+                        <td className="py-1 text-right tabular-nums">
+                          {formatPrice(displayPrice, usd ? 'USD' : (pq?.currency ?? 'USD'))}
+                        </td>
+                        <td className={`py-1 text-right tabular-nums ${percentColor(display1d)}`}>
+                          {formatPercent(display1d)}
+                        </td>
+                        {peerMetrics.map((period) => {
+                          const raw = adjReturn(peerReturns[peer.ticker]?.[period], peer.ticker, period)
+                          const years = ANNUALIZE_YEARS[period] ?? (period === 'MAX' ? (peerMaxYears[peer.ticker] ?? null) : null)
+                          const v = annualize && years ? annualizeReturn(raw, years) : raw
+                          return (
+                            <td key={period} className={`py-1 text-right tabular-nums ${percentColor(v)}`}>
+                              {formatPercent(v)}
+                            </td>
+                          )
+                        })}
+                        <td className="py-1 text-right">
+                          <button
+                            onClick={() =>
+                              isCustom
+                                ? handleRemovePeer(peer.ticker)
+                                : setRemovedInitialTickers((prev) => new Set([...prev, peer.ticker]))
+                            }
+                            className="text-muted-foreground hover:text-destructive opacity-0 group-hover:opacity-100 transition-opacity"
                           >
-                            {formatPercent(pq?.change_percent)}
-                          </td>
-                          {peerMetrics.map((period) => {
-                            const raw = peerReturns[peer.ticker]?.[period]
-                            const years = ANNUALIZE_YEARS[period] ?? (period === 'MAX' ? (peerMaxYears[peer.ticker] ?? null) : null)
-                            const v = annualize && years ? annualizeReturn(raw, years) : raw
-                            return (
-                              <td
-                                key={period}
-                                className={`py-1 text-right tabular-nums ${percentColor(v)}`}
-                              >
-                                {formatPercent(v)}
-                              </td>
-                            )
-                          })}
-                          <td className="py-1 text-right">
-                            <button
-                              onClick={() =>
-                                isCustom
-                                  ? handleRemovePeer(peer.ticker)
-                                  : setRemovedInitialTickers((prev) => new Set([...prev, peer.ticker]))
-                              }
-                              className="text-muted-foreground hover:text-destructive opacity-0 group-hover:opacity-100 transition-opacity"
-                            >
-                              <X className="h-3 w-3" />
-                            </button>
-                          </td>
-                        </tr>
-                      )
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            ) : (
-              <p className="text-sm text-muted-foreground">
-                No peers found. Use the search to add them manually.
-              </p>
-            )}
+                            <X className="h-3 w-3" />
+                          </button>
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       </DialogContent>
