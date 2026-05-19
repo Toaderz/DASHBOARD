@@ -544,8 +544,8 @@ export const STATIC_PEERS: Record<string, string[]> = {
   '0P00000R12.L': ['EWJ', 'IJPA', 'JPJP'],
   '0P00000R0U.L': ['IMEU', 'VERX', 'MEUD'],
   // Pershing Square holdings & proxies
-  PSH:   ['GURU', 'ALFA', 'BRK.B'],
-  PSUS:  ['GURU', 'ALFA', 'BRK.B'],
+  PSH:   ['GURU', 'ALFA', 'BRK-B'],
+  PSUS:  ['GURU', 'ALFA', 'BRK-B'],
   HHH:   ['TPL', 'BXP', 'VNO'],
   BN:    ['BX', 'KKR', 'APO'],
   GOOG:  ['META', 'AMZN', 'TTD'],
