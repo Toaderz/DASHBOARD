@@ -143,6 +143,16 @@ const VA = (manager: string, benchmark?: string): AssetClassification => ({
   factorTilts: ['value'], manager, benchmark, isIndexFund: true,
   classificationConfidence: 90,
 })
+// ETFs — First Trust generic sector/thematic
+const FT = (sub: string, strat: Strategy, univ: Universe = 'sector-specific', role: PortfolioRole = 'growth-satellite', beh?: BehaviorProfile): AssetClassification => ({
+  strategy: strat, subStrategy: sub, universe: univ, portfolioRole: role,
+  behaviorProfile: beh, manager: 'First Trust', isIndexFund: true, classificationConfidence: 87,
+})
+// ETFs — First Trust international
+const FTI = (sub: string, strat: Strategy = 'intl-developed', univ: Universe = 'intl-developed'): AssetClassification => ({
+  strategy: strat, subStrategy: sub, universe: univ, portfolioRole: 'international',
+  manager: 'First Trust', isIndexFund: true, classificationConfidence: 87,
+})
 
 export const TAXONOMY: Record<string, AssetClassification> = {
   // ── Dividend Growth ────────────────────────────────────────────────────────
@@ -335,6 +345,219 @@ export const TAXONOMY: Record<string, AssetClassification> = {
   'USDC-USD': { strategy: 'crypto-stablecoin', subStrategy: 'fiat-backed', universe: 'crypto', portfolioRole: 'income', behaviorProfile: 'income-stable', classificationConfidence: 92 },
   'DAI-USD':  { strategy: 'crypto-stablecoin', subStrategy: 'algorithmic-collateralized', universe: 'crypto', portfolioRole: 'income', behaviorProfile: 'income-stable', classificationConfidence: 88 },
   'BUSD-USD': { strategy: 'crypto-stablecoin', subStrategy: 'fiat-backed', universe: 'crypto', portfolioRole: 'income', behaviorProfile: 'income-stable', classificationConfidence: 85 },
+
+  // ── First Trust — Factor / Dividend ───────────────────────────────────────
+  DDIV:  { ...DG('momentum-dividend', 'First Trust'), factorTilts: ['momentum', 'quality', 'growth'] },
+  TDIV:  FT('tech-nasdaq-dividend', 'sector-tech', 'sector-specific', 'core-income', 'momentum-heavy'),
+  FDL:   HY('dividend-leaders', 'First Trust'),
+  KNGZ:  DG('sp500-dividend-aristocrats', 'First Trust', 's&p500-dividend-aristocrats', ['quality']),
+  FVD:   { ...DG('value-line-dividend', 'First Trust'), factorTilts: ['quality', 'low-vol'] },
+  FTDS:  DG('dividend-strength', 'First Trust'),
+  SDVY:  { ...DG('smid-rising-dividend', 'First Trust'), universe: 'us-small' },
+  SHRY:  { ...DG('shareholder-yield', 'First Trust'), subStrategy: 'buyback-yield', factorTilts: ['value'] },
+  FTC:   GR('large-cap-growth', 'First Trust'),
+  FTA:   VA('First Trust'),
+  FEX:   BL('First Trust', 'value-line-timeliness'),
+  FAD:   { ...GR('multi-cap-growth', 'First Trust'), universe: 'us-broad' },
+  FAB:   { ...VA('First Trust'), universe: 'us-broad' },
+  FCFY:  { strategy: 'quality-blend', subStrategy: 'free-cash-flow', universe: 'us-large', portfolioRole: 'core', factorTilts: ['quality', 'value'], manager: 'First Trust', isIndexFund: true, classificationConfidence: 88 },
+  FNY:   FT('mid-cap-growth', 'growth', 'us-mid', 'growth-satellite', 'momentum-heavy'),
+  FNK:   FT('mid-cap-value', 'value', 'us-mid', 'core', 'cyclical'),
+  FNX:   FT('mid-cap-core', 'blend-large', 'us-mid', 'core'),
+  FYC:   FT('small-cap-growth', 'blend-small', 'us-small', 'growth-satellite', 'cyclical'),
+  FYT:   FT('small-cap-value', 'blend-small', 'us-small', 'core', 'cyclical'),
+  FYX:   FT('small-cap-core', 'blend-small', 'us-small', 'growth-satellite', 'cyclical'),
+  FGD:   { ...DG('global-select-dividend', 'First Trust'), universe: 'global', portfolioRole: 'income' },
+  FID:   { ...DG('intl-dividend-aristocrats', 'First Trust'), universe: 'intl-developed', portfolioRole: 'income' },
+  FDD:   { ...DG('european-select-div', 'First Trust'), universe: 'intl-developed', portfolioRole: 'income' },
+
+  // ── First Trust — Thematic / Technology ───────────────────────────────────
+  FDN:   FT('internet-index', 'sector-tech'),
+  FDNI:  FT('intl-internet', 'sector-tech', 'intl-developed'),
+  SKYY:  FT('cloud-computing', 'sector-tech'),
+  NXTG:  FT('5g-nextgen', 'sector-tech'),
+  ISHP:  FT('ecommerce', 'sector-tech', 'global'),
+  CIBR:  FT('cybersecurity', 'sector-tech'),
+  ROBT:  FT('ai-robotics', 'sector-tech', 'global'),
+  LEGR:  FT('blockchain', 'sector-tech', 'global', 'speculative', 'crypto-volatile'),
+  ARVR:  FT('metaverse-arvr', 'sector-tech', 'global', 'speculative'),
+  BNGE:  FT('gaming-streaming', 'sector-tech', 'global'),
+  FTXL:  FT('semiconductors-alphaDEX', 'sector-tech'),
+  CARZ:  FT('future-vehicles', 'sector-tech', 'global'),
+  QTEC:  FT('nasdaq-100-tech', 'sector-tech'),
+
+  // ── First Trust — Healthcare ───────────────────────────────────────────────
+  FBT:   FT('biotech', 'sector-health', 'sector-specific', 'growth-satellite', 'momentum-heavy'),
+  FTXH:  FT('pharma-alphaDEX', 'sector-health', 'sector-specific', 'defensive', 'defensive'),
+  MDEV:  FT('medical-devices', 'sector-health', 'sector-specific', 'defensive', 'defensive'),
+  EKG:   FT('digital-health', 'sector-health', 'global', 'growth-satellite', 'momentum-heavy'),
+
+  // ── First Trust — Energy / Industrials / Commodities ─────────────────────
+  QCLN:  FT('clean-energy', 'sector-energy', 'global', 'growth-satellite', 'momentum-heavy'),
+  FAN:   FT('wind-energy', 'sector-energy', 'global', 'speculative', 'commodity-linked'),
+  GRID:  FT('smart-grid', 'sector-energy', 'sector-specific', 'growth-satellite', 'momentum-heavy'),
+  FIW:   FT('water', 'commodity', 'us-broad', 'inflation-hedge', 'commodity-linked'),
+  RBLD:  FT('nextgen-infra', 'sector-energy', 'us-broad', 'core', 'cyclical'),
+  AIRR:  FT('american-industrial', 'sector-energy', 'us-broad', 'core', 'cyclical'),
+  FTRI:  FT('natural-resources', 'commodity', 'global', 'inflation-hedge', 'commodity-linked'),
+  FTAG:  FT('agriculture', 'commodity', 'global', 'inflation-hedge', 'commodity-linked'),
+  FCG:   FT('natural-gas', 'sector-energy', 'us-broad', 'speculative', 'commodity-linked'),
+  FTXN:  FT('energy-alphaDEX', 'sector-energy', 'sector-specific', 'speculative', 'commodity-linked'),
+  MISL:  FT('aero-defense', 'sector-energy', 'us-broad', 'core', 'cyclical'),
+
+  // ── First Trust — Sectors ──────────────────────────────────────────────────
+  FTXG:  FT('consumer-staples-alphaDEX', 'sector-staples', 'sector-specific', 'defensive', 'defensive'),
+  QABA:  FT('community-banks', 'sector-fin', 'sector-specific', 'core', 'cyclical'),
+  FTXO:  FT('bank-alphaDEX', 'sector-fin', 'sector-specific', 'core', 'cyclical'),
+  FTXR:  FT('retail-alphaDEX', 'sector-staples', 'sector-specific', 'core', 'cyclical'),
+  FRI:   FT('core-reit', 'real-estate', 'us-broad', 'inflation-hedge', 'rate-sensitive'),
+  DTRE:  FT('disruptive-re', 'real-estate', 'us-broad', 'growth-satellite', 'momentum-heavy'),
+
+  // ── First Trust — AlphaDEX International ─────────────────────────────────
+  FDT:   FTI('developed-ex-us-value'),
+  FDTS:  FTI('intl-small-cap', 'blend-small'),
+  FEM:   FTI('em-alphaDEX', 'emerging', 'emerging'),
+  FEMS:  FTI('em-small-cap', 'emerging', 'emerging'),
+  FPA:   FTI('asia-pac-ex-japan'),
+  FEP:   FTI('europe'),
+  FEUZ:  FTI('eurozone'),
+  FCA:   FTI('canada'),
+  FGM:   FTI('germany'),
+  FJP:   FTI('japan'),
+
+  // ── First Trust — Global International ───────────────────────────────────
+  RNEM:  FTI('em-equity', 'emerging', 'emerging'),
+  IFV:   { ...FTI('intl-multi-asset-value', 'intl-developed', 'global'), factorTilts: ['value'] },
+  NFTY:  FTI('india-nifty50', 'emerging', 'emerging'),
+  FICS:  FT('intl-corp-bond', 'fixed-income-core', 'global', 'fixed-income', 'rate-sensitive'),
+  FPXI:  FT('intl-ipo', 'intl-developed', 'intl-developed', 'growth-satellite', 'momentum-heavy'),
+  FPXE:  FT('em-ipo', 'emerging', 'emerging', 'speculative', 'momentum-heavy'),
+  EMDM:  FT('em-dividend', 'emerging', 'emerging', 'income', 'income-stable'),
+  FTHF:  FTI('hedged-developed'),
+}
+
+// Curated peer lists for First Trust ETFs (from Evolve peers taxonomy)
+export const STATIC_PEERS: Record<string, string[]> = {
+  // Factores
+  DDIV:  ['DGRW', 'QDPL', 'FDL'],
+  TDIV:  ['XNTK', 'VGT', 'SCHG'],
+  RDVY:  ['VIG', 'DGRO', 'NOBL'],
+  FDL:   ['VYM', 'HDV', 'SPYD'],
+  KNGZ:  ['NOBL', 'REGL', 'SDY'],
+  FVD:   ['SPLV', 'SCHD', 'VIG'],
+  FTDS:  ['DGRO', 'VIG', 'QUAL'],
+  SDVY:  ['SMDV', 'REGL', 'DON'],
+  SHRY:  ['SYLD', 'DIVB', 'PKW'],
+  FTC:   ['VUG', 'SCHG', 'IVW'],
+  FTA:   ['VTV', 'IVE', 'SPYV'],
+  FEX:   ['VOO', 'IVV', 'SPY'],
+  FAD:   ['IWF', 'VOT', 'IJK'],
+  FAB:   ['IWD', 'VOE', 'IJJ'],
+  FCFY:  ['COWZ', 'VFLO', 'FLOW'],
+  FNY:   ['VOT', 'IWP', 'MDYG'],
+  FNK:   ['VOE', 'IWS', 'MDYV'],
+  FNX:   ['IJH', 'VO', 'MDY'],
+  FYC:   ['VBK', 'IWO', 'IJT'],
+  FYT:   ['VBR', 'IWN', 'IJS'],
+  FYX:   ['IJR', 'VB', 'SCHA'],
+  FGD:   ['DEW', 'WDIV', 'IDV'],
+  FID:   ['VIGI', 'IDV', 'IGRO'],
+  FDD:   ['VGK', 'IEUR', 'EZU'],
+  // Tematicos
+  FDN:   ['PNQI', 'XLC', 'VGT'],
+  FDNI:  ['EBIZ', 'OGIG', 'KWEB'],
+  SKYY:  ['WCLD', 'CLOU', 'IGV'],
+  NXTG:  ['FIVG', 'XTL', 'IXP'],
+  ISHP:  ['ONLN', 'IBUY', 'EBIZ'],
+  CIBR:  ['HACK', 'IHAK', 'WCBR'],
+  ROBT:  ['BOTZ', 'ROBO', 'IRBO'],
+  LEGR:  ['BLOK', 'BKCH', 'DAPP'],
+  ARVR:  ['METV', 'MTVR', 'PUNK'],
+  BNGE:  ['ESPO', 'HERO', 'NERD'],
+  FBT:   ['XBI', 'IBB', 'BBP'],
+  FTXH:  ['PPH', 'IHE', 'XPH'],
+  MDEV:  ['IHI', 'XHE', 'XLV'],
+  EKG:   ['EDOC', 'VHT', 'IDNA'],
+  QCLN:  ['ICLN', 'PBW', 'ACES'],
+  FAN:   ['WNDY', 'PWND', 'ICLN'],
+  GRID:  ['PUW', 'IDRV', 'PAVE'],
+  FIW:   ['PHO', 'CGW', 'AQWA'],
+  RBLD:  ['PAVE', 'IFRA', 'IGF'],
+  AIRR:  ['XLI', 'VIS', 'IYJ'],
+  FTXL:  ['SOXX', 'SMH', 'XSD'],
+  FTRI:  ['GNR', 'GUNR', 'HAP'],
+  FTAG:  ['MOO', 'VEGI', 'KROP'],
+  CARZ:  ['DRIV', 'IDRV', 'KARS'],
+  DTRE:  ['SRVR', 'REET', 'VNQ'],
+  // Sector / Industry
+  FTXG:  ['KXI', 'VDC', 'PSL'],
+  FCG:   ['XOP', 'IEO', 'PXE'],
+  FTXN:  ['VDE', 'XLE', 'IXE'],
+  QABA:  ['KRE', 'IAT', 'KBWR'],
+  FTXO:  ['KBE', 'VFH', 'IYF'],
+  FTXR:  ['XRT', 'RTH', 'VCR'],
+  FRI:   ['VNQ', 'IYR', 'SCHH'],
+  QTEC:  ['RYT', 'XLK', 'IYW'],
+  MISL:  ['ITA', 'XAR', 'PPA'],
+  // AlphaDEX Global / International
+  FDT:   ['EFV', 'IVEG', 'FNDF'],
+  FDTS:  ['FNDC', 'VSS', 'SCZ'],
+  FEM:   ['EEMV', 'VWO', 'DEM'],
+  FEMS:  ['DGS', 'EWX', 'VEMS'],
+  FPA:   ['EPP', 'VPL', 'GMF'],
+  FEP:   ['FNEU', 'IEUR', 'VEUR'],
+  FEUZ:  ['EZU', 'FEZ', 'BBEU'],
+  FCA:   ['EWC', 'BBCA', 'FLCA'],
+  FGM:   ['EWG', 'HEWG', 'FLGR'],
+  FJP:   ['BBJP', 'FLJP', 'SCJ'],
+  // Global International
+  RNEM:  ['IEMG', 'SCHE', 'EMGF'],
+  IFV:   ['FYLD', 'DLS', 'IQIN'],
+  NFTY:  ['INDY', 'PIN', 'FLIN'],
+  FICS:  ['IBND', 'IASH', 'PICB'],
+  FPXI:  ['IPOS', 'IPO', 'FPX'],
+  FPXE:  ['EMQQ', 'KWEB', 'EEM'],
+  EMDM:  ['DVYE', 'EDIV', 'DRE'],
+  FTHF:  ['HEFA', 'HEDJ', 'DBEF'],
+  // Broad market ETFs & indices
+  '^GSPC': ['IVV', 'VOO', 'SPY'],
+  '^RUT':  ['IWM', 'VTWO', 'SWMK'],
+  '^IXIC': ['QQQ', 'ONEQ', 'QQQM'],
+  ACWI:  ['VT', 'VWRD', 'SSAC'],
+  RECS:  ['QUAL', 'VQLT', 'SUSA'],
+  IJR:   ['VIOO', 'SPSM', 'SCHA'],
+  FAI:   ['FXL', 'XNTK', 'IYW'],
+  // Japan
+  EWJ:   ['BBJP', 'VJPN', 'FLJP'],
+  DXJ:   ['HEWJ', 'DBJP', 'HJPX'],
+  // Europe
+  IEUR:  ['VGK', 'EZU', 'BBEU'],
+  VGK:   ['IEUR', 'SPEU', 'FVEU'],
+  // Emerging Markets
+  XCEM:  ['EMXC', 'EMXF', 'KEMX'],
+  EMXC:  ['XCEM', 'RNEM', 'KEMX'],
+  MCHI:  ['FXI', 'GXC', 'KWEB'],
+  // CT funds (UCITS / internal Yahoo Finance tickers)
+  '0P0000NCAC':   ['QQQ', 'SXRV', 'UST'],
+  '0P00000XBQ.L': ['QUAL', 'SPYQ', 'JQUA'],
+  '0P0001CZXM.L': ['ICLN', 'QCLN', 'PBW'],
+  '0P00000R12.L': ['EWJ', 'IJPA', 'JPJP'],
+  '0P00000R0U.L': ['IMEU', 'VERX', 'MEUD'],
+  // Pershing Square holdings & proxies
+  PSH:   ['GURU', 'ALFA', 'BRK.B'],
+  PSUS:  ['GURU', 'ALFA', 'BRK.B'],
+  HHH:   ['TPL', 'BXP', 'VNO'],
+  BN:    ['BX', 'KKR', 'APO'],
+  GOOG:  ['META', 'AMZN', 'TTD'],
+  META:  ['GOOGL', 'SNAP', 'PINS'],
+  AMZN:  ['MELI', 'WMT', 'BABA'],
+  UBER:  ['LYFT', 'DASH', 'BKNG'],
+  UMGNF: ['WMG', 'SONY', 'SPOT'],
+  QSR:   ['MCD', 'YUM', 'DPZ'],
+  HTZ:   ['CAR', 'UAL', 'CPRT'],
+  FNMA:  ['NLY', 'AGNC', 'PFF'],
+  FMCC:  ['RITM', 'TWO', 'PGX'],
+  SEG:   ['COWZ', 'FNDX', 'QUAL'],
 }
 
 export function classifyAsset(ticker: string): AssetClassification | null {
@@ -482,8 +705,25 @@ export function computeInitialPeers(
   allAssets: AssetMetadata[]
 ): AssetMetadata[] {
   const assetMap = new Map<string, AssetMetadata>(allAssets.map((a) => [a.ticker.toUpperCase(), a]))
+  const upperTicker = selectedAsset.ticker.toUpperCase()
 
-  // Static taxonomy first; fallback to metadata-inferred classification
+  // Use curated static peers when available (FT ETFs)
+  const staticPeerTickers = STATIC_PEERS[upperTicker]
+  if (staticPeerTickers) {
+    return staticPeerTickers.map((t) => {
+      const dbAsset = assetMap.get(t.toUpperCase())
+      if (dbAsset) return dbAsset
+      const tc = TAXONOMY[t.toUpperCase()]
+      return {
+        ticker: t, name: t,
+        type: (tc?.universe === 'crypto' ? 'crypto' : 'etf') as AssetMetadata['type'],
+        sector: null, region: null, industry: null,
+        benchmark: tc?.benchmark ?? null, manager: tc?.manager ?? null,
+      }
+    })
+  }
+
+  // Fallback: algorithmic peer computation from taxonomy
   const selectedClass = classifyAsset(selectedAsset.ticker) ?? classifyFromMetadata(selectedAsset)
   if (!selectedClass) return []
 
