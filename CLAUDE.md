@@ -65,10 +65,11 @@ app/
     quote/route.ts               # Proxy Finnhub + cache en price_cache (TTL 60s)
     history/route.ts             # Yahoo Finance v8 históricos
     search/route.ts              # Búsqueda Finnhub
+    export/route.ts              # Export de watchlist a CSV
 components/dashboard/
   DashboardShell.tsx             # Sidebar + nav (client)
   WatchlistView.tsx              # Bridge server→client para watchlist
-  WatchlistTable.tsx             # TanStack Table con todas las columnas
+  WatchlistTable.tsx             # TanStack Table con todas las columnas + filtro inline
   WatchlistManager.tsx           # CRUD watchlists en sidebar
   TickerSearch.tsx               # Búsqueda con debounce 300ms
   PriceCell.tsx                  # Celda con flash verde/rojo
@@ -118,3 +119,5 @@ npm run build  # Verificar TypeScript + build
 - **Conversión USD**: `useFxData` obtiene tipos de cambio via `/api/market/quote` (pares como `GBPUSD=X`) y retornos históricos via `/api/market/history`. GBX (peniques) usa `GBPUSD=X` dividido entre 100. Fórmula retornos: `(1 + local%) × (1 + fx_period%) − 1`.
 - **Watchlists por defecto** (3): First Trust, Evolve Universe, Pershing Square — sembradas via trigger `on_profile_created_seed_watchlists`. Backfill manual: `SELECT seed_<name>_watchlist(id) FROM profiles`.
 - **CT funds tickers**: `0P0000NCAC` (Global Tech), `0P00000R12.L` (Japan), `0P00000R0U.L` (European), `0P0001CZXM.L` (Global Focus), `0P00000XBQ.L` (North American) — tickers internos de Yahoo Finance para fondos sin cotización directa.
+- **Peer taxonomy** (`lib/market/peer-taxonomy.ts`): mapa estático `STATIC_PEERS` con peers curados para todos los activos de las 3 watchlists por defecto. `computeInitialPeers()` lo consulta primero; si no hay entrada, cae al scoring algorítmico por taxonomía.
+- **Filtro inline de watchlist**: input "Filter list…" en el toolbar de `WatchlistTable` — filtra `assets` por ticker o nombre en tiempo real, sin afectar precios ni el modal de detalle.

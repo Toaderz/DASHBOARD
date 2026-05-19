@@ -10,7 +10,7 @@ import {
   type SortingState,
   type VisibilityState,
 } from '@tanstack/react-table'
-import { ArrowUpDown, ArrowUp, ArrowDown, X } from 'lucide-react'
+import { ArrowUpDown, ArrowUp, ArrowDown, X, Search } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { PriceCell } from './PriceCell'
@@ -50,6 +50,7 @@ export function WatchlistTable({
   const [modalOpen, setModalOpen] = useState(false)
   const [annualize, setAnnualize] = useState(false)
   const [usd, setUsd] = useState(false)
+  const [filterQuery, setFilterQuery] = useState('')
 
   // Years for annualizable periods (>1Y with fixed duration)
   const ANNUALIZE_YEARS: Partial<Record<string, number>> = { '3Y': 3, '5Y': 5, '10Y': 10 }
@@ -321,8 +322,16 @@ export function WatchlistTable({
     [prices, flashStates, returns, maxYears, onRemoveAsset, annualize, usd, toUsd, adjReturn, adj1d, mcSymbol]
   )
 
+  const filteredAssets = useMemo(() => {
+    const q = filterQuery.trim().toLowerCase()
+    if (!q) return assets
+    return assets.filter(
+      (a) => a.ticker.toLowerCase().includes(q) || a.name.toLowerCase().includes(q)
+    )
+  }, [assets, filterQuery])
+
   const table = useReactTable({
-    data: assets,
+    data: filteredAssets,
     columns,
     state: { sorting, columnVisibility },
     onSortingChange: setSorting,
@@ -345,6 +354,24 @@ export function WatchlistTable({
       <div className="flex flex-wrap items-center gap-3">
         <div className="flex-1 min-w-48 max-w-80">
           <TickerSearch onAdd={onAddAsset} existingTickers={tickers} />
+        </div>
+        <div className="relative min-w-36">
+          <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+          <input
+            type="text"
+            placeholder="Filter list…"
+            value={filterQuery}
+            onChange={(e) => setFilterQuery(e.target.value)}
+            className="w-full rounded border border-border bg-transparent pl-7 pr-7 py-1 text-xs placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+          />
+          {filterQuery && (
+            <button
+              onClick={() => setFilterQuery('')}
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+            >
+              <X className="h-3 w-3" />
+            </button>
+          )}
         </div>
         <button
           onClick={() => setAnnualize((v) => !v)}
@@ -409,13 +436,15 @@ export function WatchlistTable({
             ))}
           </thead>
           <tbody>
-            {assets.length === 0 ? (
+            {filteredAssets.length === 0 ? (
               <tr>
                 <td
                   colSpan={table.getAllColumns().length}
                   className="py-12 text-center text-muted-foreground"
                 >
-                  No assets yet. Use the search above to add tickers.
+                  {assets.length === 0
+                    ? 'No assets yet. Use the search above to add tickers.'
+                    : 'No assets match your filter.'}
                 </td>
               </tr>
             ) : (

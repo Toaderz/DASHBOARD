@@ -19,7 +19,8 @@ Dashboard financiero multiusuario SaaS para monitoreo de portafolios globales en
 - **Anualizar retornos** (toggle "Ann.") — CAGR para periodos ≥1Y
 - **Convertir a USD** (toggle "USD") — convierte precio, AUM, mkt cap y retornos usando FX en tiempo real
 - **Columna CCY** — muestra la moneda nativa de cada activo
-- Modal de detalle con gráfico histórico (Recharts) y peers
+- **Filtro inline** — buscador dentro de la lista para filtrar por ticker o nombre sin salir de la watchlist
+- Modal de detalle con gráfico histórico (Recharts) y peers curados por activo
 
 ## Watchlists por defecto
 
