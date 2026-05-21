@@ -160,5 +160,27 @@ export function useWatchlistShares(watchlistId: string | null) {
     return { error: error ? error.message : null }
   }
 
-  return { shares, loading, addShare, removeShare, refetch: fetchShares }
+  const addTeamShares = async (): Promise<{ error: string | null; count: number }> => {
+    const { data: { user } } = await supabase.auth.getUser()
+    const { data: teamMembers, error: fetchError } = await supabase
+      .from('profiles')
+      .select('id')
+      .eq('is_team_evolve', true)
+      .neq('id', user?.id ?? '')
+    if (fetchError) return { error: fetchError.message, count: 0 }
+    if (!teamMembers?.length) return { error: null, count: 0 }
+
+    const existingIds = new Set(shares.map((s) => s.shared_with_user_id))
+    const toAdd = teamMembers.filter((m) => !existingIds.has(m.id))
+    if (!toAdd.length) return { error: null, count: 0 }
+
+    const { error } = await supabase
+      .from('watchlist_shares')
+      .insert(toAdd.map((m) => ({ watchlist_id: watchlistId, shared_with_user_id: m.id })))
+    if (error) return { error: error.message, count: 0 }
+    await fetchShares()
+    return { error: null, count: toAdd.length }
+  }
+
+  return { shares, loading, addShare, removeShare, addTeamShares, refetch: fetchShares }
 }

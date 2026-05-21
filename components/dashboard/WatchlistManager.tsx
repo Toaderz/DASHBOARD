@@ -47,8 +47,10 @@ export function WatchlistManager({
   const [shareEmail, setShareEmail] = useState('')
   const [shareLoading, setShareLoading] = useState(false)
   const [shareError, setShareError] = useState<string | null>(null)
+  const [teamShareLoading, setTeamShareLoading] = useState(false)
+  const [teamShareMsg, setTeamShareMsg] = useState<string | null>(null)
 
-  const { shares, addShare, removeShare } = useWatchlistShares(shareWatchlistId)
+  const { shares, addShare, removeShare, addTeamShares } = useWatchlistShares(shareWatchlistId)
 
   const handleCreate = async () => {
     if (!createName.trim()) return
@@ -83,6 +85,21 @@ export function WatchlistManager({
     setShareWatchlistId(null)
     setShareEmail('')
     setShareError(null)
+    setTeamShareMsg(null)
+  }
+
+  const handleTeamShare = async () => {
+    setTeamShareLoading(true)
+    setTeamShareMsg(null)
+    const { error, count } = await addTeamShares()
+    if (error) {
+      setTeamShareMsg(error)
+    } else if (count === 0) {
+      setTeamShareMsg('Ya está compartida con todo el equipo')
+    } else {
+      setTeamShareMsg(`Compartida con ${count} miembro${count !== 1 ? 's' : ''} del equipo`)
+    }
+    setTeamShareLoading(false)
   }
 
   const handleAddShare = async () => {
@@ -254,6 +271,27 @@ export function WatchlistManager({
                 <p className="text-sm text-destructive">{shareError}</p>
               )}
             </div>
+
+            <div className="flex items-center justify-between rounded-md border px-3 py-2">
+              <div>
+                <p className="text-sm font-medium">Team Evolve</p>
+                <p className="text-xs text-muted-foreground">Compartir con todos los miembros</p>
+              </div>
+              <Button
+                onClick={handleTeamShare}
+                disabled={teamShareLoading}
+                size="sm"
+                variant="outline"
+                className="shrink-0 ml-3"
+              >
+                {teamShareLoading
+                  ? <Loader2 className="h-4 w-4 animate-spin" />
+                  : <><Users className="mr-1.5 h-3.5 w-3.5" />Compartir</>}
+              </Button>
+            </div>
+            {teamShareMsg && (
+              <p className="text-xs text-muted-foreground">{teamShareMsg}</p>
+            )}
 
             {shares.length > 0 && (
               <div className="space-y-1">

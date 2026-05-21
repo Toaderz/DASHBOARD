@@ -25,6 +25,7 @@ export interface Profile {
   full_name: string | null
   avatar_url: string | null
   created_at: string
+  is_team_evolve?: boolean
 }
 
 export interface AssetMetadata {
