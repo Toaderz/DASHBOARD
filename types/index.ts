@@ -128,6 +128,14 @@ export interface SearchResult {
   exchange?: string
 }
 
+export interface WatchlistShare {
+  id: string
+  watchlist_id: string
+  shared_with_user_id: string
+  created_at: string
+  profiles?: { email: string | null }[] | null
+}
+
 export type FlashState = 'up' | 'down' | null
 
 export interface MetricDefinition {

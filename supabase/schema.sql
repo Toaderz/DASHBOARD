@@ -562,6 +562,47 @@ create trigger on_profile_created_seed_watchlists
   for each row execute function handle_new_user_default_watchlists();
 
 -- ============================================================
+-- SHARING: watchlist_shares table
+-- Run this block once in Supabase SQL Editor to enable sharing
+-- ============================================================
+
+create table if not exists watchlist_shares (
+  id                    uuid primary key default gen_random_uuid(),
+  watchlist_id          uuid not null references watchlists(id) on delete cascade,
+  shared_with_user_id   uuid not null references profiles(id) on delete cascade,
+  created_at            timestamptz default now(),
+  constraint watchlist_shares_unique unique (watchlist_id, shared_with_user_id)
+);
+
+alter table watchlist_shares enable row level security;
+
+-- Owner can manage shares for watchlists they own
+create policy "owner_manage_shares" on watchlist_shares
+  for all
+  using (watchlist_id in (select id from watchlists where user_id = auth.uid()))
+  with check (watchlist_id in (select id from watchlists where user_id = auth.uid()));
+
+-- Recipient can read their own shares
+create policy "recipient_view_shares" on watchlist_shares
+  for select using (shared_with_user_id = auth.uid());
+
+-- Shared users can read watchlists shared with them
+create policy "shared_read_watchlists" on watchlists
+  for select using (
+    id in (select watchlist_id from watchlist_shares where shared_with_user_id = auth.uid())
+  );
+
+-- Shared users can read assets of watchlists shared with them
+create policy "shared_read_assets" on watchlist_assets
+  for select using (
+    watchlist_id in (select watchlist_id from watchlist_shares where shared_with_user_id = auth.uid())
+  );
+
+-- Allow any authenticated user to read profiles (needed for share dialog email display)
+create policy "authenticated_read_profiles" on profiles
+  for select using (auth.uid() is not null);
+
+-- ============================================================
 -- MIGRATION + BACKFILL (run in Supabase SQL Editor in this order)
 -- ============================================================
 -- Step 1 — Schema migration (once per DB):

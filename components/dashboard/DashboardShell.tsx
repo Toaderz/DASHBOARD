@@ -58,6 +58,7 @@ export function DashboardShell({ user, children }: DashboardShellProps) {
           <div className="pt-2">
             <WatchlistManager
               watchlists={watchlists}
+              currentUserId={user.id}
               selectedId={selectedId}
               onSelect={handleSelect}
               onCreate={createWatchlist}

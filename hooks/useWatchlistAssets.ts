@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import type { AssetMetadata, AssetWithCategory, Watchlist } from '@/types'
+import type { AssetMetadata, AssetWithCategory, Watchlist, WatchlistShare } from '@/types'
 
 export function useWatchlists() {
   const [watchlists, setWatchlists] = useState<Watchlist[]>([])
@@ -115,4 +115,47 @@ export function useWatchlistAssets(watchlistId: string) {
   }
 
   return { assets, loading, refetch: fetchAssets, addAsset, removeAsset }
+}
+
+export function useWatchlistShares(watchlistId: string | null) {
+  const [shares, setShares] = useState<WatchlistShare[]>([])
+  const [loading, setLoading] = useState(false)
+  const supabase = createClient()
+
+  const fetchShares = useCallback(async () => {
+    if (!watchlistId) { setShares([]); return }
+    setLoading(true)
+    const { data } = await supabase
+      .from('watchlist_shares')
+      .select('id, watchlist_id, shared_with_user_id, created_at, profiles(email)')
+      .eq('watchlist_id', watchlistId)
+    setShares((data as WatchlistShare[]) ?? [])
+    setLoading(false)
+  }, [supabase, watchlistId])
+
+  useEffect(() => { fetchShares() }, [fetchShares])
+
+  const addShare = async (email: string): Promise<{ error: string | null }> => {
+    const res = await fetch(`/api/users/find?email=${encodeURIComponent(email)}`)
+    const body = await res.json()
+    if (!res.ok) return { error: body.error ?? 'Error al compartir' }
+
+    const { error } = await supabase
+      .from('watchlist_shares')
+      .insert({ watchlist_id: watchlistId, shared_with_user_id: body.id })
+    if (error) return { error: error.message }
+    await fetchShares()
+    return { error: null }
+  }
+
+  const removeShare = async (shareId: string): Promise<{ error: string | null }> => {
+    const { error } = await supabase
+      .from('watchlist_shares')
+      .delete()
+      .eq('id', shareId)
+    if (!error) setShares((prev) => prev.filter((s) => s.id !== shareId))
+    return { error: error ? error.message : null }
+  }
+
+  return { shares, loading, addShare, removeShare, refetch: fetchShares }
 }

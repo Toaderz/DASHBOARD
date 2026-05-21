@@ -20,6 +20,7 @@ Dashboard financiero multiusuario SaaS para monitoreo de portafolios globales en
 - **Convertir a USD** (toggle "USD") — convierte precio, AUM, mkt cap y retornos usando FX en tiempo real
 - **Columna CCY** — muestra la moneda nativa de cada activo
 - **Filtro inline** — buscador dentro de la lista para filtrar por ticker o nombre sin salir de la watchlist
+- **Compartir watchlists** — comparte una watchlist con otro usuario por email; el destinatario la ve en su sidebar (solo lectura)
 - Modal de detalle con gráfico histórico (Recharts) y peers curados por activo
 
 ## Watchlists por defecto
@@ -45,7 +46,7 @@ FINNHUB_API_KEY=             # 'your-finnhub-api-key' activa modo mock
 
 ### 2. Base de datos
 
-Corre `supabase/schema.sql` completo en el SQL Editor de Supabase. Incluye DDL, RLS, funciones seed y migraciones comentadas.
+Corre `supabase/schema.sql` completo en el SQL Editor de Supabase. Incluye DDL, RLS, funciones seed, migraciones comentadas y el bloque `-- SHARING` para la tabla `watchlist_shares`.
 
 ### 3. Desarrollo
 
@@ -62,10 +63,13 @@ app/api/market/
   quote/     → precios + fundamentals (cache 60s / 24h en price_cache)
   history/   → retornos históricos + FX period returns
   search/    → búsqueda de tickers
+app/api/users/
+  find/      → busca usuario por email (service role) para compartir watchlists
 hooks/
   useFxData.ts             → spot FX rates (1-min) + period returns (5-min)
   useRealtimePrices.ts     → polling 5s + flash states
   usePerformanceMetrics.ts → cálculo retornos históricos
+  useWatchlistAssets.ts    → useWatchlists + useWatchlistAssets + useWatchlistShares
 ```
 
 ## Diagnóstico

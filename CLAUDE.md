@@ -44,9 +44,10 @@ function getAdminClient() {
 ### RLS (Row Level Security)
 | Tabla | Política |
 |---|---|
-| `profiles` | Solo el propio usuario (select/insert/update) |
-| `watchlists` | Solo el propio usuario (`user_id = auth.uid()`) |
-| `watchlist_assets` | Via join con watchlists del usuario |
+| `profiles` | Solo el propio usuario (select/insert/update) + `authenticated_read_profiles` (cualquier autenticado puede SELECT para mostrar emails en el share dialog) |
+| `watchlists` | Solo el propio usuario (`user_id = auth.uid()`) + `shared_read_watchlists` (destinatarios de shares pueden SELECT) |
+| `watchlist_assets` | Via join con watchlists del usuario + `shared_read_assets` (destinatarios de shares pueden SELECT) |
+| `watchlist_shares` | `owner_manage_shares` (dueño gestiona) + `recipient_view_shares` (destinatario puede SELECT) |
 | `assets_metadata` | SELECT público + INSERT para usuarios autenticados |
 | `price_cache` | SELECT público, escritura solo vía service role |
 
@@ -66,6 +67,8 @@ app/
     history/route.ts             # Yahoo Finance v8 históricos
     search/route.ts              # Búsqueda Finnhub
     export/route.ts              # Export de watchlist a CSV
+  api/users/
+    find/route.ts                # GET ?email= — busca usuario por email (service role) para compartir
 components/dashboard/
   DashboardShell.tsx             # Sidebar + nav (client)
   WatchlistView.tsx              # Bridge server→client para watchlist
@@ -76,7 +79,7 @@ components/dashboard/
   MetricsSelector.tsx            # Toggle columnas (persiste en JSONB)
   AssetDetailModal.tsx           # Modal con gráfico Recharts + peers
 hooks/
-  useWatchlistAssets.ts          # useWatchlists + useWatchlistAssets
+  useWatchlistAssets.ts          # useWatchlists + useWatchlistAssets + useWatchlistShares
   useRealtimePrices.ts           # Polling 5s + flash states
   usePerformanceMetrics.ts       # Cálculo retornos históricos
   useFxData.ts                   # FX spot rates (1-min) + period returns (5-min) para conversión USD
@@ -121,3 +124,4 @@ npm run build  # Verificar TypeScript + build
 - **CT funds tickers**: `0P0000NCAC` (Global Tech), `0P00000R12.L` (Japan), `0P00000R0U.L` (European), `0P0001CZXM.L` (Global Focus), `0P00000XBQ.L` (North American) — tickers internos de Yahoo Finance para fondos sin cotización directa.
 - **Peer taxonomy** (`lib/market/peer-taxonomy.ts`): mapa estático `STATIC_PEERS` con peers curados para todos los activos de las 3 watchlists por defecto. `computeInitialPeers()` lo consulta primero; si no hay entrada, cae al scoring algorítmico por taxonomía.
 - **Filtro inline de watchlist**: input "Filter list…" en el toolbar de `WatchlistTable` — filtra `assets` por ticker o nombre en tiempo real, sin afectar precios ni el modal de detalle.
+- **Compartir watchlists**: `WatchlistManager` muestra botón Share2 (hover) en watchlists propias. El dialog llama a `GET /api/users/find?email=` (service role) para resolver el email a un `user_id`, luego inserta en `watchlist_shares`. Las watchlists compartidas aparecen en el sidebar del destinatario con icono `Users` (solo lectura). PostgREST devuelve el join de `profiles` como array — usar `share.profiles?.[0]?.email`. `currentUserId` se pasa desde `DashboardShell` para distinguir owned vs. shared client-side.
