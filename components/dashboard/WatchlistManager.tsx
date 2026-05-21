@@ -302,7 +302,7 @@ export function WatchlistManager({
                     className="flex items-center justify-between rounded-md bg-muted px-2 py-1.5"
                   >
                     <span className="text-sm truncate">
-                      {share.profiles?.email ?? share.shared_with_user_id}
+                      {share.profiles?.[0]?.email ?? share.shared_with_user_id}
                     </span>
                     <Button
                       variant="ghost"

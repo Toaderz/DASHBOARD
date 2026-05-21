@@ -134,7 +134,7 @@ export interface WatchlistShare {
   watchlist_id: string
   shared_with_user_id: string
   created_at: string
-  profiles?: { email: string | null } | null
+  profiles?: { email: string | null }[] | null
 }
 
 export type FlashState = 'up' | 'down' | null
