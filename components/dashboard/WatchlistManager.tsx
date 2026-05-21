@@ -56,7 +56,8 @@ export function WatchlistManager({
     setCreateError(null)
     const { error } = await onCreate(createName.trim(), createDesc.trim() || undefined)
     if (error) {
-      setCreateError('Error al crear la watchlist. Intenta de nuevo.')
+      const msg = (error as { message?: string })?.message ?? 'Error desconocido'
+      setCreateError(msg)
       setCreating(false)
       return
     }

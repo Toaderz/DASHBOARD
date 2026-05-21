@@ -11,10 +11,11 @@ export function useWatchlists() {
 
   const fetchWatchlists = useCallback(async () => {
     setLoading(true)
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('watchlists')
       .select('*')
       .order('created_at', { ascending: true })
+    if (error) console.error('[useWatchlists] fetch error:', error)
     setWatchlists((data as Watchlist[]) ?? [])
     setLoading(false)
   }, [supabase])
@@ -24,14 +25,16 @@ export function useWatchlists() {
   }, [fetchWatchlists])
 
   const createWatchlist = async (name: string, description?: string) => {
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return { data: null, error: new Error('Not authenticated') }
+    const { data: { user }, error: authError } = await supabase.auth.getUser()
+    if (authError) console.error('[createWatchlist] auth error:', authError)
+    if (!user) return { data: null, error: new Error('Not authenticated — sesión no válida') }
 
     const { data, error } = await supabase
       .from('watchlists')
       .insert({ name, description: description ?? null, user_id: user.id })
       .select()
       .single()
+    if (error) console.error('[createWatchlist] insert error:', error)
     if (!error && data) {
       setWatchlists((prev) => [...prev, data as Watchlist])
     }
