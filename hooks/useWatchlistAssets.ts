@@ -128,11 +128,33 @@ export function useWatchlistShares(watchlistId: string | null) {
   const fetchShares = useCallback(async () => {
     if (!watchlistId) { setShares([]); return }
     setLoading(true)
-    const { data } = await supabase
+
+    const { data: sharesData } = await supabase
       .from('watchlist_shares')
-      .select('id, watchlist_id, shared_with_user_id, created_at, profiles(email)')
+      .select('id, watchlist_id, shared_with_user_id, created_at')
       .eq('watchlist_id', watchlistId)
-    setShares((data as WatchlistShare[]) ?? [])
+
+    if (!sharesData?.length) {
+      setShares([])
+      setLoading(false)
+      return
+    }
+
+    const userIds = sharesData.map((s) => s.shared_with_user_id)
+    const { data: profilesData } = await supabase
+      .from('profiles')
+      .select('id, email')
+      .in('id', userIds)
+
+    const emailById: Record<string, string | null> = {}
+    for (const p of profilesData ?? []) emailById[p.id] = p.email
+
+    const merged: WatchlistShare[] = sharesData.map((s) => ({
+      ...s,
+      profiles: [{ email: emailById[s.shared_with_user_id] ?? null }],
+    }))
+
+    setShares(merged)
     setLoading(false)
   }, [supabase, watchlistId])
 
