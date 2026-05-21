@@ -576,6 +576,22 @@ create table if not exists watchlist_shares (
 
 alter table watchlist_shares enable row level security;
 
+-- SECURITY DEFINER function to get watchlist IDs shared with current user.
+-- Bypasses RLS on watchlist_shares, breaking the circular dependency:
+--   watchlists.shared_read_watchlists → watchlist_shares (RLS)
+--   watchlist_shares.owner_manage_shares → watchlists (RLS)  ← infinite loop
+-- With this function the call chain is:
+--   watchlists.shared_read_watchlists → get_shared_watchlist_ids() → watchlist_shares (no RLS)
+create or replace function get_shared_watchlist_ids()
+returns setof uuid
+language sql
+security definer
+set search_path = public
+stable
+as $$
+  select watchlist_id from watchlist_shares where shared_with_user_id = auth.uid()
+$$;
+
 -- Owner can manage shares for watchlists they own
 create policy "owner_manage_shares" on watchlist_shares
   for all
@@ -586,17 +602,13 @@ create policy "owner_manage_shares" on watchlist_shares
 create policy "recipient_view_shares" on watchlist_shares
   for select using (shared_with_user_id = auth.uid());
 
--- Shared users can read watchlists shared with them
+-- Shared users can read watchlists shared with them (uses SECURITY DEFINER to avoid recursion)
 create policy "shared_read_watchlists" on watchlists
-  for select using (
-    id in (select watchlist_id from watchlist_shares where shared_with_user_id = auth.uid())
-  );
+  for select using (id in (select get_shared_watchlist_ids()));
 
 -- Shared users can read assets of watchlists shared with them
 create policy "shared_read_assets" on watchlist_assets
-  for select using (
-    watchlist_id in (select watchlist_id from watchlist_shares where shared_with_user_id = auth.uid())
-  );
+  for select using (watchlist_id in (select get_shared_watchlist_ids()));
 
 -- Allow any authenticated user to read profiles (needed for share dialog email display)
 create policy "authenticated_read_profiles" on profiles
