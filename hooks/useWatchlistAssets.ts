@@ -7,16 +7,32 @@ import type { AssetMetadata, AssetWithCategory, Watchlist, WatchlistShare } from
 export function useWatchlists() {
   const [watchlists, setWatchlists] = useState<Watchlist[]>([])
   const [loading, setLoading] = useState(true)
+  const [ownerEmails, setOwnerEmails] = useState<Record<string, string>>({})
   const supabase = createClient()
 
   const fetchWatchlists = useCallback(async () => {
     setLoading(true)
+    const { data: { user } } = await supabase.auth.getUser()
     const { data, error } = await supabase
       .from('watchlists')
       .select('*')
       .order('created_at', { ascending: true })
     if (error) console.error('[useWatchlists] fetch error:', error)
-    setWatchlists((data as Watchlist[]) ?? [])
+    const wls = (data as Watchlist[]) ?? []
+    setWatchlists(wls)
+
+    if (user) {
+      const sharedOwnerIds = [...new Set(wls.filter((w) => w.user_id !== user.id).map((w) => w.user_id))]
+      if (sharedOwnerIds.length) {
+        const { data: profiles } = await supabase.from('profiles').select('id, email').in('id', sharedOwnerIds)
+        const emails: Record<string, string> = {}
+        for (const p of profiles ?? []) if (p.email) emails[p.id] = p.email
+        setOwnerEmails(emails)
+      } else {
+        setOwnerEmails({})
+      }
+    }
+
     setLoading(false)
   }, [supabase])
 
@@ -62,7 +78,19 @@ export function useWatchlists() {
     return { error }
   }
 
-  return { watchlists, loading, refetch: fetchWatchlists, createWatchlist, updateWatchlist, deleteWatchlist }
+  const leaveWatchlist = async (watchlistId: string) => {
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return { error: new Error('Not authenticated') }
+    const { error } = await supabase
+      .from('watchlist_shares')
+      .delete()
+      .eq('watchlist_id', watchlistId)
+      .eq('shared_with_user_id', user.id)
+    if (!error) setWatchlists((prev) => prev.filter((w) => w.id !== watchlistId))
+    return { error }
+  }
+
+  return { watchlists, loading, ownerEmails, refetch: fetchWatchlists, createWatchlist, updateWatchlist, deleteWatchlist, leaveWatchlist }
 }
 
 export function useWatchlistAssets(watchlistId: string) {

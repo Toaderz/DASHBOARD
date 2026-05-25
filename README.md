@@ -20,7 +20,8 @@ Dashboard financiero multiusuario SaaS para monitoreo de portafolios globales en
 - **Convertir a USD** (toggle "USD") — convierte precio, AUM, mkt cap y retornos usando FX en tiempo real
 - **Columna CCY** — muestra la moneda nativa de cada activo
 - **Filtro inline** — buscador dentro de la lista para filtrar por ticker o nombre sin salir de la watchlist
-- **Compartir watchlists** — comparte una watchlist con otro usuario por email; el destinatario la ve en su sidebar (solo lectura)
+- **Ordenar por métrica** — click en cualquier cabecera (1D, AUM, P/E, etc.) para ordenar de mayor a menor o viceversa; nulls siempre al fondo; respeta los toggles Ann. y USD
+- **Compartir watchlists** — comparte con otro usuario por email; el destinatario ve la lista en su sidebar (solo lectura) con subtexto `de @usuario` identificando al dueño; puede dejar de seguirla con un clic sin afectar al dueño
 - Modal de detalle con gráfico histórico (Recharts) y peers curados por activo
 
 ## Watchlists por defecto

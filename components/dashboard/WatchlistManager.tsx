@@ -20,20 +20,24 @@ interface WatchlistManagerProps {
   watchlists: Watchlist[]
   currentUserId: string | null
   selectedId: string | null
+  ownerEmails: Record<string, string>
   onSelect: (id: string) => void
   onCreate: (name: string, description?: string) => Promise<{ error: unknown }>
   onDelete: (id: string) => Promise<{ error: unknown }>
   onRename: (id: string, name: string) => Promise<{ error: unknown }>
+  onLeave: (id: string) => Promise<{ error: unknown }>
 }
 
 export function WatchlistManager({
   watchlists,
   currentUserId,
   selectedId,
+  ownerEmails,
   onSelect,
   onCreate,
   onDelete,
   onRename,
+  onLeave,
 }: WatchlistManagerProps) {
   const [createOpen, setCreateOpen] = useState(false)
   const [createName, setCreateName] = useState('')
@@ -43,6 +47,7 @@ export function WatchlistManager({
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editName, setEditName] = useState('')
 
+  const [leaveConfirmId, setLeaveConfirmId] = useState<string | null>(null)
   const [shareWatchlistId, setShareWatchlistId] = useState<string | null>(null)
   const [shareEmail, setShareEmail] = useState('')
   const [shareLoading, setShareLoading] = useState(false)
@@ -169,6 +174,9 @@ export function WatchlistManager({
 
       {watchlists.map((wl) => {
         const isOwned = currentUserId != null && wl.user_id === currentUserId
+        const ownerEmail = !isOwned ? ownerEmails[wl.user_id] : undefined
+        const ownerHandle = ownerEmail ? `@${ownerEmail.split('@')[0]}` : null
+
         return (
           <div
             key={wl.id}
@@ -177,7 +185,7 @@ export function WatchlistManager({
             onClick={() => onSelect(wl.id)}
           >
             {!isOwned && (
-              <Users className="h-3 w-3 shrink-0 text-muted-foreground" />
+              <Users className="h-3 w-3 shrink-0 text-muted-foreground mt-0.5" />
             )}
 
             {editingId === wl.id ? (
@@ -194,7 +202,14 @@ export function WatchlistManager({
                 onClick={(e) => e.stopPropagation()}
               />
             ) : (
-              <span className="flex-1 truncate text-sm">{wl.name}</span>
+              <div className="flex-1 min-w-0">
+                <span className="block truncate text-sm">{wl.name}</span>
+                {ownerHandle && (
+                  <span className="block truncate text-[10px] text-muted-foreground leading-tight">
+                    de {ownerHandle}
+                  </span>
+                )}
+              </div>
             )}
 
             {isOwned && (
@@ -230,6 +245,18 @@ export function WatchlistManager({
                 </Button>
               </div>
             )}
+
+            {!isOwned && (
+              <Button
+                variant="ghost"
+                size="sm"
+                title="Dejar de seguir esta lista"
+                className="h-5 w-5 p-0 hidden group-hover:flex text-muted-foreground hover:text-destructive shrink-0"
+                onClick={(e) => { e.stopPropagation(); setLeaveConfirmId(wl.id) }}
+              >
+                <X className="h-3 w-3" />
+              </Button>
+            )}
           </div>
         )
       })}
@@ -239,6 +266,30 @@ export function WatchlistManager({
           No watchlists yet. Create one to get started.
         </p>
       )}
+
+      {/* Leave confirmation dialog */}
+      <Dialog open={leaveConfirmId !== null} onOpenChange={(open) => { if (!open) setLeaveConfirmId(null) }}>
+        <DialogContent className="sm:max-w-sm" aria-describedby={undefined}>
+          <DialogHeader>
+            <DialogTitle>Dejar de seguir lista</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground py-2">
+            ¿Deseas dejar de seguir esta lista? Podrás volver a acceder a ella si te la comparten de nuevo.
+          </p>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setLeaveConfirmId(null)}>Cancelar</Button>
+            <Button
+              variant="destructive"
+              onClick={async () => {
+                if (leaveConfirmId) await onLeave(leaveConfirmId)
+                setLeaveConfirmId(null)
+              }}
+            >
+              Dejar de seguir
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Share Dialog */}
       <Dialog open={shareWatchlistId !== null} onOpenChange={(open) => { if (!open) closeShare() }}>

@@ -19,7 +19,7 @@ interface DashboardShellProps {
 export function DashboardShell({ user, children }: DashboardShellProps) {
   const router = useRouter()
   const supabase = createClient()
-  const { watchlists, createWatchlist, deleteWatchlist, updateWatchlist } = useWatchlists()
+  const { watchlists, ownerEmails, createWatchlist, deleteWatchlist, updateWatchlist, leaveWatchlist } = useWatchlists()
   const [selectedId, setSelectedId] = useState<string | null>(null)
 
   const handleSignOut = async () => {
@@ -60,10 +60,12 @@ export function DashboardShell({ user, children }: DashboardShellProps) {
               watchlists={watchlists}
               currentUserId={user.id}
               selectedId={selectedId}
+              ownerEmails={ownerEmails}
               onSelect={handleSelect}
               onCreate={createWatchlist}
               onDelete={deleteWatchlist}
               onRename={(id, name) => updateWatchlist(id, { name })}
+              onLeave={leaveWatchlist}
             />
           </div>
         </nav>

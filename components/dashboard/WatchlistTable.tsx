@@ -144,181 +144,234 @@ export function WatchlistTable({
   )
 
   const columns = useMemo(
-    () => [
-      helper.accessor('ticker', {
-        header: 'Ticker',
-        cell: ({ row }) => (
-          <span className="font-mono font-semibold">{row.original.ticker}</span>
-        ),
-      }),
-      helper.accessor('name', {
-        header: 'Name',
-        cell: ({ getValue }) => (
-          <span className="truncate text-muted-foreground">{getValue()}</span>
-        ),
-      }),
-      helper.display({
-        id: 'price',
-        header: 'Price',
-        cell: ({ row }) => {
-          const t = row.original.ticker
-          const q = prices[t]
-          const displayCurrency = usd ? 'USD' : (q?.currency ?? 'USD')
-          const displayPrice = usd ? toUsd(q?.price, t) ?? q?.price : q?.price
-          return <PriceCell price={displayPrice} flashState={flashStates[t] ?? null} currency={displayCurrency} />
-        },
-      }),
-      helper.display({
-        id: 'currency',
-        header: 'CCY',
-        cell: ({ row }) => {
-          const c = prices[row.original.ticker]?.currency
-          return c
-            ? <span className="text-[10px] font-mono text-muted-foreground">{c}</span>
-            : <span className="text-muted-foreground">—</span>
-        },
-      }),
-      helper.display({
-        id: '1D',
-        header: '1D %',
-        cell: ({ row }) => {
-          const t = row.original.ticker
-          const v = adj1d(prices[t]?.change_percent, t)
-          return <span className={percentColor(v)}>{formatPercent(v)}</span>
-        },
-      }),
-      ...(['1W', '1M', 'YTD', '1Y', '3Y', '5Y', '10Y', 'MAX'] as MetricKey[]).map((period) =>
+    () => {
+      // Nulls always sort to the end regardless of asc/desc direction
+      const numSort = (a: number | null | undefined, b: number | null | undefined) => {
+        if (a == null && b == null) return 0
+        if (a == null) return 1
+        if (b == null) return -1
+        return a - b
+      }
+
+      return [
+        helper.accessor('ticker', {
+          header: 'Ticker',
+          cell: ({ row }) => (
+            <span className="font-mono font-semibold">{row.original.ticker}</span>
+          ),
+        }),
+        helper.accessor('name', {
+          header: 'Name',
+          cell: ({ getValue }) => (
+            <span className="truncate text-muted-foreground">{getValue()}</span>
+          ),
+        }),
         helper.display({
-          id: period,
-          header: () => {
-            const isAnnualizable = !!ANNUALIZE_YEARS[period] || period === 'MAX'
-            return <span>{period} %{annualize && isAnnualizable ? <span className="text-[10px] text-muted-foreground ml-0.5">ann</span> : null}</span>
+          id: 'price',
+          header: 'Price',
+          sortingFn: (rowA, rowB) => {
+            const a = toUsd(prices[rowA.original.ticker]?.price, rowA.original.ticker) ?? prices[rowA.original.ticker]?.price
+            const b = toUsd(prices[rowB.original.ticker]?.price, rowB.original.ticker) ?? prices[rowB.original.ticker]?.price
+            return numSort(a, b)
           },
           cell: ({ row }) => {
             const t = row.original.ticker
-            const raw = adjReturn(returns[t]?.[period], t, period)
-            const years = ANNUALIZE_YEARS[period] ?? (period === 'MAX' ? (maxYears[t] ?? null) : null)
-            const canAnnualize = years != null && years >= 1
-            const v = annualize && canAnnualize ? annualizeReturn(raw, years!) : raw
+            const q = prices[t]
+            const displayCurrency = usd ? 'USD' : (q?.currency ?? 'USD')
+            const displayPrice = usd ? toUsd(q?.price, t) ?? q?.price : q?.price
+            return <PriceCell price={displayPrice} flashState={flashStates[t] ?? null} currency={displayCurrency} />
+          },
+        }),
+        helper.display({
+          id: 'currency',
+          header: 'CCY',
+          enableSorting: false,
+          cell: ({ row }) => {
+            const c = prices[row.original.ticker]?.currency
+            return c
+              ? <span className="text-[10px] font-mono text-muted-foreground">{c}</span>
+              : <span className="text-muted-foreground">—</span>
+          },
+        }),
+        helper.display({
+          id: '1D',
+          header: '1D %',
+          sortingFn: (rowA, rowB) =>
+            numSort(adj1d(prices[rowA.original.ticker]?.change_percent, rowA.original.ticker),
+                    adj1d(prices[rowB.original.ticker]?.change_percent, rowB.original.ticker)),
+          cell: ({ row }) => {
+            const t = row.original.ticker
+            const v = adj1d(prices[t]?.change_percent, t)
             return <span className={percentColor(v)}>{formatPercent(v)}</span>
           },
-        })
-      ),
-      helper.display({
-        id: 'marketCap',
-        header: 'Mkt Cap',
-        cell: ({ row }) => {
-          const t = row.original.ticker
-          const mc = toUsd(prices[t]?.market_cap, t)
-          return <span className="tabular-nums">{formatMarketCap(mc ?? undefined, mcSymbol(t))}</span>
-        },
-      }),
-      helper.display({
-        id: 'pe',
-        header: 'P/E',
-        cell: ({ row }) => {
-          const t = row.original.ticker
-          const pe = prices[t]?.pe
-          return (
-            <span className="tabular-nums">
-              {pe != null ? formatRatio(pe) : <span className="text-muted-foreground">—</span>}
-            </span>
-          )
-        },
-      }),
-      helper.display({
-        id: 'dividendYield',
-        header: 'Div Yield',
-        cell: ({ row }) => {
-          const t = row.original.ticker
-          const dy = prices[t]?.dividend_yield
-          return (
-            <span className="tabular-nums">
-              {dy != null && dy > 0
-                ? formatPercent(dy)
-                : <span className="text-muted-foreground">—</span>}
-            </span>
-          )
-        },
-      }),
-      helper.display({
-        id: 'from52wHigh',
-        header: '52W High',
-        cell: ({ row }) => {
-          const t = row.original.ticker
-          const price = prices[t]?.price
-          const high = prices[t]?.high_52w
-          if (!price || !high) return <span className="text-muted-foreground">—</span>
-          const pct = ((price - high) / high) * 100
-          return <span className={percentColor(pct)}>{formatRatio(pct)}%</span>
-        },
-      }),
-      helper.display({
-        id: 'expenseRatio',
-        header: 'Exp. Ratio',
-        cell: ({ row }) => {
-          const t = row.original.ticker
-          const er = prices[t]?.expense_ratio
-          return (
-            <span className="tabular-nums">
-              {er != null ? formatExpenseRatio(er) : <span className="text-muted-foreground">—</span>}
-            </span>
-          )
-        },
-      }),
-      helper.display({
-        id: 'aum',
-        header: 'AUM',
-        cell: ({ row }) => {
-          const t = row.original.ticker
-          const a = toUsd(prices[t]?.aum, t)
-          return <span className="tabular-nums">{formatMarketCap(a ?? undefined, mcSymbol(t))}</span>
-        },
-      }),
-      helper.display({
-        id: 'beta',
-        header: 'Beta',
-        cell: ({ row }) => {
-          const t = row.original.ticker
-          const b = prices[t]?.beta
-          return (
-            <span className="tabular-nums">
-              {b != null ? formatRatio(b) : <span className="text-muted-foreground">—</span>}
-            </span>
-          )
-        },
-      }),
-      helper.display({
-        id: 'profitMargins',
-        header: 'Net Margin',
-        cell: ({ row }) => {
-          const t = row.original.ticker
-          const pm = prices[t]?.profit_margins
-          return (
-            <span className="tabular-nums">
-              {pm != null ? formatPercent(pm) : <span className="text-muted-foreground">—</span>}
-            </span>
-          )
-        },
-      }),
-      helper.display({
-        id: 'actions',
-        header: '',
-        cell: ({ row }) => (
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-6 w-6 p-0 opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive"
-            onClick={(e) => {
-              e.stopPropagation()
-              onRemoveAsset(row.original.ticker)
-            }}
-          >
-            <X className="h-3 w-3" />
-          </Button>
+        }),
+        ...(['1W', '1M', 'YTD', '1Y', '3Y', '5Y', '10Y', 'MAX'] as MetricKey[]).map((period) =>
+          helper.display({
+            id: period,
+            header: () => {
+              const isAnnualizable = !!ANNUALIZE_YEARS[period] || period === 'MAX'
+              return <span>{period} %{annualize && isAnnualizable ? <span className="text-[10px] text-muted-foreground ml-0.5">ann</span> : null}</span>
+            },
+            sortingFn: (rowA, rowB) => {
+              const getVal = (ticker: string) => {
+                const raw = adjReturn(returns[ticker]?.[period], ticker, period)
+                const years = ANNUALIZE_YEARS[period] ?? (period === 'MAX' ? (maxYears[ticker] ?? null) : null)
+                const canAnnualize = years != null && years >= 1
+                return annualize && canAnnualize ? annualizeReturn(raw, years!) : raw
+              }
+              return numSort(getVal(rowA.original.ticker), getVal(rowB.original.ticker))
+            },
+            cell: ({ row }) => {
+              const t = row.original.ticker
+              const raw = adjReturn(returns[t]?.[period], t, period)
+              const years = ANNUALIZE_YEARS[period] ?? (period === 'MAX' ? (maxYears[t] ?? null) : null)
+              const canAnnualize = years != null && years >= 1
+              const v = annualize && canAnnualize ? annualizeReturn(raw, years!) : raw
+              return <span className={percentColor(v)}>{formatPercent(v)}</span>
+            },
+          })
         ),
-      }),
-    ],
+        helper.display({
+          id: 'marketCap',
+          header: 'Mkt Cap',
+          sortingFn: (rowA, rowB) =>
+            numSort(toUsd(prices[rowA.original.ticker]?.market_cap, rowA.original.ticker),
+                    toUsd(prices[rowB.original.ticker]?.market_cap, rowB.original.ticker)),
+          cell: ({ row }) => {
+            const t = row.original.ticker
+            const mc = toUsd(prices[t]?.market_cap, t)
+            return <span className="tabular-nums">{formatMarketCap(mc ?? undefined, mcSymbol(t))}</span>
+          },
+        }),
+        helper.display({
+          id: 'pe',
+          header: 'P/E',
+          sortingFn: (rowA, rowB) =>
+            numSort(prices[rowA.original.ticker]?.pe, prices[rowB.original.ticker]?.pe),
+          cell: ({ row }) => {
+            const t = row.original.ticker
+            const pe = prices[t]?.pe
+            return (
+              <span className="tabular-nums">
+                {pe != null ? formatRatio(pe) : <span className="text-muted-foreground">—</span>}
+              </span>
+            )
+          },
+        }),
+        helper.display({
+          id: 'dividendYield',
+          header: 'Div Yield',
+          sortingFn: (rowA, rowB) =>
+            numSort(prices[rowA.original.ticker]?.dividend_yield, prices[rowB.original.ticker]?.dividend_yield),
+          cell: ({ row }) => {
+            const t = row.original.ticker
+            const dy = prices[t]?.dividend_yield
+            return (
+              <span className="tabular-nums">
+                {dy != null && dy > 0
+                  ? formatPercent(dy)
+                  : <span className="text-muted-foreground">—</span>}
+              </span>
+            )
+          },
+        }),
+        helper.display({
+          id: 'from52wHigh',
+          header: '52W High',
+          sortingFn: (rowA, rowB) => {
+            const pct = (t: string) => {
+              const p = prices[t]?.price
+              const h = prices[t]?.high_52w
+              return p && h ? ((p - h) / h) * 100 : null
+            }
+            return numSort(pct(rowA.original.ticker), pct(rowB.original.ticker))
+          },
+          cell: ({ row }) => {
+            const t = row.original.ticker
+            const price = prices[t]?.price
+            const high = prices[t]?.high_52w
+            if (!price || !high) return <span className="text-muted-foreground">—</span>
+            const pct = ((price - high) / high) * 100
+            return <span className={percentColor(pct)}>{formatRatio(pct)}%</span>
+          },
+        }),
+        helper.display({
+          id: 'expenseRatio',
+          header: 'Exp. Ratio',
+          sortingFn: (rowA, rowB) =>
+            numSort(prices[rowA.original.ticker]?.expense_ratio, prices[rowB.original.ticker]?.expense_ratio),
+          cell: ({ row }) => {
+            const t = row.original.ticker
+            const er = prices[t]?.expense_ratio
+            return (
+              <span className="tabular-nums">
+                {er != null ? formatExpenseRatio(er) : <span className="text-muted-foreground">—</span>}
+              </span>
+            )
+          },
+        }),
+        helper.display({
+          id: 'aum',
+          header: 'AUM',
+          sortingFn: (rowA, rowB) =>
+            numSort(toUsd(prices[rowA.original.ticker]?.aum, rowA.original.ticker),
+                    toUsd(prices[rowB.original.ticker]?.aum, rowB.original.ticker)),
+          cell: ({ row }) => {
+            const t = row.original.ticker
+            const a = toUsd(prices[t]?.aum, t)
+            return <span className="tabular-nums">{formatMarketCap(a ?? undefined, mcSymbol(t))}</span>
+          },
+        }),
+        helper.display({
+          id: 'beta',
+          header: 'Beta',
+          sortingFn: (rowA, rowB) =>
+            numSort(prices[rowA.original.ticker]?.beta, prices[rowB.original.ticker]?.beta),
+          cell: ({ row }) => {
+            const t = row.original.ticker
+            const b = prices[t]?.beta
+            return (
+              <span className="tabular-nums">
+                {b != null ? formatRatio(b) : <span className="text-muted-foreground">—</span>}
+              </span>
+            )
+          },
+        }),
+        helper.display({
+          id: 'profitMargins',
+          header: 'Net Margin',
+          sortingFn: (rowA, rowB) =>
+            numSort(prices[rowA.original.ticker]?.profit_margins, prices[rowB.original.ticker]?.profit_margins),
+          cell: ({ row }) => {
+            const t = row.original.ticker
+            const pm = prices[t]?.profit_margins
+            return (
+              <span className="tabular-nums">
+                {pm != null ? formatPercent(pm) : <span className="text-muted-foreground">—</span>}
+              </span>
+            )
+          },
+        }),
+        helper.display({
+          id: 'actions',
+          header: '',
+          enableSorting: false,
+          cell: ({ row }) => (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-6 w-6 p-0 opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive"
+              onClick={(e) => {
+                e.stopPropagation()
+                onRemoveAsset(row.original.ticker)
+              }}
+            >
+              <X className="h-3 w-3" />
+            </Button>
+          ),
+        }),
+      ]
+    },
     [prices, flashStates, returns, maxYears, onRemoveAsset, annualize, usd, toUsd, adjReturn, adj1d, mcSymbol]
   )
 
