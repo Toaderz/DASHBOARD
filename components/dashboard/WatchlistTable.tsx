@@ -166,12 +166,12 @@ export function WatchlistTable({
             <span className="truncate text-muted-foreground">{getValue()}</span>
           ),
         }),
-        helper.display({
+        helper.accessor((row) => prices[row.ticker]?.price ?? null, {
           id: 'price',
           header: 'Price',
           sortingFn: (rowA, rowB) => {
-            const a = toUsd(prices[rowA.original.ticker]?.price, rowA.original.ticker) ?? prices[rowA.original.ticker]?.price
-            const b = toUsd(prices[rowB.original.ticker]?.price, rowB.original.ticker) ?? prices[rowB.original.ticker]?.price
+            const a = toUsd(prices[rowA.original.ticker]?.price, rowA.original.ticker) ?? prices[rowA.original.ticker]?.price ?? null
+            const b = toUsd(prices[rowB.original.ticker]?.price, rowB.original.ticker) ?? prices[rowB.original.ticker]?.price ?? null
             return numSort(a, b)
           },
           cell: ({ row }) => {
@@ -193,7 +193,7 @@ export function WatchlistTable({
               : <span className="text-muted-foreground">—</span>
           },
         }),
-        helper.display({
+        helper.accessor((row) => prices[row.ticker]?.change_percent ?? null, {
           id: '1D',
           header: '1D %',
           sortingFn: (rowA, rowB) =>
@@ -206,7 +206,7 @@ export function WatchlistTable({
           },
         }),
         ...(['1W', '1M', 'YTD', '1Y', '3Y', '5Y', '10Y', 'MAX'] as MetricKey[]).map((period) =>
-          helper.display({
+          helper.accessor((row) => returns[row.ticker]?.[period] ?? null, {
             id: period,
             header: () => {
               const isAnnualizable = !!ANNUALIZE_YEARS[period] || period === 'MAX'
@@ -231,7 +231,7 @@ export function WatchlistTable({
             },
           })
         ),
-        helper.display({
+        helper.accessor((row) => prices[row.ticker]?.market_cap ?? null, {
           id: 'marketCap',
           header: 'Mkt Cap',
           sortingFn: (rowA, rowB) =>
@@ -243,7 +243,7 @@ export function WatchlistTable({
             return <span className="tabular-nums">{formatMarketCap(mc ?? undefined, mcSymbol(t))}</span>
           },
         }),
-        helper.display({
+        helper.accessor((row) => prices[row.ticker]?.pe ?? null, {
           id: 'pe',
           header: 'P/E',
           sortingFn: (rowA, rowB) =>
@@ -258,7 +258,7 @@ export function WatchlistTable({
             )
           },
         }),
-        helper.display({
+        helper.accessor((row) => prices[row.ticker]?.dividend_yield ?? null, {
           id: 'dividendYield',
           header: 'Div Yield',
           sortingFn: (rowA, rowB) =>
@@ -275,7 +275,7 @@ export function WatchlistTable({
             )
           },
         }),
-        helper.display({
+        helper.accessor((row) => { const p = prices[row.ticker]?.price; const h = prices[row.ticker]?.high_52w; return (p && h) ? ((p - h) / h) * 100 : null }, {
           id: 'from52wHigh',
           header: '52W High',
           sortingFn: (rowA, rowB) => {
@@ -295,7 +295,7 @@ export function WatchlistTable({
             return <span className={percentColor(pct)}>{formatRatio(pct)}%</span>
           },
         }),
-        helper.display({
+        helper.accessor((row) => prices[row.ticker]?.expense_ratio ?? null, {
           id: 'expenseRatio',
           header: 'Exp. Ratio',
           sortingFn: (rowA, rowB) =>
@@ -310,7 +310,7 @@ export function WatchlistTable({
             )
           },
         }),
-        helper.display({
+        helper.accessor((row) => prices[row.ticker]?.aum ?? null, {
           id: 'aum',
           header: 'AUM',
           sortingFn: (rowA, rowB) =>
@@ -322,7 +322,7 @@ export function WatchlistTable({
             return <span className="tabular-nums">{formatMarketCap(a ?? undefined, mcSymbol(t))}</span>
           },
         }),
-        helper.display({
+        helper.accessor((row) => prices[row.ticker]?.beta ?? null, {
           id: 'beta',
           header: 'Beta',
           sortingFn: (rowA, rowB) =>
@@ -337,7 +337,7 @@ export function WatchlistTable({
             )
           },
         }),
-        helper.display({
+        helper.accessor((row) => prices[row.ticker]?.profit_margins ?? null, {
           id: 'profitMargins',
           header: 'Net Margin',
           sortingFn: (rowA, rowB) =>
