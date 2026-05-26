@@ -2,6 +2,7 @@
 
 import { cn } from '@/lib/utils/cn'
 import { formatPrice } from '@/lib/utils/formatters'
+import { AnimatedPrice } from '@/components/dashboard/AnimatedPrice'
 import type { FlashState } from '@/types'
 
 interface PriceCellProps {
@@ -11,15 +12,16 @@ interface PriceCellProps {
 }
 
 export function PriceCell({ price, flashState, currency }: PriceCellProps) {
+  const formatted = formatPrice(price, currency && currency !== 'GBX' ? currency : 'USD')
   return (
     <span
       className={cn(
-        'inline-block rounded px-1 tabular-nums transition-colors duration-100',
+        'inline-block rounded-sm px-1 transition-colors duration-100',
         flashState === 'up' && 'animate-flash-green',
         flashState === 'down' && 'animate-flash-red'
       )}
     >
-      {formatPrice(price, currency && currency !== 'GBX' ? currency : 'USD')}
+      <AnimatedPrice value={formatted} flash={flashState} />
     </span>
   )
 }

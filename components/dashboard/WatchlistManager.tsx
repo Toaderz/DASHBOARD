@@ -122,14 +122,14 @@ export function WatchlistManager({
 
   return (
     <div className="flex flex-col gap-1">
-      <div className="mb-2 flex items-center justify-between px-2">
-        <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+      <div className="mb-1 flex items-center justify-between px-2">
+        <span className="font-mono text-[10px] uppercase tracking-[0.15em] text-muted-foreground">
           Watchlists
         </span>
         <Dialog open={createOpen} onOpenChange={setCreateOpen}>
           <DialogTrigger asChild>
-            <Button variant="ghost" size="sm" className="h-6 w-6 p-0">
-              <Plus className="h-4 w-4" />
+            <Button variant="ghost-dim" size="sm" className="h-6 w-6 p-0">
+              <Plus className="h-3.5 w-3.5" />
             </Button>
           </DialogTrigger>
           <DialogContent className="sm:max-w-sm" aria-describedby={undefined}>
@@ -180,8 +180,8 @@ export function WatchlistManager({
         return (
           <div
             key={wl.id}
-            className={`group flex items-center gap-1 rounded-md px-2 py-1.5 cursor-pointer transition-colors
-              ${selectedId === wl.id ? 'bg-primary/10 text-primary' : 'hover:bg-accent'}`}
+            className={`group flex items-center gap-1 rounded-sm px-2 min-h-[44px] cursor-pointer transition-colors
+              ${selectedId === wl.id ? 'bg-electric/10 text-electric' : 'hover:bg-ink-elevated text-foreground'}`}
             onClick={() => onSelect(wl.id)}
           >
             {!isOwned && (
@@ -203,9 +203,9 @@ export function WatchlistManager({
               />
             ) : (
               <div className="flex-1 min-w-0">
-                <span className="block truncate text-sm">{wl.name}</span>
+                <span className="block truncate font-ui text-sm">{wl.name}</span>
                 {ownerHandle && (
-                  <span className="block truncate text-[10px] text-muted-foreground leading-tight">
+                  <span className="block truncate font-mono text-[10px] text-muted-foreground/70 leading-tight">
                     de {ownerHandle}
                   </span>
                 )}
@@ -213,20 +213,20 @@ export function WatchlistManager({
             )}
 
             {isOwned && (
-              <div className="hidden group-hover:flex items-center gap-0.5">
+              <div className="flex items-center gap-0.5 md:hidden md:group-hover:flex">
                 <Button
-                  variant="ghost"
+                  variant="ghost-dim"
                   size="sm"
-                  className="h-5 w-5 p-0"
+                  className="h-6 w-6 p-0"
                   title="Compartir"
                   onClick={(e) => { e.stopPropagation(); openShare(wl.id) }}
                 >
                   <Share2 className="h-3 w-3" />
                 </Button>
                 <Button
-                  variant="ghost"
+                  variant="ghost-dim"
                   size="sm"
-                  className="h-5 w-5 p-0"
+                  className="h-6 w-6 p-0"
                   onClick={(e) => {
                     e.stopPropagation()
                     setEditingId(wl.id)
@@ -236,9 +236,9 @@ export function WatchlistManager({
                   <Pencil className="h-3 w-3" />
                 </Button>
                 <Button
-                  variant="ghost"
+                  variant="danger"
                   size="sm"
-                  className="h-5 w-5 p-0 text-destructive hover:text-destructive"
+                  className="h-6 w-6 p-0"
                   onClick={(e) => { e.stopPropagation(); onDelete(wl.id) }}
                 >
                   <Trash2 className="h-3 w-3" />
@@ -248,10 +248,10 @@ export function WatchlistManager({
 
             {!isOwned && (
               <Button
-                variant="ghost"
+                variant="ghost-dim"
                 size="sm"
                 title="Dejar de seguir esta lista"
-                className="h-5 w-5 p-0 hidden group-hover:flex text-muted-foreground hover:text-destructive shrink-0"
+                className="h-6 w-6 p-0 md:hidden md:group-hover:flex shrink-0 hover:text-loss"
                 onClick={(e) => { e.stopPropagation(); setLeaveConfirmId(wl.id) }}
               >
                 <X className="h-3 w-3" />

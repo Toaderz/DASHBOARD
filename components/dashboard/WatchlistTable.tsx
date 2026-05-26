@@ -157,13 +157,13 @@ export function WatchlistTable({
         helper.accessor('ticker', {
           header: 'Ticker',
           cell: ({ row }) => (
-            <span className="font-mono font-semibold">{row.original.ticker}</span>
+            <span className="font-mono text-xs font-bold tracking-wider text-electric">{row.original.ticker}</span>
           ),
         }),
         helper.accessor('name', {
           header: 'Name',
           cell: ({ getValue }) => (
-            <span className="truncate text-muted-foreground">{getValue()}</span>
+            <span className="truncate font-ui text-xs text-muted-foreground max-w-[140px] block">{getValue()}</span>
           ),
         }),
         helper.accessor((row) => prices[row.ticker]?.price ?? null, {
@@ -401,66 +401,81 @@ export function WatchlistTable({
   const showCategories = sorting.length === 0
   const visibleColCount = table.getVisibleLeafColumns().length
 
+  // Columns hidden on mobile to reduce horizontal scrolling
+  const MOBILE_HIDDEN = new Set(['3Y', '5Y', '10Y', 'MAX', 'expenseRatio', 'aum', 'beta', 'profitMargins', 'from52wHigh'])
+  // Sticky left column on mobile
+  const STICKY_LEFT = new Set(['ticker'])
+
+  const colClass = (id: string, base = '') => {
+    const sticky = STICKY_LEFT.has(id) ? 'sticky left-0 z-10 bg-background' : ''
+    const hidden = MOBILE_HIDDEN.has(id) ? 'hidden md:table-cell' : ''
+    return [base, sticky, hidden].filter(Boolean).join(' ')
+  }
+
   return (
-    <div className="flex flex-col gap-4">
-      {/* Toolbar */}
-      <div className="flex flex-wrap items-center gap-3">
-        <div className="flex-1 min-w-48 max-w-80">
-          <TickerSearch onAdd={onAddAsset} existingTickers={tickers} />
+    <div className="flex flex-col gap-3">
+      {/* Toolbar — stacks vertically on mobile */}
+      <div className="flex flex-col gap-2 md:flex-row md:flex-wrap md:items-center">
+        <div className="flex gap-2 flex-1 min-w-0">
+          <div className="flex-1 min-w-0 max-w-xs">
+            <TickerSearch onAdd={onAddAsset} existingTickers={tickers} />
+          </div>
+          <div className="relative w-36 shrink-0">
+            <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+            <input
+              type="text"
+              placeholder="Filter…"
+              value={filterQuery}
+              onChange={(e) => setFilterQuery(e.target.value)}
+              className="w-full rounded-sm border border-border bg-transparent pl-7 pr-7 py-1.5 text-xs font-ui placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+            />
+            {filterQuery && (
+              <button
+                onClick={() => setFilterQuery('')}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            )}
+          </div>
         </div>
-        <div className="relative min-w-36">
-          <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
-          <input
-            type="text"
-            placeholder="Filter list…"
-            value={filterQuery}
-            onChange={(e) => setFilterQuery(e.target.value)}
-            className="w-full rounded border border-border bg-transparent pl-7 pr-7 py-1 text-xs placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
-          />
-          {filterQuery && (
-            <button
-              onClick={() => setFilterQuery('')}
-              className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-            >
-              <X className="h-3 w-3" />
-            </button>
-          )}
+        <div className="flex items-center gap-2 flex-wrap">
+          <button
+            onClick={() => setAnnualize((v) => !v)}
+            title="Annualize returns for 3Y, 5Y, 10Y periods"
+            className={`rounded-sm border px-2 py-1 font-mono text-xs tracking-wider uppercase transition-colors ${
+              annualize
+                ? 'bg-electric text-ink-void border-electric'
+                : 'border-border text-muted-foreground hover:border-electric/50 hover:text-foreground'
+            }`}
+          >
+            Ann.
+          </button>
+          <button
+            onClick={() => setUsd((v) => !v)}
+            title="Convert all values to USD using live FX rates"
+            className={`rounded-sm border px-2 py-1 font-mono text-xs tracking-wider uppercase transition-colors ${
+              usd
+                ? 'bg-electric text-ink-void border-electric'
+                : 'border-border text-muted-foreground hover:border-electric/50 hover:text-foreground'
+            }`}
+          >
+            USD
+          </button>
+          <MetricsSelector selected={activeMetrics} onChange={handleMetricsChange} />
         </div>
-        <button
-          onClick={() => setAnnualize((v) => !v)}
-          title="Annualize returns for 3Y, 5Y, 10Y periods"
-          className={`rounded border px-2 py-1 text-xs font-medium transition-colors ${
-            annualize
-              ? 'bg-foreground text-background border-foreground'
-              : 'border-border text-muted-foreground hover:border-foreground hover:text-foreground'
-          }`}
-        >
-          Ann.
-        </button>
-        <button
-          onClick={() => setUsd((v) => !v)}
-          title="Convert all values to USD using live FX rates"
-          className={`rounded border px-2 py-1 text-xs font-medium transition-colors ${
-            usd
-              ? 'bg-foreground text-background border-foreground'
-              : 'border-border text-muted-foreground hover:border-foreground hover:text-foreground'
-          }`}
-        >
-          USD
-        </button>
-        <MetricsSelector selected={activeMetrics} onChange={handleMetricsChange} />
       </div>
 
       {/* Table */}
-      <div className="overflow-x-auto rounded-lg border">
-        <table className="w-full text-sm">
+      <div className="overflow-x-auto rounded-sm border border-border">
+        <table className="w-full font-ui text-sm">
           <thead>
             {table.getHeaderGroups().map((hg) => (
-              <tr key={hg.id} className="border-b bg-muted/30">
+              <tr key={hg.id} className="border-b border-border bg-ink-elevated">
                 {hg.headers.map((header) => (
                   <th
                     key={header.id}
-                    className="px-3 py-2 text-left font-medium text-muted-foreground whitespace-nowrap"
+                    className={colClass(header.id, 'px-3 py-2 text-left font-mono text-[10px] uppercase tracking-wider text-muted-foreground whitespace-nowrap bg-ink-elevated')}
                   >
                     {header.isPlaceholder ? null : (
                       <button
@@ -471,13 +486,13 @@ export function WatchlistTable({
                         {header.column.getCanSort() && (
                           <>
                             {header.column.getIsSorted() === 'asc' && (
-                              <ArrowUp className="h-3 w-3" />
+                              <ArrowUp className="h-3 w-3 text-electric" />
                             )}
                             {header.column.getIsSorted() === 'desc' && (
-                              <ArrowDown className="h-3 w-3" />
+                              <ArrowDown className="h-3 w-3 text-electric" />
                             )}
                             {!header.column.getIsSorted() && (
-                              <ArrowUpDown className="h-3 w-3 opacity-40" />
+                              <ArrowUpDown className="h-3 w-3 opacity-30" />
                             )}
                           </>
                         )}
@@ -493,7 +508,7 @@ export function WatchlistTable({
               <tr>
                 <td
                   colSpan={table.getAllColumns().length}
-                  className="py-12 text-center text-muted-foreground"
+                  className="py-12 text-center font-ui text-sm text-muted-foreground"
                 >
                   {assets.length === 0
                     ? 'No assets yet. Use the search above to add tickers.'
@@ -509,10 +524,10 @@ export function WatchlistTable({
 
                 if (showHeader) {
                   elements.push(
-                    <tr key={`cat-${cat}`} className="bg-muted/20 border-b border-border/50">
+                    <tr key={`cat-${cat}`} className="bg-ink-base border-b border-border/50">
                       <td
                         colSpan={visibleColCount}
-                        className="px-3 py-1.5 text-[11px] font-semibold uppercase tracking-widest text-muted-foreground"
+                        className="px-3 py-1 font-mono text-[10px] font-semibold uppercase tracking-[0.15em] text-muted-foreground/70"
                       >
                         {cat}
                       </td>
@@ -523,11 +538,14 @@ export function WatchlistTable({
                 elements.push(
                   <tr
                     key={row.id}
-                    className="group border-b cursor-pointer transition-colors hover:bg-accent/50 last:border-0"
+                    className="group border-b border-border/50 cursor-pointer transition-colors hover:bg-ink-elevated last:border-0"
                     onClick={() => handleRowClick(row.original)}
                   >
                     {row.getVisibleCells().map((cell) => (
-                      <td key={cell.id} className="px-3 py-2 whitespace-nowrap">
+                      <td
+                        key={cell.id}
+                        className={colClass(cell.column.id, 'px-3 py-2.5 whitespace-nowrap')}
+                      >
                         {flexRender(cell.column.columnDef.cell, cell.getContext())}
                       </td>
                     ))}
