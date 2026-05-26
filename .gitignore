@@ -13,3 +13,16 @@ public/sw.js
 public/sw.js.map
 public/workbox-*.js
 public/workbox-*.js.map
+
+# Build artifacts
+tsconfig.tsbuildinfo
+
+# Zips y archivos de distribución
+*.zip
+
+# Scripts y herramientas externas al proyecto
+Peers/
+
+# Generado por herramientas de agentes
+skills-lock.json
+.agents/
