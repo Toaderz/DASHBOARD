@@ -22,7 +22,6 @@ import {
 import { TickerSearch } from './TickerSearch'
 import { formatPrice, formatPercent, percentColor, annualizeReturn } from '@/lib/utils/formatters'
 import { useFxData } from '@/hooks/useFxData'
-import { createClient } from '@/lib/supabase/client'
 import type { AssetMetadata, HistoricalDataPoint, QuoteData, AssetType, MetricKey } from '@/types'
 
 const PEER_PERIOD_OPTIONS = ['1W', '1M', 'YTD', '1Y', '3Y', '5Y', '10Y', 'MAX'] as const
@@ -164,24 +163,29 @@ export function AssetDetailModal({
     return ((1 + raw / 100) * (1 + fxChange / 100) - 1) * 100
   }
 
-  // Fetch names for peers not in the user's watchlists (their name fallback is the ticker itself)
+  // Fetch names for peers not in the user's watchlists (their name fallback is the ticker itself).
+  // Supabase assets_metadata only has watchlist tickers, so we use Yahoo search for unknowns.
   useEffect(() => {
     if (!open || allPeers.length === 0) return
-    const unknown = allPeers.filter((p) => p.name === p.ticker).map((p) => p.ticker)
+    const unknown = allPeers.filter((p) => p.name === p.ticker)
     if (unknown.length === 0) return
-    const supabase = createClient()
-    supabase
-      .from('assets_metadata')
-      .select('ticker, name')
-      .in('ticker', unknown)
-      .then(({ data }) => {
-        if (!data) return
-        const map: Record<string, string> = {}
-        for (const row of data as Array<{ ticker: string; name: string }>) {
-          if (row.name && row.name !== row.ticker) map[row.ticker] = row.name
-        }
-        if (Object.keys(map).length > 0) setPeerNames((prev) => ({ ...prev, ...map }))
-      })
+    Promise.allSettled(
+      unknown.map((p) =>
+        fetch(`/api/market/search?q=${encodeURIComponent(p.ticker)}`)
+          .then((r) => r.json())
+          .then((results: Array<{ ticker: string; name: string }>) => {
+            const match = results.find((r) => r.ticker.toUpperCase() === p.ticker.toUpperCase())
+            return match && match.name !== p.ticker ? { ticker: p.ticker, name: match.name } : null
+          })
+          .catch(() => null)
+      )
+    ).then((settled) => {
+      const map: Record<string, string> = {}
+      for (const r of settled) {
+        if (r.status === 'fulfilled' && r.value) map[r.value.ticker] = r.value.name
+      }
+      if (Object.keys(map).length > 0) setPeerNames((prev) => ({ ...prev, ...map }))
+    })
   }, [open, allPeers])
 
   // Peer quotes fetch — includes the pinned asset so its data is always in peerQuotes
