@@ -173,8 +173,9 @@ export function AssetDetailModal({
       unknown.map((p) =>
         fetch(`/api/market/search?q=${encodeURIComponent(p.ticker)}`)
           .then((r) => r.json())
-          .then((results: Array<{ ticker: string; name: string }>) => {
-            const match = results.find((r) => r.ticker.toUpperCase() === p.ticker.toUpperCase())
+          .then((data: { results: Array<{ ticker: string; name: string }> }) => {
+            const list = data?.results ?? []
+            const match = list.find((r) => r.ticker.toUpperCase() === p.ticker.toUpperCase())
             return match && match.name !== p.ticker ? { ticker: p.ticker, name: match.name } : null
           })
           .catch(() => null)
