@@ -156,39 +156,70 @@ export function useTopPerformers(
     const forceAnnualize = activePeriod === 'MAX'
     const doAnnualize = annualize || forceAnnualize
 
-    return raw
-      .map(entry => {
-        const currency = prices[entry.ticker]?.currency ?? 'USD'
+    const converted = raw.map(entry => {
+      const currency = prices[entry.ticker]?.currency ?? 'USD'
 
-        // FX period return for USD conversion
-        let fxReturn = 0
-        if (currency !== 'USD') {
-          if (activePeriod === '1D') {
-            fxReturn = fxRates[currency]?.change1d ?? 0
-          } else {
-            fxReturn = (fxPeriodReturns[currency]?.[activePeriod] as number | null | undefined) ?? 0
-          }
+      let fxReturn = 0
+      if (currency !== 'USD') {
+        if (activePeriod === '1D') {
+          fxReturn = fxRates[currency]?.change1d ?? 0
+        } else {
+          fxReturn = (fxPeriodReturns[currency]?.[activePeriod] as number | null | undefined) ?? 0
         }
+      }
 
-        // Convert local return to USD: (1 + local%) × (1 + fx%) − 1
-        const usdReturn = currency !== 'USD'
-          ? ((1 + entry.localReturn / 100) * (1 + fxReturn / 100) - 1) * 100
-          : entry.localReturn
+      const usdReturn = currency !== 'USD'
+        ? ((1 + entry.localReturn / 100) * (1 + fxReturn / 100) - 1) * 100
+        : entry.localReturn
 
-        // Annualize CAGR: only when years >= 1 (sub-annual annualization is explosive)
-        let displayReturn = usdReturn
-        if (doAnnualize && entry.years != null && entry.years >= 1) {
-          displayReturn = (Math.pow(1 + usdReturn / 100, 1 / entry.years) - 1) * 100
+      let displayReturn = usdReturn
+      if (doAnnualize && entry.years != null && entry.years >= 1) {
+        displayReturn = (Math.pow(1 + usdReturn / 100, 1 / entry.years) - 1) * 100
+      }
+
+      return { ...entry, returnValue: displayReturn }
+    })
+
+    return converted.sort((a, b) => b.returnValue - a.returnValue).slice(0, 10)
+  }, [rawResults, activePeriod, prices, fxRates, fxPeriodReturns, annualize])
+
+  const bottom = useMemo((): TopEntry[] => {
+    const raw = rawResults[activePeriod]
+    if (!raw || raw.length === 0) return []
+
+    const forceAnnualize = activePeriod === 'MAX'
+    const doAnnualize = annualize || forceAnnualize
+
+    const converted = raw.map(entry => {
+      const currency = prices[entry.ticker]?.currency ?? 'USD'
+
+      let fxReturn = 0
+      if (currency !== 'USD') {
+        if (activePeriod === '1D') {
+          fxReturn = fxRates[currency]?.change1d ?? 0
+        } else {
+          fxReturn = (fxPeriodReturns[currency]?.[activePeriod] as number | null | undefined) ?? 0
         }
+      }
 
-        return { ...entry, returnValue: displayReturn }
-      })
-      .sort((a, b) => b.returnValue - a.returnValue)
-      .slice(0, 10)
+      const usdReturn = currency !== 'USD'
+        ? ((1 + entry.localReturn / 100) * (1 + fxReturn / 100) - 1) * 100
+        : entry.localReturn
+
+      let displayReturn = usdReturn
+      if (doAnnualize && entry.years != null && entry.years >= 1) {
+        displayReturn = (Math.pow(1 + usdReturn / 100, 1 / entry.years) - 1) * 100
+      }
+
+      return { ...entry, returnValue: displayReturn }
+    })
+
+    return converted.sort((a, b) => a.returnValue - b.returnValue).slice(0, 10)
   }, [rawResults, activePeriod, prices, fxRates, fxPeriodReturns, annualize])
 
   return {
     top,
+    bottom,
     loading: activePeriod === '1D' ? false : loadingPeriods.has(activePeriod),
   }
 }
