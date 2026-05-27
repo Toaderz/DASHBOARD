@@ -22,6 +22,7 @@ import {
 import { TickerSearch } from './TickerSearch'
 import { formatPrice, formatPercent, percentColor, annualizeReturn } from '@/lib/utils/formatters'
 import { useFxData } from '@/hooks/useFxData'
+import { createClient } from '@/lib/supabase/client'
 import type { AssetMetadata, HistoricalDataPoint, QuoteData, AssetType, MetricKey } from '@/types'
 
 const PEER_PERIOD_OPTIONS = ['1W', '1M', 'YTD', '1Y', '3Y', '5Y', '10Y', 'MAX'] as const
@@ -81,6 +82,7 @@ export function AssetDetailModal({
   const [peerQuotes, setPeerQuotes] = useState<Record<string, QuoteData>>({})
   const [peerReturns, setPeerReturns] = useState<Record<string, ReturnMap>>({})
   const [peerMaxYears, setPeerMaxYears] = useState<Record<string, number | null>>({})
+  const [peerNames, setPeerNames] = useState<Record<string, string>>({})
 
   // Reset on close
   useEffect(() => {
@@ -90,6 +92,7 @@ export function AssetDetailModal({
       setPeerQuotes({})
       setPeerReturns({})
       setPeerMaxYears({})
+      setPeerNames({})
       setChartPeriodReturn(null)
       setChartYears(null)
       setAnnualize(false)
@@ -160,6 +163,26 @@ export function AssetDetailModal({
     if (fxChange == null) return raw
     return ((1 + raw / 100) * (1 + fxChange / 100) - 1) * 100
   }
+
+  // Fetch names for peers not in the user's watchlists (their name fallback is the ticker itself)
+  useEffect(() => {
+    if (!open || allPeers.length === 0) return
+    const unknown = allPeers.filter((p) => p.name === p.ticker).map((p) => p.ticker)
+    if (unknown.length === 0) return
+    const supabase = createClient()
+    supabase
+      .from('assets_metadata')
+      .select('ticker, name')
+      .in('ticker', unknown)
+      .then(({ data }) => {
+        if (!data) return
+        const map: Record<string, string> = {}
+        for (const row of data as Array<{ ticker: string; name: string }>) {
+          if (row.name && row.name !== row.ticker) map[row.ticker] = row.name
+        }
+        if (Object.keys(map).length > 0) setPeerNames((prev) => ({ ...prev, ...map }))
+      })
+  }, [open, allPeers])
 
   // Peer quotes fetch — includes the pinned asset so its data is always in peerQuotes
   useEffect(() => {
@@ -462,7 +485,7 @@ export function AssetDetailModal({
                       <tr key={peer.ticker} className="group border-b last:border-0">
                         <td className="py-1 font-mono font-semibold">{peer.ticker}</td>
                         <td className="py-1 text-muted-foreground max-w-[140px] truncate">
-                          {peer.name}
+                          {peerNames[peer.ticker] ?? peer.name}
                         </td>
                         <td className="py-1 text-right tabular-nums">
                           {formatPrice(displayPrice, usd ? 'USD' : (pq?.currency ?? 'USD'))}
