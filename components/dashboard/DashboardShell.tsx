@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { LogOut, LayoutDashboard, Menu, X } from 'lucide-react'
+import { LogOut, LayoutDashboard, Menu, X, TrendingUp } from 'lucide-react'
 import Image from 'next/image'
 import type { User } from '@supabase/supabase-js'
 import { createClient } from '@/lib/supabase/client'
@@ -60,6 +60,14 @@ export function DashboardShell({ user, children }: DashboardShellProps) {
           >
             <LayoutDashboard className="h-4 w-4 shrink-0" />
             Overview
+          </Link>
+          <Link
+            href="/top10"
+            onClick={() => setSidebarOpen(false)}
+            className="flex items-center gap-2 rounded-sm px-2 py-2 text-sm text-muted-foreground hover:bg-ink-elevated hover:text-foreground transition-colors min-h-[40px]"
+          >
+            <TrendingUp className="h-4 w-4 shrink-0" />
+            Top Performers
           </Link>
         </div>
 
