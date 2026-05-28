@@ -262,11 +262,10 @@ export function WatchlistTable({
           id: 'marketCap',
           header: 'Mkt Cap',
           sortingFn: (rowA, rowB) =>
-            numSort(toUsd(prices[rowA.original.ticker]?.market_cap, rowA.original.ticker),
-                    toUsd(prices[rowB.original.ticker]?.market_cap, rowB.original.ticker)),
+            numSort(prices[rowA.original.ticker]?.market_cap, prices[rowB.original.ticker]?.market_cap),
           cell: ({ row }) => {
             const t = row.original.ticker
-            const mc = toUsd(prices[t]?.market_cap, t)
+            const mc = prices[t]?.market_cap
             return <span className="tabular-nums">{formatMarketCap(mc ?? undefined, mcSymbol(t))}</span>
           },
         }),
@@ -341,11 +340,10 @@ export function WatchlistTable({
           id: 'aum',
           header: 'AUM',
           sortingFn: (rowA, rowB) =>
-            numSort(toUsd(prices[rowA.original.ticker]?.aum, rowA.original.ticker),
-                    toUsd(prices[rowB.original.ticker]?.aum, rowB.original.ticker)),
+            numSort(prices[rowA.original.ticker]?.aum, prices[rowB.original.ticker]?.aum),
           cell: ({ row }) => {
             const t = row.original.ticker
-            const a = toUsd(prices[t]?.aum, t)
+            const a = prices[t]?.aum
             return <span className="tabular-nums">{formatMarketCap(a ?? undefined, mcSymbol(t))}</span>
           },
         }),
