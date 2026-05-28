@@ -124,7 +124,7 @@ export default function LoginPage() {
                 }}
                 className={
                   i === 0
-                    ? 'font-editorial text-2xl font-bold tracking-tight text-foreground'
+                    ? 'font-mono text-lg uppercase tracking-[0.2em] text-foreground font-medium'
                     : 'font-mono text-xs uppercase tracking-[0.2em] text-muted-foreground self-end mb-0.5'
                 }
               >
