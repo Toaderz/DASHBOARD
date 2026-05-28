@@ -21,7 +21,6 @@ export type MetricKey =
   | 'inceptionDate'
   | 'morningstarCategory'
   | 'globalCategory'
-  | 'benchmark'
 
 export interface Profile {
   id: string
@@ -176,5 +175,4 @@ export const METRIC_DEFINITIONS: MetricDefinition[] = [
   { key: 'inceptionDate', label: 'Inception', description: 'Fund Inception Date', format: 'date' },
   { key: 'morningstarCategory', label: 'MS Category', description: 'Morningstar Category', format: 'text' },
   { key: 'globalCategory', label: 'Global Cat.', description: 'Morningstar Global Category', format: 'text' },
-  { key: 'benchmark', label: 'Benchmark', description: 'Primary Prospectus Benchmark', format: 'text' },
 ]

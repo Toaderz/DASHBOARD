@@ -418,7 +418,7 @@ begin
   returning id into v_watchlist_id;
 
   insert into assets_metadata (ticker, name, type, sector, region) values
-    ('PSH',   'Pershing Square Holdings Ord',                        'stock', 'Financials',       'UK'),
+    ('PSH.L', 'Pershing Square Holdings, Ltd.',                      'stock', 'Financials',       'UK'),
     ('HHH',   'Howard Hughes Holdings Inc',                          'stock', 'Real Estate',      'US'),
     ('IJR',         'iShares Core S&P Small-Cap ETF',                      'etf',  'Equity',     'US'),
     ('RECS',        'Columbia Research Enhanced Core ETF',                 'etf',  'Equity',     'US'),
@@ -440,7 +440,7 @@ begin
 
   insert into watchlist_assets (watchlist_id, asset_ticker, category, sort_order) values
     -- US
-    (v_watchlist_id, 'PSH',   'US',                         100),
+    (v_watchlist_id, 'PSH.L', 'UK',                          100),
     (v_watchlist_id, 'HHH',   'US',                         101),
     (v_watchlist_id, '^GSPC', 'US',                         102),
     (v_watchlist_id, 'RECS',  'US',                         103),
@@ -641,4 +641,14 @@ create policy "authenticated_read_profiles" on profiles
 --   ALTER TABLE price_cache ADD COLUMN IF NOT EXISTS inception_date date;
 --   ALTER TABLE price_cache ADD COLUMN IF NOT EXISTS morningstar_category text;
 --   ALTER TABLE price_cache ADD COLUMN IF NOT EXISTS global_category text;
+--
+-- Step 7 — Fix PSH → PSH.L in Evolve Universe (run once on existing DBs):
+--   INSERT INTO assets_metadata (ticker, name, type, sector, region)
+--     VALUES ('PSH.L', 'Pershing Square Holdings, Ltd.', 'stock', 'Financials', 'UK')
+--     ON CONFLICT (ticker) DO NOTHING;
+--   UPDATE watchlist_assets SET asset_ticker = 'PSH.L'
+--     WHERE asset_ticker = 'PSH'
+--     AND watchlist_id IN (SELECT id FROM watchlists WHERE name = 'Evolve Universe');
+--   DELETE FROM assets_metadata WHERE ticker = 'PSH'
+--     AND NOT EXISTS (SELECT 1 FROM watchlist_assets WHERE asset_ticker = 'PSH');
 -- ============================================================

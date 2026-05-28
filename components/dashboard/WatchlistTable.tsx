@@ -9,6 +9,7 @@ import {
   createColumnHelper,
   type SortingState,
   type VisibilityState,
+  type ColumnOrderState,
 } from '@tanstack/react-table'
 import { ArrowUpDown, ArrowUp, ArrowDown, X, Search } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -143,6 +144,24 @@ export function WatchlistTable({
     []
   )
 
+  // Returns null for MAX (always valid) or an ISO date string for the period's start date
+  const periodStartDate = useCallback((period: string): string | null => {
+    const now = new Date()
+    const y = now.getFullYear()
+    const m = now.getMonth()
+    const d = now.getDate()
+    switch (period) {
+      case '1W':  return new Date(y, m, d - 7).toISOString().split('T')[0]
+      case '1M':  return new Date(y, m - 1, d).toISOString().split('T')[0]
+      case 'YTD': return `${y}-01-01`
+      case '1Y':  return new Date(y - 1, m, d).toISOString().split('T')[0]
+      case '3Y':  return new Date(y - 3, m, d).toISOString().split('T')[0]
+      case '5Y':  return new Date(y - 5, m, d).toISOString().split('T')[0]
+      case '10Y': return new Date(y - 10, m, d).toISOString().split('T')[0]
+      default:    return null
+    }
+  }, [])
+
   const columns = useMemo(
     () => {
       // Nulls always sort to the end regardless of asc/desc direction
@@ -214,6 +233,9 @@ export function WatchlistTable({
             },
             sortingFn: (rowA, rowB) => {
               const getVal = (ticker: string) => {
+                const inception = prices[ticker]?.inception_date
+                const start = periodStartDate(period)
+                if (inception && start && inception > start) return null
                 const raw = adjReturn(returns[ticker]?.[period], ticker, period)
                 const years = ANNUALIZE_YEARS[period] ?? (period === 'MAX' ? (maxYears[ticker] ?? null) : null)
                 const canAnnualize = years != null && years >= 1
@@ -223,6 +245,11 @@ export function WatchlistTable({
             },
             cell: ({ row }) => {
               const t = row.original.ticker
+              const inception = prices[t]?.inception_date
+              const start = periodStartDate(period)
+              if (inception && start && inception > start) {
+                return <span className="text-muted-foreground">—</span>
+              }
               const raw = adjReturn(returns[t]?.[period], t, period)
               const years = ANNUALIZE_YEARS[period] ?? (period === 'MAX' ? (maxYears[t] ?? null) : null)
               const canAnnualize = years != null && years >= 1
@@ -394,17 +421,6 @@ export function WatchlistTable({
           },
         }),
         helper.display({
-          id: 'benchmark',
-          header: 'Benchmark',
-          enableSorting: false,
-          cell: ({ row }) => {
-            const b = row.original.benchmark
-            return b
-              ? <span className="text-xs truncate max-w-[120px] block">{b}</span>
-              : <span className="text-muted-foreground">—</span>
-          },
-        }),
-        helper.display({
           id: 'actions',
           header: '',
           enableSorting: false,
@@ -424,7 +440,12 @@ export function WatchlistTable({
         }),
       ]
     },
-    [prices, flashStates, returns, maxYears, onRemoveAsset, annualize, usd, toUsd, adjReturn, adj1d, mcSymbol]
+    [prices, flashStates, returns, maxYears, onRemoveAsset, annualize, usd, toUsd, adjReturn, adj1d, mcSymbol, periodStartDate]
+  )
+
+  const columnOrder = useMemo<ColumnOrderState>(
+    () => ['ticker', 'name', 'price', 'currency', ...activeMetrics, 'actions'],
+    [activeMetrics]
   )
 
   const filteredAssets = useMemo(() => {
@@ -438,7 +459,7 @@ export function WatchlistTable({
   const table = useReactTable({
     data: filteredAssets,
     columns,
-    state: { sorting, columnVisibility },
+    state: { sorting, columnVisibility, columnOrder },
     onSortingChange: setSorting,
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),
@@ -454,7 +475,7 @@ export function WatchlistTable({
   const visibleColCount = table.getVisibleLeafColumns().length
 
   // Columns hidden on mobile to reduce horizontal scrolling
-  const MOBILE_HIDDEN = new Set(['3Y', '5Y', '10Y', 'MAX', 'expenseRatio', 'aum', 'beta', 'profitMargins', 'from52wHigh', 'inceptionDate', 'morningstarCategory', 'globalCategory', 'benchmark'])
+  const MOBILE_HIDDEN = new Set(['3Y', '5Y', '10Y', 'MAX', 'expenseRatio', 'aum', 'beta', 'profitMargins', 'from52wHigh', 'inceptionDate', 'morningstarCategory', 'globalCategory'])
   // Sticky left column on mobile
   const STICKY_LEFT = new Set(['ticker'])
 
