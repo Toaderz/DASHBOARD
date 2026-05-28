@@ -636,4 +636,9 @@ create policy "authenticated_read_profiles" on profiles
 --
 -- Step 5 — Seed Pershing Square watchlist for existing users (run once):
 --   SELECT seed_pershing_square_watchlist(id) FROM profiles;
+--
+-- Step 6 — Morningstar fields (run once per DB):
+--   ALTER TABLE price_cache ADD COLUMN IF NOT EXISTS inception_date date;
+--   ALTER TABLE price_cache ADD COLUMN IF NOT EXISTS morningstar_category text;
+--   ALTER TABLE price_cache ADD COLUMN IF NOT EXISTS global_category text;
 -- ============================================================

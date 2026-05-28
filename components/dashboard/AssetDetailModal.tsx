@@ -397,7 +397,7 @@ export function AssetDetailModal({
 
           {/* Fundamentals section */}
           {quote && (
-            <FundamentalsPanel quote={quote} assetType={asset.type} />
+            <FundamentalsPanel quote={quote} assetType={asset.type} benchmark={asset.benchmark} />
           )}
 
           {/* Peers section */}

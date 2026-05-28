@@ -8,6 +8,49 @@ const yf = new YahooFinanceLib({
 })
 
 const YAHOO_BASE = 'https://query1.finance.yahoo.com'
+
+// ─── Morningstar US Category → Global Category mapping ────────────────────────
+const MS_GLOBAL_CATEGORY: Record<string, string> = {
+  'Large Blend':                'US Large-Cap Blend Equity',
+  'Large Growth':               'US Large-Cap Growth Equity',
+  'Large Value':                'US Large-Cap Value Equity',
+  'Mid-Cap Blend':              'US Mid-Cap Blend Equity',
+  'Mid-Cap Growth':             'US Mid-Cap Growth Equity',
+  'Mid-Cap Value':              'US Mid-Cap Value Equity',
+  'Small Blend':                'US Small-Cap Blend Equity',
+  'Small Growth':               'US Small-Cap Growth Equity',
+  'Small Value':                'US Small-Cap Value Equity',
+  'Foreign Large Blend':        'Global Large-Cap Blend Equity',
+  'Foreign Large Growth':       'Global Large-Cap Growth Equity',
+  'Foreign Large Value':        'Global Large-Cap Value Equity',
+  'Foreign Small/Mid Blend':    'Global Small/Mid-Cap Blend Equity',
+  'World Large-Stock Blend':    'Global Large-Cap Blend Equity',
+  'World Large-Stock Growth':   'Global Large-Cap Growth Equity',
+  'Diversified Emerging Mkts':  'Global Emerging Markets Equity',
+  'China Region':               'Greater China Equity',
+  'Japan Stock':                'Japan Large-Cap Equity',
+  'Europe Stock':               'Europe Large-Cap Blend Equity',
+  'India Equity':               'India Equity',
+  'Technology':                 'Technology Equity',
+  'Technology Sector Equity':   'Technology Equity',
+  'Health':                     'Healthcare Equity',
+  'Healthcare':                 'Healthcare Equity',
+  'Real Estate':                'Real Estate Equity',
+  'Utilities':                  'Utilities Equity',
+  'Natural Resources':          'Natural Resources Equity',
+  'Infrastructure':             'Infrastructure Equity',
+  'Energy Limited Partnership': 'Energy Equity',
+  'Financial':                  'Financial Services Equity',
+  'Industrials':                'Industrials Equity',
+  'Communication':              'Communication Services Equity',
+  'Consumer Cyclical':          'Consumer Goods & Services Equity',
+  'Equity Income':              'Global Equity Income',
+}
+
+function toGlobalCategory(msCategory: string | null | undefined): string | null {
+  if (!msCategory) return null
+  return MS_GLOBAL_CATEGORY[msCategory] ?? msCategory
+}
 const UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
 
@@ -69,6 +112,8 @@ interface Fundamentals {
   inception_date: string | null
   price_to_book: number | null
   median_market_cap: number | null
+  morningstar_category: string | null
+  global_category: string | null
 }
 
 const EMPTY_FUNDAMENTALS: Fundamentals = {
@@ -93,6 +138,8 @@ const EMPTY_FUNDAMENTALS: Fundamentals = {
   inception_date: null,
   price_to_book: null,
   median_market_cap: null,
+  morningstar_category: null,
+  global_category: null,
 }
 
 const pct = (v: number | null | undefined): number | null => (v != null ? v * 100 : null)
@@ -108,6 +155,7 @@ interface YSummary {
   summaryProfile?: { sector?: string; industry?: string } | null
   fundProfile?: {
     family?: string
+    categoryName?: string | null
     feesExpensesInvestment?: { annualReportExpenseRatio?: number } | null
     inceptionDate?: number
   } | null
@@ -189,21 +237,26 @@ export async function fetchFundamentals(ticker: string): Promise<Fundamentals> {
         inception_date:    data.fundProfile?.inceptionDate
           ? new Date(data.fundProfile.inceptionDate * 1000).toISOString().split('T')[0]
           : null,
-        price_to_book:     data.topHoldings?.equityHoldings?.priceToBook ?? null,
-        median_market_cap: data.topHoldings?.equityHoldings?.medianMarketCap ?? null,
+        price_to_book:      data.topHoldings?.equityHoldings?.priceToBook ?? null,
+        median_market_cap:  data.topHoldings?.equityHoldings?.medianMarketCap ?? null,
+        morningstar_category: data.fundProfile?.categoryName ?? null,
+        global_category:      toGlobalCategory(data.fundProfile?.categoryName),
       }
     }
 
     // Equity / index / other
+    const eqCategory = data.fundProfile?.categoryName ?? null
     return {
       ...EMPTY_FUNDAMENTALS,
-      market_cap:     data.summaryDetail?.marketCap ?? null,
-      pe:             data.summaryDetail?.trailingPE ?? null,
-      dividend_yield: pct(data.summaryDetail?.dividendYield),
-      beta:           data.defaultKeyStatistics?.beta ?? null,
-      profit_margins: pct(data.defaultKeyStatistics?.profitMargins),
-      sector:         data.summaryProfile?.sector ?? null,
-      industry:       data.summaryProfile?.industry ?? null,
+      market_cap:           data.summaryDetail?.marketCap ?? null,
+      pe:                   data.summaryDetail?.trailingPE ?? null,
+      dividend_yield:       pct(data.summaryDetail?.dividendYield),
+      beta:                 data.defaultKeyStatistics?.beta ?? null,
+      profit_margins:       pct(data.defaultKeyStatistics?.profitMargins),
+      sector:               data.summaryProfile?.sector ?? null,
+      industry:             data.summaryProfile?.industry ?? null,
+      morningstar_category: eqCategory,
+      global_category:      toGlobalCategory(eqCategory),
     }
   } catch (err) {
     console.error('[fetchFundamentals] error for', ticker, ':', err instanceof Error ? err.message : err)

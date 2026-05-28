@@ -18,6 +18,10 @@ export type MetricKey =
   | 'aum'
   | 'beta'
   | 'profitMargins'
+  | 'inceptionDate'
+  | 'morningstarCategory'
+  | 'globalCategory'
+  | 'benchmark'
 
 export interface Profile {
   id: string
@@ -101,6 +105,8 @@ export interface QuoteData {
   inception_date?: string | null
   price_to_book?: number | null
   median_market_cap?: number | null
+  morningstar_category?: string | null
+  global_category?: string | null
   currency?: string | null
   last_updated: string
 }
@@ -146,7 +152,7 @@ export interface MetricDefinition {
   key: MetricKey
   label: string
   description: string
-  format: 'percent' | 'currency' | 'ratio' | 'number'
+  format: 'percent' | 'currency' | 'ratio' | 'number' | 'date' | 'text'
 }
 
 export const METRIC_DEFINITIONS: MetricDefinition[] = [
@@ -167,4 +173,8 @@ export const METRIC_DEFINITIONS: MetricDefinition[] = [
   { key: 'aum', label: 'AUM', description: 'Assets Under Management', format: 'currency' },
   { key: 'beta', label: 'Beta', description: 'Market Sensitivity (Beta)', format: 'ratio' },
   { key: 'profitMargins', label: 'Net Margin', description: 'Net Profit Margin', format: 'percent' },
+  { key: 'inceptionDate', label: 'Inception', description: 'Fund Inception Date', format: 'date' },
+  { key: 'morningstarCategory', label: 'MS Category', description: 'Morningstar Category', format: 'text' },
+  { key: 'globalCategory', label: 'Global Cat.', description: 'Morningstar Global Category', format: 'text' },
+  { key: 'benchmark', label: 'Benchmark', description: 'Primary Prospectus Benchmark', format: 'text' },
 ]

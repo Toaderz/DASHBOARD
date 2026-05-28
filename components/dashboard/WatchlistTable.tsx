@@ -352,6 +352,58 @@ export function WatchlistTable({
             )
           },
         }),
+        helper.accessor((row) => prices[row.ticker]?.inception_date ?? null, {
+          id: 'inceptionDate',
+          header: 'Inception',
+          sortingFn: (rowA, rowB) => {
+            const a = prices[rowA.original.ticker]?.inception_date ?? null
+            const b = prices[rowB.original.ticker]?.inception_date ?? null
+            if (a == null && b == null) return 0
+            if (a == null) return 1
+            if (b == null) return -1
+            return a < b ? -1 : a > b ? 1 : 0
+          },
+          cell: ({ row }) => {
+            const d = prices[row.original.ticker]?.inception_date
+            if (!d) return <span className="text-muted-foreground">—</span>
+            const [y, m, day] = d.split('-')
+            const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+            return <span className="tabular-nums text-xs">{months[parseInt(m)-1]} {parseInt(day)}, {y}</span>
+          },
+        }),
+        helper.display({
+          id: 'morningstarCategory',
+          header: 'MS Category',
+          enableSorting: false,
+          cell: ({ row }) => {
+            const c = prices[row.original.ticker]?.morningstar_category
+            return c
+              ? <span className="text-xs truncate max-w-[120px] block">{c}</span>
+              : <span className="text-muted-foreground">—</span>
+          },
+        }),
+        helper.display({
+          id: 'globalCategory',
+          header: 'Global Cat.',
+          enableSorting: false,
+          cell: ({ row }) => {
+            const c = prices[row.original.ticker]?.global_category
+            return c
+              ? <span className="text-xs truncate max-w-[140px] block">{c}</span>
+              : <span className="text-muted-foreground">—</span>
+          },
+        }),
+        helper.display({
+          id: 'benchmark',
+          header: 'Benchmark',
+          enableSorting: false,
+          cell: ({ row }) => {
+            const b = row.original.benchmark
+            return b
+              ? <span className="text-xs truncate max-w-[120px] block">{b}</span>
+              : <span className="text-muted-foreground">—</span>
+          },
+        }),
         helper.display({
           id: 'actions',
           header: '',
@@ -402,7 +454,7 @@ export function WatchlistTable({
   const visibleColCount = table.getVisibleLeafColumns().length
 
   // Columns hidden on mobile to reduce horizontal scrolling
-  const MOBILE_HIDDEN = new Set(['3Y', '5Y', '10Y', 'MAX', 'expenseRatio', 'aum', 'beta', 'profitMargins', 'from52wHigh'])
+  const MOBILE_HIDDEN = new Set(['3Y', '5Y', '10Y', 'MAX', 'expenseRatio', 'aum', 'beta', 'profitMargins', 'from52wHigh', 'inceptionDate', 'morningstarCategory', 'globalCategory', 'benchmark'])
   // Sticky left column on mobile
   const STICKY_LEFT = new Set(['ticker'])
 

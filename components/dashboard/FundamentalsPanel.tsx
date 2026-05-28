@@ -129,9 +129,10 @@ function ProgressBar({ pct, index }: { pct: number; index: number }) {
 interface FundamentalsPanelProps {
   quote: QuoteData
   assetType: AssetType
+  benchmark?: string | null
 }
 
-export function FundamentalsPanel({ quote, assetType }: FundamentalsPanelProps) {
+export function FundamentalsPanel({ quote, assetType, benchmark }: FundamentalsPanelProps) {
   const isFund = assetType === 'etf' || assetType === 'fund'
 
   const hasAnyFundData = !!(
@@ -144,12 +145,12 @@ export function FundamentalsPanel({ quote, assetType }: FundamentalsPanelProps) 
   if (isFund && !hasAnyFundData) return null
   if (!isFund && !hasAnyStockData) return null
 
-  if (isFund) return <FundPanel quote={quote} />
-  return <StockPanel quote={quote} />
+  if (isFund) return <FundPanel quote={quote} benchmark={benchmark} />
+  return <StockPanel quote={quote} benchmark={benchmark} />
 }
 
 // ─── ETF / Fund panel ─────────────────────────────────────────────────────────
-function FundPanel({ quote }: { quote: QuoteData }) {
+function FundPanel({ quote, benchmark }: { quote: QuoteData; benchmark?: string | null }) {
   const aumUnit = (quote.aum ?? 0) >= 1e9 ? 'B' : 'M'
   const aumTarget = (quote.aum ?? 0) / (aumUnit === 'B' ? 1e9 : 1e6)
   const aumFormat = useCallback((v: number) => '$' + v.toFixed(aumUnit === 'B' ? 1 : 0) + aumUnit, [aumUnit])
@@ -242,7 +243,31 @@ function FundPanel({ quote }: { quote: QuoteData }) {
         </div>
       )}
 
-      {/* Row 3: Risk & Performance — hover glow */}
+      {/* Row 3: Morningstar Classification */}
+      {(quote.morningstar_category || quote.global_category || benchmark) && (
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+          {quote.morningstar_category && (
+            <Card index={cardIdx++} className={BASE}>
+              <span className={LABEL}>MS Category</span>
+              <span className="text-xs font-semibold leading-tight">{quote.morningstar_category}</span>
+            </Card>
+          )}
+          {quote.global_category && (
+            <Card index={cardIdx++} className={BASE}>
+              <span className={LABEL}>Global Category</span>
+              <span className="text-xs font-semibold leading-tight">{quote.global_category}</span>
+            </Card>
+          )}
+          {benchmark && (
+            <Card index={cardIdx++} className={BASE}>
+              <span className={LABEL}>Benchmark</span>
+              <span className="text-xs font-semibold leading-tight">{benchmark}</span>
+            </Card>
+          )}
+        </div>
+      )}
+
+      {/* Row 4: Risk & Performance — hover glow */}
       {riskMetrics.length > 0 && (
         <div>
           <p className={`${LABEL} px-0.5 pb-1.5`}>Risk &amp; Performance</p>
@@ -320,7 +345,7 @@ function FundPanel({ quote }: { quote: QuoteData }) {
 }
 
 // ─── Stock panel ──────────────────────────────────────────────────────────────
-function StockPanel({ quote }: { quote: QuoteData }) {
+function StockPanel({ quote, benchmark }: { quote: QuoteData; benchmark?: string | null }) {
   const mcapTarget = quote.market_cap ? quote.market_cap / 1e9 : 0
   const mcapFormat = useCallback((v: number) => {
     if (v >= 1000) return '$' + (v / 1000).toFixed(1) + 'T'
@@ -380,6 +405,15 @@ function StockPanel({ quote }: { quote: QuoteData }) {
               )}
             </Card>
           )}
+        </div>
+      )}
+      {/* Row 3: Benchmark */}
+      {benchmark && (
+        <div className="grid grid-cols-1 gap-2">
+          <Card index={cardIdx++} className={BASE}>
+            <span className={LABEL}>Benchmark</span>
+            <span className="text-xs font-semibold leading-tight">{benchmark}</span>
+          </Card>
         </div>
       )}
     </div>

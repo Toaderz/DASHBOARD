@@ -42,6 +42,8 @@ function rowToQuote(row: Record<string, unknown>) {
     inception_date: row.inception_date ?? null,
     price_to_book: row.price_to_book ?? null,
     median_market_cap: row.median_market_cap ?? null,
+    morningstar_category: row.morningstar_category ?? null,
+    global_category: row.global_category ?? null,
     currency: row.currency ?? null,
     last_updated: row.last_updated,
   }
