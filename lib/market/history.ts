@@ -16,11 +16,11 @@ const YAHOO_RANGE_MAP: Record<PeriodKey, string> = {
 const YAHOO_INTERVAL_MAP: Record<PeriodKey, string> = {
   '1W': '1d',
   '1M': '1d',
-  '1Y': '1wk',
-  '3Y': '1wk',
-  '5Y': '1mo',
+  '1Y': '1d',
+  '3Y': '1d',
+  '5Y': '1d',
   YTD: '1d',
-  '10Y': '1mo',
+  '10Y': '1d',
   MAX: '3mo',
 }
 
