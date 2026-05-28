@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { fetchBatchQuotes, fetchFundamentals } from '@/lib/market/finnhub'
+import { fetchHistoricalData } from '@/lib/market/history'
 
 const CACHE_TTL_MS = 60_000
 // Re-fetch fundamentals if they've never been fetched or are older than 24 h
@@ -150,7 +151,14 @@ export async function GET(request: NextRequest) {
   if (needsFundamentals.length > 0) {
     const results = await Promise.allSettled(
       needsFundamentals.map(async (ticker) => {
-        const f = await fetchFundamentals(ticker)
+        let f = await fetchFundamentals(ticker)
+        // If fundProfile didn't return inceptionDate, derive from first available history point
+        if (f.inception_date == null) {
+          try {
+            const history = await fetchHistoricalData(ticker, 'MAX')
+            if (history.length > 0) f = { ...f, inception_date: history[0].date }
+          } catch { /* ignore */ }
+        }
         // Always merge into freshMap so the response has the latest values
         const existing = freshMap.get(ticker) as Record<string, unknown> | undefined
         if (existing) freshMap.set(ticker, { ...existing, ...f })
