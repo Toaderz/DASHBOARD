@@ -83,6 +83,7 @@ export function AssetDetailModal({
   const [peerReturns, setPeerReturns] = useState<Record<string, ReturnMap>>({})
   const [peerMaxYears, setPeerMaxYears] = useState<Record<string, number | null>>({})
   const [peerNames, setPeerNames] = useState<Record<string, string>>({})
+  const [assetDisplayName, setAssetDisplayName] = useState<string | null>(null)
 
   // Reset on close
   useEffect(() => {
@@ -93,12 +94,31 @@ export function AssetDetailModal({
       setPeerReturns({})
       setPeerMaxYears({})
       setPeerNames({})
+      setAssetDisplayName(null)
       setChartPeriodReturn(null)
       setChartYears(null)
       setAnnualize(false)
       setUsd(false)
     }
   }, [open])
+
+  // Lookup real name for main asset when assets_metadata only has the ticker code as name
+  useEffect(() => {
+    if (!open || !asset) return
+    const needsLookup = !asset.name || asset.name === asset.ticker
+    if (!needsLookup) { setAssetDisplayName(null); return }
+    fetch(`/api/market/search?q=${encodeURIComponent(asset.ticker)}`)
+      .then((r) => r.json())
+      .then((data: { results: Array<{ ticker: string; name: string }> }) => {
+        const match = (data?.results ?? []).find(
+          (r) => r.ticker.toUpperCase() === asset.ticker.toUpperCase()
+        )
+        if (match && match.name && match.name !== asset.ticker) {
+          setAssetDisplayName(match.name)
+        }
+      })
+      .catch(() => null)
+  }, [open, asset])
 
   // Chart fetch
   useEffect(() => {
@@ -267,7 +287,7 @@ export function AssetDetailModal({
         <DialogHeader className="shrink-0">
           <DialogTitle className="flex items-center gap-3">
             <span className="font-mono text-2xl font-bold">{asset.ticker}</span>
-            <span className="text-base font-normal text-muted-foreground">{asset.name}</span>
+            <span className="text-base font-normal text-muted-foreground">{assetDisplayName ?? asset.name}</span>
             <Badge
               variant="outline"
               className={`border-0 text-xs ${TYPE_COLORS[asset.type] ?? ''}`}
@@ -459,7 +479,7 @@ export function AssetDetailModal({
                     return (
                       <tr key={asset.ticker} className="border-b bg-muted/30 font-semibold">
                         <td className="py-1 font-mono">{asset.ticker}</td>
-                        <td className="py-1 max-w-[140px] truncate">{asset.name}</td>
+                        <td className="py-1 max-w-[140px] truncate">{assetDisplayName ?? asset.name}</td>
                         <td className="py-1 text-right tabular-nums">
                           {formatPrice(displayPrice, usd ? 'USD' : (pq?.currency ?? quote?.currency ?? 'USD'))}
                         </td>
