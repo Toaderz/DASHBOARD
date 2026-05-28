@@ -179,7 +179,7 @@ export async function fetchFundamentals(ticker: string): Promise<Fundamentals> {
         aum,
         nav:            data.price?.navPrice ?? null,
         fund_family:    data.defaultKeyStatistics?.fundFamily ?? data.fundProfile?.family ?? null,
-        alpha:          pct(riskStats?.alpha),
+        alpha:          riskStats?.alpha ?? null,
         r_squared:      riskStats?.rSquared ?? null,
         std_dev:        pct(riskStats?.stdDev),
         sharpe:         riskStats?.sharpeRatio ?? null,

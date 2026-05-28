@@ -152,7 +152,7 @@ export function FundamentalsPanel({ quote, assetType }: FundamentalsPanelProps) 
 function FundPanel({ quote }: { quote: QuoteData }) {
   const aumTarget = quote.aum ? quote.aum / 1e9 : 0
   const aumFormat = useCallback((v: number) => '$' + v.toFixed(1) + 'B', [])
-  const erTarget = quote.expense_ratio ?? 0
+  const erTarget = (quote.expense_ratio ?? 0) * 100
   const erFormat = useCallback((v: number) => v.toFixed(2) + '%', [])
 
   const riskMetrics = [
