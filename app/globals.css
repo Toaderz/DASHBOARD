@@ -46,34 +46,34 @@
   }
 
   .light {
-    /* Ink surfaces — gris suave, no blanco puro */
-    --ink-void:     220 15% 86%;
-    --ink-dark:     220 15% 89%;
-    --ink-base:     220 15% 91%;
-    --ink-surface:  220 15% 95%;
-    --ink-elevated: 220 15% 97%;
-    --ink-overlay:  220 15% 99%;
+    /* Ink surfaces — stepped contrast so sidebar/content/cards are distinct */
+    --ink-void:     220 15% 76%;
+    --ink-dark:     220 15% 81%;
+    --ink-base:     220 15% 87%;   /* sidebar background */
+    --ink-surface:  220 10% 96%;
+    --ink-elevated: 0 0% 100%;
+    --ink-overlay:  0 0% 100%;
 
     /* shadcn bridge */
-    --background:             220 15% 93%;
-    --foreground:             220 25% 10%;
-    --card:                   220 15% 97%;
-    --card-foreground:        220 25% 10%;
-    --popover:                220 15% 97%;
-    --popover-foreground:     220 25% 10%;
-    --primary:                217 91% 55%;
+    --background:             220 15% 95%;   /* content area — lighter than sidebar */
+    --foreground:             220 25% 8%;
+    --card:                   0 0% 100%;     /* cards — white so they lift off the bg */
+    --card-foreground:        220 25% 8%;
+    --popover:                0 0% 100%;
+    --popover-foreground:     220 25% 8%;
+    --primary:                217 91% 50%;
     --primary-foreground:     0 0% 100%;
-    --secondary:              220 15% 88%;
+    --secondary:              220 15% 87%;
     --secondary-foreground:   220 25% 20%;
-    --muted:                  220 15% 89%;
+    --muted:                  220 15% 87%;
     --muted-foreground:       215 16% 40%;
-    --accent:                 220 15% 88%;
-    --accent-foreground:      220 25% 10%;
-    --destructive:            0 84% 60%;
+    --accent:                 220 15% 87%;
+    --accent-foreground:      220 25% 8%;
+    --destructive:            0 84% 58%;
     --destructive-foreground: 0 0% 100%;
-    --border:                 220 15% 72%;
-    --input:                  220 15% 80%;
-    --ring:                   217 91% 55%;
+    --border:                 220 15% 63%;   /* clearly visible separators */
+    --input:                  220 15% 76%;
+    --ring:                   217 91% 50%;
   }
 }
 
