@@ -83,6 +83,7 @@ export function MetricsSelector({ selected, onChange }: MetricsSelectorProps) {
       </PopoverTrigger>
       <PopoverContent className="w-72 p-4" align="end">
         <p className="mb-1 text-sm font-medium text-foreground">Visible Columns</p>
+        <div className="overflow-y-auto max-h-80 pr-1">
         {selectedDefs.length > 0 && (
           <>
             <p className="mb-2 text-[10px] uppercase tracking-wider text-muted-foreground">Drag to reorder</p>
@@ -135,6 +136,7 @@ export function MetricsSelector({ selected, onChange }: MetricsSelectorProps) {
             </div>
           </>
         )}
+        </div>
       </PopoverContent>
     </Popover>
   )
