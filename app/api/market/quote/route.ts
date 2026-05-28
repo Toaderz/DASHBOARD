@@ -39,6 +39,9 @@ function rowToQuote(row: Record<string, unknown>) {
     treynor: row.treynor ?? null,
     sector_weightings: row.sector_weightings ?? null,
     top_holdings: row.top_holdings ?? null,
+    inception_date: row.inception_date ?? null,
+    price_to_book: row.price_to_book ?? null,
+    median_market_cap: row.median_market_cap ?? null,
     currency: row.currency ?? null,
     last_updated: row.last_updated,
   }

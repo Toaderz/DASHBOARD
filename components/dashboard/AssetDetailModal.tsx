@@ -20,6 +20,7 @@ import {
   ResponsiveContainer,
 } from 'recharts'
 import { TickerSearch } from './TickerSearch'
+import { FundamentalsPanel } from './FundamentalsPanel'
 import { formatPrice, formatPercent, percentColor, annualizeReturn } from '@/lib/utils/formatters'
 import { useFxData } from '@/hooks/useFxData'
 import type { AssetMetadata, HistoricalDataPoint, QuoteData, AssetType, MetricKey } from '@/types'
@@ -373,6 +374,11 @@ export function AssetDetailModal({
               )}
             </div>
           </div>
+
+          {/* Fundamentals section */}
+          {quote && (
+            <FundamentalsPanel quote={quote} assetType={asset.type} />
+          )}
 
           {/* Peers section */}
           <div>

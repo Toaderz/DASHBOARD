@@ -98,6 +98,9 @@ export interface QuoteData {
   treynor?: number | null
   sector_weightings?: SectorWeight[] | null
   top_holdings?: Holding[] | null
+  inception_date?: string | null
+  price_to_book?: number | null
+  median_market_cap?: number | null
   currency?: string | null
   last_updated: string
 }

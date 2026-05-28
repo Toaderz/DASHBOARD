@@ -66,6 +66,9 @@ interface Fundamentals {
   treynor: number | null
   sector_weightings: SectorWeight[] | null
   top_holdings: Holding[] | null
+  inception_date: string | null
+  price_to_book: number | null
+  median_market_cap: number | null
 }
 
 const EMPTY_FUNDAMENTALS: Fundamentals = {
@@ -87,6 +90,9 @@ const EMPTY_FUNDAMENTALS: Fundamentals = {
   treynor: null,
   sector_weightings: null,
   top_holdings: null,
+  inception_date: null,
+  price_to_book: null,
+  median_market_cap: null,
 }
 
 const pct = (v: number | null | undefined): number | null => (v != null ? v * 100 : null)
@@ -103,10 +109,12 @@ interface YSummary {
   fundProfile?: {
     family?: string
     feesExpensesInvestment?: { annualReportExpenseRatio?: number } | null
+    inceptionDate?: number
   } | null
   topHoldings?: {
     holdings?: Array<{ symbol?: string; holdingName?: string; holdingPercent?: number }>
     sectorWeightings?: Record<string, number>[]
+    equityHoldings?: { priceToBook?: number; medianMarketCap?: number } | null
   } | null
   fundPerformance?: {
     riskOverviewStatistics?: {
@@ -178,6 +186,11 @@ export async function fetchFundamentals(ticker: string): Promise<Fundamentals> {
         treynor:        riskStats?.treynorRatio ?? null,
         sector_weightings: sectorWeightings.length > 0 ? sectorWeightings : null,
         top_holdings:      topHoldings.length > 0 ? topHoldings : null,
+        inception_date:    data.fundProfile?.inceptionDate
+          ? new Date(data.fundProfile.inceptionDate * 1000).toISOString().split('T')[0]
+          : null,
+        price_to_book:     data.topHoldings?.equityHoldings?.priceToBook ?? null,
+        median_market_cap: data.topHoldings?.equityHoldings?.medianMarketCap ?? null,
       }
     }
 
