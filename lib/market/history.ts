@@ -139,8 +139,8 @@ export async function fetchCalendarYearReturn(
         return { value: match.annualValue * 100 }
       }
     }
-  } catch {
-    // Not a fund or fundPerformance unavailable — fall through to price calculation
+  } catch (err) {
+    console.error('[fundPerformance] quoteSummary failed for', ticker, year, err instanceof Error ? err.message : err)
   }
 
   // For stocks: calculate from adjusted close price history
