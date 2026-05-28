@@ -5,7 +5,8 @@ import type { MetricKey, QuoteData } from '@/types'
 
 const FX_TICKER: Record<string, string> = {
   GBP: 'GBPUSD=X',
-  GBX: 'GBPUSD=X',  // pence — price divided by 100
+  GBX: 'GBPUSD=X',  // pence (Yahoo uppercase)
+  GBp: 'GBPUSD=X',  // pence (Yahoo mixed-case, e.g. PSH.L)
   EUR: 'EURUSD=X',
   JPY: 'JPYUSD=X',
   CHF: 'CHFUSD=X',
@@ -14,7 +15,7 @@ const FX_TICKER: Record<string, string> = {
   HKD: 'HKDUSD=X',
 }
 
-const FX_DIVISOR: Record<string, number> = { GBX: 100 }
+const FX_DIVISOR: Record<string, number> = { GBX: 100, GBp: 100 }
 
 export interface FxSpotRate {
   rate: number
