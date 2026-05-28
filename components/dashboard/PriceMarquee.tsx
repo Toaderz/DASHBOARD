@@ -1,19 +1,28 @@
 'use client'
 
+import { useMemo } from 'react'
 import { cn } from '@/lib/utils/cn'
 import { useRealtimePrices } from '@/hooks/useRealtimePrices'
-import type { Watchlist } from '@/types'
+import { useAllWatchlistTickers } from '@/hooks/useTopPerformers'
 
-const MARQUEE_TICKERS = ['SPY', 'QQQ', 'IWM', 'GLD', 'TLT', 'BND', 'DX-Y.NYB', 'CL=F', 'GC=F', 'BTC-USD']
+const BENCHMARK_TICKERS = ['SPY', 'QQQ', 'IWM', 'GLD', 'TLT', 'BND', 'DX-Y.NYB', 'CL=F', 'GC=F', 'BTC-USD']
 
-interface PriceMarqueeProps {
-  watchlists: Watchlist[]
-}
+export function PriceMarquee() {
+  const { tickers: watchlistTickers, loading } = useAllWatchlistTickers()
 
-export function PriceMarquee({ watchlists: _ }: PriceMarqueeProps) {
-  const { prices } = useRealtimePrices(MARQUEE_TICKERS)
+  const allTickers = useMemo(() => {
+    const watchlistSet = new Set(watchlistTickers.map((t) => t.ticker))
+    return [
+      ...BENCHMARK_TICKERS.filter((t) => !watchlistSet.has(t)),
+      ...watchlistTickers.map((t) => t.ticker),
+    ]
+  }, [watchlistTickers])
 
-  const items = MARQUEE_TICKERS
+  const tickers = loading ? BENCHMARK_TICKERS : allTickers
+
+  const { prices } = useRealtimePrices(tickers)
+
+  const items = tickers
     .map((ticker) => ({ ticker, data: prices[ticker] }))
     .filter((item) => item.data != null)
 

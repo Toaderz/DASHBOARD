@@ -164,7 +164,7 @@ export function DashboardShell({ user, children }: DashboardShellProps) {
 
         {/* Main content */}
         <main className="flex-1 overflow-y-auto min-w-0 flex flex-col">
-          <PriceMarquee watchlists={watchlists} />
+          <PriceMarquee />
           <div className="flex-1">
             {children}
           </div>
