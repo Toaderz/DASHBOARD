@@ -135,8 +135,8 @@ export function FundamentalsPanel({ quote, assetType }: FundamentalsPanelProps) 
   const isFund = assetType === 'etf' || assetType === 'fund'
 
   const hasAnyFundData = !!(
-    quote.aum || quote.expense_ratio || quote.pe || quote.beta ||
-    quote.alpha || quote.sharpe || quote.treynor || quote.dividend_yield ||
+    quote.aum != null || quote.expense_ratio != null || quote.pe != null || quote.beta != null ||
+    quote.alpha != null || quote.sharpe != null || quote.treynor != null || quote.dividend_yield != null ||
     quote.top_holdings?.length || quote.sector_weightings?.length
   )
   const hasAnyStockData = !!(quote.market_cap || quote.pe || quote.beta || quote.profit_margins)
@@ -150,8 +150,9 @@ export function FundamentalsPanel({ quote, assetType }: FundamentalsPanelProps) 
 
 // ─── ETF / Fund panel ─────────────────────────────────────────────────────────
 function FundPanel({ quote }: { quote: QuoteData }) {
-  const aumTarget = quote.aum ? quote.aum / 1e9 : 0
-  const aumFormat = useCallback((v: number) => '$' + v.toFixed(1) + 'B', [])
+  const aumUnit = (quote.aum ?? 0) >= 1e9 ? 'B' : 'M'
+  const aumTarget = (quote.aum ?? 0) / (aumUnit === 'B' ? 1e9 : 1e6)
+  const aumFormat = useCallback((v: number) => '$' + v.toFixed(aumUnit === 'B' ? 1 : 0) + aumUnit, [aumUnit])
   const erTarget = (quote.expense_ratio ?? 0) * 100
   const erFormat = useCallback((v: number) => v.toFixed(2) + '%', [])
 
@@ -160,7 +161,7 @@ function FundPanel({ quote }: { quote: QuoteData }) {
     { key: 'beta',  label: 'Beta',  hint: HINTS.beta,  value: quote.beta,  sign: false },
     { key: 'sharpe',  label: 'Sharpe',  hint: HINTS.sharpe,  value: quote.sharpe,  sign: false },
     { key: 'treynor', label: 'Treynor', hint: HINTS.treynor, value: quote.treynor, sign: false },
-  ].filter((m) => m.value != null)
+  ].filter((m) => m.value != null && m.value !== 0)
 
   const topHoldings  = quote.top_holdings ?? []
   const sectorWeights = (quote.sector_weightings ?? [])
@@ -178,7 +179,7 @@ function FundPanel({ quote }: { quote: QuoteData }) {
       {/* Row 1: AUM / Expense Ratio / Inception */}
       {(quote.aum || quote.expense_ratio || quote.inception_date) && (
         <div className="grid grid-cols-3 gap-2">
-          {quote.aum && (
+          {quote.aum != null && (
             <Card index={cardIdx++} className={BASE}>
               <span className={LABEL}>AUM</span>
               <span className={VALUE}>
@@ -186,7 +187,7 @@ function FundPanel({ quote }: { quote: QuoteData }) {
               </span>
             </Card>
           )}
-          {quote.expense_ratio && (
+          {quote.expense_ratio != null && (
             <Card index={cardIdx++} className={BASE}>
               <span className={LABEL}>Expense Ratio</span>
               <span className={VALUE}>
@@ -194,7 +195,7 @@ function FundPanel({ quote }: { quote: QuoteData }) {
               </span>
             </Card>
           )}
-          {quote.inception_date && (
+          {quote.inception_date != null && (
             <Card index={cardIdx++} className={BASE}>
               <span className={LABEL}>Inception</span>
               <span className="text-sm font-semibold leading-tight">
@@ -208,7 +209,7 @@ function FundPanel({ quote }: { quote: QuoteData }) {
       {/* Row 2: P/E / P/B / Dividend Yield / Avg Mkt Cap */}
       {(quote.pe || quote.price_to_book || quote.dividend_yield || quote.median_market_cap) && (
         <div className="grid grid-cols-4 gap-2">
-          {quote.pe && (
+          {quote.pe != null && (
             <Card index={cardIdx++} className={BASE}>
               <span className={LABEL}>
                 P/E <MetricHint text={HINTS.pe} />
@@ -216,7 +217,7 @@ function FundPanel({ quote }: { quote: QuoteData }) {
               <span className={VALUE_SM}>{quote.pe.toFixed(1)}×</span>
             </Card>
           )}
-          {quote.price_to_book && (
+          {quote.price_to_book != null && (
             <Card index={cardIdx++} className={BASE}>
               <span className={LABEL}>
                 P/B <MetricHint text={HINTS.pb} />
@@ -224,17 +225,17 @@ function FundPanel({ quote }: { quote: QuoteData }) {
               <span className={VALUE_SM}>{quote.price_to_book.toFixed(2)}×</span>
             </Card>
           )}
-          {quote.dividend_yield && (
+          {quote.dividend_yield != null && (
             <Card index={cardIdx++} className={BASE}>
               <span className={LABEL}>Div. Yield</span>
               <span className={VALUE_SM}>{quote.dividend_yield.toFixed(2)}%</span>
             </Card>
           )}
-          {quote.median_market_cap && (
+          {quote.median_market_cap != null && (
             <Card index={cardIdx++} className={BASE}>
               <span className={LABEL}>Avg Mkt Cap</span>
               <span className="text-sm font-semibold leading-tight">
-                {formatMarketCap(quote.median_market_cap)}
+                {formatMarketCap(quote.median_market_cap * 1000)}
               </span>
             </Card>
           )}
@@ -333,7 +334,7 @@ function StockPanel({ quote }: { quote: QuoteData }) {
       {/* Row 1 */}
       {(quote.market_cap || quote.pe || quote.dividend_yield) && (
         <div className="grid grid-cols-3 gap-2">
-          {quote.market_cap && (
+          {quote.market_cap != null && (
             <Card index={cardIdx++} className={BASE}>
               <span className={LABEL}>Market Cap</span>
               <span className={VALUE}>
@@ -341,13 +342,13 @@ function StockPanel({ quote }: { quote: QuoteData }) {
               </span>
             </Card>
           )}
-          {quote.pe && (
+          {quote.pe != null && (
             <Card index={cardIdx++} className={BASE}>
               <span className={LABEL}>P/E <MetricHint text={HINTS.pe} /></span>
               <span className={VALUE_SM}>{quote.pe.toFixed(1)}×</span>
             </Card>
           )}
-          {quote.dividend_yield && (
+          {quote.dividend_yield != null && (
             <Card index={cardIdx++} className={BASE}>
               <span className={LABEL}>Div. Yield</span>
               <span className={VALUE_SM}>{quote.dividend_yield.toFixed(2)}%</span>
@@ -358,19 +359,19 @@ function StockPanel({ quote }: { quote: QuoteData }) {
       {/* Row 2 */}
       {(quote.beta || quote.profit_margins || quote.sector) && (
         <div className="grid grid-cols-3 gap-2">
-          {quote.beta && (
+          {quote.beta != null && quote.beta !== 0 && (
             <Card index={cardIdx++} className={GLOW}>
               <span className={LABEL}>Beta <MetricHint text={HINTS.beta} /></span>
               <span className={VALUE_SM}>{quote.beta.toFixed(2)}</span>
             </Card>
           )}
-          {quote.profit_margins && (
+          {quote.profit_margins != null && (
             <Card index={cardIdx++} className={BASE}>
               <span className={LABEL}>Net Margin</span>
               <span className={VALUE_SM}>{quote.profit_margins.toFixed(1)}%</span>
             </Card>
           )}
-          {quote.sector && (
+          {quote.sector != null && (
             <Card index={cardIdx++} className={BASE}>
               <span className={LABEL}>Sector</span>
               <span className="text-xs font-semibold leading-tight">{quote.sector}</span>
