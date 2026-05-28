@@ -1,14 +1,18 @@
 'use client'
 
-import { useMemo } from 'react'
+import { useMemo, useRef, useLayoutEffect, useState } from 'react'
 import { cn } from '@/lib/utils/cn'
 import { useRealtimePrices } from '@/hooks/useRealtimePrices'
 import { useAllWatchlistTickers } from '@/hooks/useTopPerformers'
 
 const BENCHMARK_TICKERS = ['SPY', 'QQQ', 'IWM', 'GLD', 'TLT', 'BND', 'DX-Y.NYB', 'CL=F', 'GC=F', 'BTC-USD']
+// Target pixels per second — constant regardless of how many tickers there are
+const PIXELS_PER_SECOND = 80
 
 export function PriceMarquee() {
   const { tickers: watchlistTickers, loading } = useAllWatchlistTickers()
+  const trackRef = useRef<HTMLDivElement>(null)
+  const [duration, setDuration] = useState<number>(70)
 
   const allTickers = useMemo(() => {
     const watchlistSet = new Set(watchlistTickers.map((t) => t.ticker))
@@ -26,13 +30,25 @@ export function PriceMarquee() {
     .map((ticker) => ({ ticker, data: prices[ticker] }))
     .filter((item) => item.data != null)
 
+  // Recalculate duration whenever the rendered content changes so speed stays constant.
+  // scrollWidth = doubled content; the animation travels exactly half (one full set).
+  useLayoutEffect(() => {
+    if (!trackRef.current || items.length === 0) return
+    const halfWidth = trackRef.current.scrollWidth / 2
+    if (halfWidth > 0) setDuration(Math.round(halfWidth / PIXELS_PER_SECOND))
+  }, [items.length])
+
   if (items.length === 0) return null
 
   const doubled = [...items, ...items]
 
   return (
     <div className="overflow-hidden border-b border-border bg-ink-base h-8 flex items-center shrink-0">
-      <div className="flex animate-marquee pause-on-hover whitespace-nowrap">
+      <div
+        ref={trackRef}
+        className="flex animate-marquee pause-on-hover whitespace-nowrap"
+        style={{ animationDuration: `${duration}s` }}
+      >
         {doubled.map((item, i) => {
           const pct = item.data?.change_percent ?? 0
           const positive = pct >= 0
