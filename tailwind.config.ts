@@ -98,8 +98,8 @@ const config: Config = {
       animation: {
         'flash-green':    'flash-green 1.5s ease-out forwards',
         'flash-red':      'flash-red 1.5s ease-out forwards',
-        'marquee':        'marquee 40s linear infinite',
-        'marquee-r':      'marquee-reverse 40s linear infinite',
+        'marquee':        'marquee 70s linear infinite',
+        'marquee-r':      'marquee-reverse 70s linear infinite',
       },
     },
   },
