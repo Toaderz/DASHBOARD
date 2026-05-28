@@ -106,7 +106,7 @@ export default function LoginPage() {
             variants={{ hidden: { scale: 0.8, opacity: 0 }, visible: { scale: 1, opacity: 1, transition: { duration: 0.4, ease: [0.22, 1, 0.36, 1] } } }}
             className="inline-flex h-12 w-12 items-center justify-center"
           >
-            <Image src="/icons/icon-192.png" alt="Evolve" width={48} height={48} className="object-cover" />
+            <Image src="/icons/icon-192.png" alt="Evolve" width={48} height={48} className="object-cover invert dark:invert-0" />
           </motion.div>
 
           <div className="flex items-center justify-center gap-2 overflow-hidden">

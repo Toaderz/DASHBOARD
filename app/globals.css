@@ -46,33 +46,33 @@
   }
 
   .light {
-    /* Ink surfaces — stepped contrast so sidebar/content/cards are distinct */
-    --ink-void:     220 15% 76%;
-    --ink-dark:     220 15% 81%;
-    --ink-base:     220 15% 87%;   /* sidebar background */
-    --ink-surface:  220 10% 96%;
+    /* Blue-tinted ink surfaces — gives a formal financial terminal feel */
+    --ink-void:     214 30% 74%;
+    --ink-dark:     214 28% 80%;
+    --ink-base:     214 30% 86%;   /* sidebar — subtle slate-blue tint */
+    --ink-surface:  214 20% 95%;
     --ink-elevated: 0 0% 100%;
     --ink-overlay:  0 0% 100%;
 
     /* shadcn bridge */
-    --background:             220 15% 95%;   /* content area — lighter than sidebar */
-    --foreground:             220 25% 8%;
-    --card:                   0 0% 100%;     /* cards — white so they lift off the bg */
-    --card-foreground:        220 25% 8%;
+    --background:             214 22% 94%;   /* content — cool blue-white */
+    --foreground:             220 35% 8%;
+    --card:                   0 0% 100%;     /* cards — pure white, lift off bg */
+    --card-foreground:        220 35% 8%;
     --popover:                0 0% 100%;
-    --popover-foreground:     220 25% 8%;
+    --popover-foreground:     220 35% 8%;
     --primary:                217 91% 50%;
     --primary-foreground:     0 0% 100%;
-    --secondary:              220 15% 87%;
-    --secondary-foreground:   220 25% 20%;
-    --muted:                  220 15% 87%;
-    --muted-foreground:       215 16% 40%;
-    --accent:                 220 15% 87%;
-    --accent-foreground:      220 25% 8%;
+    --secondary:              214 25% 86%;
+    --secondary-foreground:   220 30% 20%;
+    --muted:                  214 22% 88%;
+    --muted-foreground:       215 22% 40%;
+    --accent:                 214 25% 86%;
+    --accent-foreground:      220 35% 8%;
     --destructive:            0 84% 58%;
     --destructive-foreground: 0 0% 100%;
-    --border:                 220 15% 63%;   /* clearly visible separators */
-    --input:                  220 15% 76%;
+    --border:                 214 22% 62%;   /* clearly visible blue-gray borders */
+    --input:                  214 22% 76%;
     --ring:                   217 91% 50%;
   }
 }
