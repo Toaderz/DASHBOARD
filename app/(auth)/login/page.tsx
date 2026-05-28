@@ -104,7 +104,7 @@ export default function LoginPage() {
         >
           <motion.div
             variants={{ hidden: { scale: 0.8, opacity: 0 }, visible: { scale: 1, opacity: 1, transition: { duration: 0.4, ease: [0.22, 1, 0.36, 1] } } }}
-            className="inline-flex h-12 w-12 items-center justify-center rounded-md overflow-hidden bg-[hsl(220,15%,7%)] shadow-lg"
+            className="inline-flex h-12 w-12 items-center justify-center"
           >
             <Image src="/icons/icon-192.png" alt="Evolve" width={48} height={48} className="object-cover" />
           </motion.div>
@@ -122,11 +122,7 @@ export default function LoginPage() {
                     transition: { delay: 0.15 + idx * 0.08, duration: 0.5, ease: [0.22, 1, 0.36, 1] },
                   }),
                 }}
-                className={
-                  i === 0
-                    ? 'font-mono text-xs uppercase tracking-[0.25em] text-foreground font-semibold'
-                    : 'font-mono text-xs uppercase tracking-[0.25em] text-muted-foreground'
-                }
+                className="font-mono text-xs uppercase tracking-[0.25em] text-muted-foreground"
               >
                 {word}
               </motion.span>
