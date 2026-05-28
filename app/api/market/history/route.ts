@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { fetchHistoricalData, calculateReturn, type PeriodKey } from '@/lib/market/history'
+import { fetchHistoricalData, calculateReturn, fetchCalendarYearReturn, type PeriodKey } from '@/lib/market/history'
 
 const VALID_PERIODS: PeriodKey[] = ['1W', '1M', '1Y', '3Y', '5Y', 'YTD', '10Y', 'MAX']
 
@@ -12,6 +12,16 @@ export async function GET(request: NextRequest) {
 
   if (!ticker) {
     return NextResponse.json({ error: 'Missing ticker param' }, { status: 400 })
+  }
+
+  if (mode === 'calYear') {
+    const yearStr = searchParams.get('year')
+    const year = yearStr ? parseInt(yearStr, 10) : NaN
+    if (isNaN(year)) {
+      return NextResponse.json({ error: 'Invalid year param' }, { status: 400 })
+    }
+    const { value } = await fetchCalendarYearReturn(ticker, year)
+    return NextResponse.json({ ticker, year, return: value })
   }
 
   if (mode === 'return') {

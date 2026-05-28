@@ -10,6 +10,11 @@ export type MetricKey =
   | '5Y'
   | '10Y'
   | 'MAX'
+  | 'CY2025'
+  | 'CY2024'
+  | 'CY2023'
+  | 'CY2022'
+  | 'CY2021'
   | 'marketCap'
   | 'pe'
   | 'dividendYield'
@@ -164,6 +169,11 @@ export const METRIC_DEFINITIONS: MetricDefinition[] = [
   { key: '5Y', label: '5Y %', description: '5 Year Return', format: 'percent' },
   { key: '10Y', label: '10Y %', description: '10 Year Return', format: 'percent' },
   { key: 'MAX', label: 'MAX %', description: 'Since Inception Return', format: 'percent' },
+  { key: 'CY2025', label: 'CY2025', description: '2025 Calendar Year Return', format: 'percent' },
+  { key: 'CY2024', label: 'CY2024', description: '2024 Calendar Year Return', format: 'percent' },
+  { key: 'CY2023', label: 'CY2023', description: '2023 Calendar Year Return', format: 'percent' },
+  { key: 'CY2022', label: 'CY2022', description: '2022 Calendar Year Return', format: 'percent' },
+  { key: 'CY2021', label: 'CY2021', description: '2021 Calendar Year Return', format: 'percent' },
   { key: 'marketCap', label: 'Mkt Cap', description: 'Market Capitalization', format: 'currency' },
   { key: 'pe', label: 'P/E', description: 'Price to Earnings Ratio', format: 'ratio' },
   { key: 'dividendYield', label: 'Div Yield', description: 'Dividend Yield', format: 'percent' },

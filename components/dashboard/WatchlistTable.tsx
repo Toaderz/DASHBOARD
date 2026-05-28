@@ -61,7 +61,7 @@ export function WatchlistTable({
   const activeMetrics = watchlist.selected_metrics as MetricKey[]
   const { returns, maxYears } = usePerformanceMetrics(tickers, prices, activeMetrics)
 
-  const RETURN_PERIODS_SET = new Set(['1W', '1M', 'YTD', '1Y', '3Y', '5Y', '10Y', 'MAX'])
+  const RETURN_PERIODS_SET = new Set(['1W', '1M', 'YTD', '1Y', '3Y', '5Y', '10Y', 'MAX', 'CY2025', 'CY2024', 'CY2023', 'CY2022', 'CY2021'])
   const activePeriods = useMemo(
     () => activeMetrics.filter((m): m is MetricKey => RETURN_PERIODS_SET.has(m)),
     [activeMetrics]
@@ -157,7 +157,12 @@ export function WatchlistTable({
       case '1Y':  return new Date(y - 1, m, d).toISOString().split('T')[0]
       case '3Y':  return new Date(y - 3, m, d).toISOString().split('T')[0]
       case '5Y':  return new Date(y - 5, m, d).toISOString().split('T')[0]
-      case '10Y': return new Date(y - 10, m, d).toISOString().split('T')[0]
+      case '10Y':   return new Date(y - 10, m, d).toISOString().split('T')[0]
+      case 'CY2025': return '2025-01-01'
+      case 'CY2024': return '2024-01-01'
+      case 'CY2023': return '2023-01-01'
+      case 'CY2022': return '2022-01-01'
+      case 'CY2021': return '2021-01-01'
       default:    return null
     }
   }, [])
@@ -224,7 +229,7 @@ export function WatchlistTable({
             return <span className={percentColor(v)}>{formatPercent(v)}</span>
           },
         }),
-        ...(['1W', '1M', 'YTD', '1Y', '3Y', '5Y', '10Y', 'MAX'] as MetricKey[]).map((period) =>
+        ...(['1W', '1M', 'YTD', '1Y', '3Y', '5Y', '10Y', 'MAX', 'CY2025', 'CY2024', 'CY2023', 'CY2022', 'CY2021'] as MetricKey[]).map((period) =>
           helper.accessor((row) => returns[row.ticker]?.[period] ?? null, {
             id: period,
             header: () => {
@@ -473,7 +478,7 @@ export function WatchlistTable({
   const visibleColCount = table.getVisibleLeafColumns().length
 
   // Columns hidden on mobile to reduce horizontal scrolling
-  const MOBILE_HIDDEN = new Set(['3Y', '5Y', '10Y', 'MAX', 'expenseRatio', 'aum', 'beta', 'profitMargins', 'from52wHigh', 'inceptionDate', 'morningstarCategory', 'globalCategory'])
+  const MOBILE_HIDDEN = new Set(['3Y', '5Y', '10Y', 'MAX', 'CY2025', 'CY2024', 'CY2023', 'CY2022', 'CY2021', 'expenseRatio', 'aum', 'beta', 'profitMargins', 'from52wHigh', 'inceptionDate', 'morningstarCategory', 'globalCategory'])
   // Sticky left column on mobile
   const STICKY_LEFT = new Set(['ticker'])
 

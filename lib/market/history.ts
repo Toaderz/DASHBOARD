@@ -81,6 +81,43 @@ export async function fetchHistoricalData(
   }
 }
 
+export async function fetchCalendarYearReturn(
+  ticker: string,
+  year: number
+): Promise<{ value: number | null }> {
+  const period1 = Math.floor(new Date(`${year}-01-01T00:00:00Z`).getTime() / 1000)
+  const period2 = Math.floor(new Date(`${year + 1}-01-01T00:00:00Z`).getTime() / 1000) - 1
+
+  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?period1=${period1}&period2=${period2}&interval=1d&includePrePost=false`
+
+  try {
+    const res = await fetch(url, {
+      headers: { 'User-Agent': 'Mozilla/5.0' },
+      next: { revalidate: 3600 },
+    })
+    if (!res.ok) return { value: null }
+
+    const data = (await res.json()) as YahooChartResult
+    const result = data.chart?.result?.[0]
+    if (!result) return { value: null }
+
+    const { indicators } = result
+    const adjClose = indicators.adjclose?.[0]?.adjclose
+    const closes = adjClose ?? indicators.quote[0]?.close
+
+    if (!closes || closes.length < 2) return { value: null }
+
+    const valid = closes.filter((c): c is number => c != null && c > 0)
+    if (valid.length < 2) return { value: null }
+
+    const first = valid[0]
+    const last = valid[valid.length - 1]
+    return { value: ((last - first) / first) * 100 }
+  } catch {
+    return { value: null }
+  }
+}
+
 export async function calculateReturn(
   ticker: string,
   period: PeriodKey,

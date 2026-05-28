@@ -17,6 +17,10 @@ const FX_TICKER: Record<string, string> = {
 
 const FX_DIVISOR: Record<string, number> = { GBX: 100, GBp: 100 }
 
+const CY_YEAR: Record<string, number> = {
+  CY2025: 2025, CY2024: 2024, CY2023: 2023, CY2022: 2022, CY2021: 2021,
+}
+
 export interface FxSpotRate {
   rate: number
   change1d: number
@@ -25,6 +29,15 @@ export interface FxSpotRate {
 async function fetchFxReturn(ticker: string, period: string): Promise<number | null> {
   const res = await fetch(
     `/api/market/history?ticker=${encodeURIComponent(ticker)}&period=${period}&mode=return`
+  )
+  if (!res.ok) return null
+  const json = await res.json()
+  return json.return ?? null
+}
+
+async function fetchFxCalendarYear(ticker: string, year: number): Promise<number | null> {
+  const res = await fetch(
+    `/api/market/history?ticker=${encodeURIComponent(ticker)}&year=${year}&mode=calYear`
   )
   if (!res.ok) return null
   const json = await res.json()
@@ -40,7 +53,9 @@ export function useFxData(
 } {
   const nonUsd = [...new Set(currencies.filter((c) => c !== 'USD'))]
   const fxTickers = [...new Set(nonUsd.map((c) => FX_TICKER[c]).filter(Boolean))]
-  const returnPeriods = activePeriods.filter((p) => p !== '1D')
+
+  const cyPeriods = activePeriods.filter((p) => p in CY_YEAR)
+  const returnPeriods = activePeriods.filter((p) => p !== '1D' && !(p in CY_YEAR))
 
   const { data: spotQuotes } = useQuery<Record<string, QuoteData>>({
     queryKey: ['fxSpot', fxTickers.sort().join(',')],
@@ -55,24 +70,37 @@ export function useFxData(
   })
 
   const { data: periodData } = useQuery<Record<string, Partial<Record<MetricKey, number | null>>>>({
-    queryKey: ['fxPeriodReturns', nonUsd.sort().join(','), returnPeriods.join(',')],
+    queryKey: ['fxPeriodReturns', nonUsd.sort().join(','), returnPeriods.join(','), cyPeriods.join(',')],
     queryFn: async () => {
       const result: Record<string, Partial<Record<MetricKey, number | null>>> = {}
       await Promise.all(
         nonUsd.map(async (currency) => {
           const fxTicker = FX_TICKER[currency]
           if (!fxTicker) return
-          const periodReturns = await Promise.all(
-            returnPeriods.map((p) => fetchFxReturn(fxTicker, p))
-          )
           const map: Partial<Record<MetricKey, number | null>> = {}
-          returnPeriods.forEach((p, i) => { map[p] = periodReturns[i] })
+
+          // Standard period returns
+          if (returnPeriods.length > 0) {
+            const periodReturns = await Promise.all(
+              returnPeriods.map((p) => fetchFxReturn(fxTicker, p))
+            )
+            returnPeriods.forEach((p, i) => { map[p] = periodReturns[i] })
+          }
+
+          // Calendar year FX returns
+          if (cyPeriods.length > 0) {
+            const cyReturns = await Promise.all(
+              cyPeriods.map((key) => fetchFxCalendarYear(fxTicker, CY_YEAR[key]))
+            )
+            cyPeriods.forEach((key, i) => { map[key] = cyReturns[i] })
+          }
+
           result[currency] = map
         })
       )
       return result
     },
-    enabled: nonUsd.length > 0 && returnPeriods.length > 0,
+    enabled: nonUsd.length > 0 && (returnPeriods.length > 0 || cyPeriods.length > 0),
     staleTime: 300_000,
     refetchInterval: 300_000,
   })
