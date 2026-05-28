@@ -18,7 +18,7 @@ const FX_TICKER: Record<string, string> = {
 const FX_DIVISOR: Record<string, number> = { GBX: 100, GBp: 100 }
 
 const CY_YEAR: Record<string, number> = {
-  CY2025: 2025, CY2024: 2024, CY2023: 2023, CY2022: 2022, CY2021: 2021,
+  CY2025: 2025, CY2024: 2024, CY2023: 2023, CY2022: 2022, CY2021: 2021, CY2020: 2020, CY2019: 2019,
 }
 
 export interface FxSpotRate {

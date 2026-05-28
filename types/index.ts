@@ -15,6 +15,8 @@ export type MetricKey =
   | 'CY2023'
   | 'CY2022'
   | 'CY2021'
+  | 'CY2020'
+  | 'CY2019'
   | 'marketCap'
   | 'pe'
   | 'dividendYield'
@@ -174,6 +176,8 @@ export const METRIC_DEFINITIONS: MetricDefinition[] = [
   { key: 'CY2023', label: 'CY2023', description: '2023 Calendar Year Return', format: 'percent' },
   { key: 'CY2022', label: 'CY2022', description: '2022 Calendar Year Return', format: 'percent' },
   { key: 'CY2021', label: 'CY2021', description: '2021 Calendar Year Return', format: 'percent' },
+  { key: 'CY2020', label: 'CY2020', description: '2020 Calendar Year Return', format: 'percent' },
+  { key: 'CY2019', label: 'CY2019', description: '2019 Calendar Year Return', format: 'percent' },
   { key: 'marketCap', label: 'Mkt Cap', description: 'Market Capitalization', format: 'currency' },
   { key: 'pe', label: 'P/E', description: 'Price to Earnings Ratio', format: 'ratio' },
   { key: 'dividendYield', label: 'Div Yield', description: 'Dividend Yield', format: 'percent' },

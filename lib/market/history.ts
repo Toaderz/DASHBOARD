@@ -1,4 +1,10 @@
 import type { HistoricalDataPoint } from '@/types'
+import YahooFinanceLib from 'yahoo-finance2'
+
+const yf = new YahooFinanceLib({
+  suppressNotices: ['yahooSurvey'],
+  validation: { logErrors: false, logOptionsErrors: false, allowAdditionalProps: true },
+})
 
 export type PeriodKey = '1W' | '1M' | '1Y' | '3Y' | '5Y' | 'YTD' | '10Y' | 'MAX'
 
@@ -81,7 +87,7 @@ export async function fetchHistoricalData(
   }
 }
 
-export async function fetchCalendarYearReturn(
+async function fetchCalendarYearReturnFromPrice(
   ticker: string,
   year: number
 ): Promise<{ value: number | null }> {
@@ -116,6 +122,29 @@ export async function fetchCalendarYearReturn(
   } catch {
     return { value: null }
   }
+}
+
+export async function fetchCalendarYearReturn(
+  ticker: string,
+  year: number
+): Promise<{ value: number | null }> {
+  // For ETFs/funds: use Morningstar NAV-based total returns (matches Yahoo Finance fund pages exactly)
+  try {
+    const summary = await yf.quoteSummary(ticker, { modules: ['fundPerformance'] }, { validateResult: false }) as Record<string, unknown>
+    const fp = summary.fundPerformance as Record<string, unknown> | null | undefined
+    const annualReturns = (fp?.annualTotalReturns as { returns?: Array<{ year: string | number; annualValue: number | null }> } | null)?.returns
+    if (Array.isArray(annualReturns)) {
+      const match = annualReturns.find((r) => String(r.year) === String(year))
+      if (match?.annualValue != null) {
+        return { value: match.annualValue * 100 }
+      }
+    }
+  } catch {
+    // Not a fund or fundPerformance unavailable — fall through to price calculation
+  }
+
+  // For stocks: calculate from adjusted close price history
+  return fetchCalendarYearReturnFromPrice(ticker, year)
 }
 
 export async function calculateReturn(
