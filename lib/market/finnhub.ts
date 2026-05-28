@@ -157,7 +157,7 @@ interface YSummary {
     family?: string
     categoryName?: string | null
     feesExpensesInvestment?: { annualReportExpenseRatio?: number } | null
-    inceptionDate?: number
+    inceptionDate?: number | Date
   } | null
   topHoldings?: {
     holdings?: Array<{ symbol?: string; holdingName?: string; holdingPercent?: number }>
@@ -239,9 +239,12 @@ export async function fetchFundamentals(ticker: string): Promise<Fundamentals> {
         treynor:        riskStats?.treynorRatio ?? null,
         sector_weightings: sectorWeightings.length > 0 ? sectorWeightings : null,
         top_holdings:      topHoldings.length > 0 ? topHoldings : null,
-        inception_date:    data.fundProfile?.inceptionDate
-          ? new Date(data.fundProfile.inceptionDate * 1000).toISOString().split('T')[0]
-          : null,
+        inception_date: (() => {
+          const raw = data.fundProfile?.inceptionDate
+          if (raw == null) return null
+          const d = raw instanceof Date ? raw : new Date((raw as number) * 1000)
+          return isNaN(d.getTime()) ? null : d.toISOString().split('T')[0]
+        })(),
         price_to_book:      data.topHoldings?.equityHoldings?.priceToBook ?? null,
         median_market_cap:  data.topHoldings?.equityHoldings?.medianMarketCap ?? null,
         morningstar_category: data.fundProfile?.categoryName ?? null,
