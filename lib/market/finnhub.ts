@@ -217,6 +217,11 @@ export async function fetchFundamentals(ticker: string): Promise<Fundamentals> {
 
     if (isFund) {
       const aum = totalAssets
+      console.log(`[DEBUG fundProfile] ${ticker}:`, JSON.stringify({
+        categoryName: data.fundProfile?.categoryName,
+        inceptionDate: data.fundProfile?.inceptionDate,
+        quoteType: rawQuoteType,
+      }))
       return {
         ...EMPTY_FUNDAMENTALS,
         market_cap:     null,
