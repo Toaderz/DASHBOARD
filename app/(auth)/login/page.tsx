@@ -64,7 +64,7 @@ export default function LoginPage() {
           className="w-full max-w-sm rounded-sm border border-border bg-ink-surface p-8 text-center"
         >
           <div className="mb-4 font-mono text-3xl text-electric">✓</div>
-          <h2 className="mb-2 font-editorial text-xl font-bold">Check your email</h2>
+          <h2 className="mb-2 font-ui text-xl font-semibold tracking-tight">Check your email</h2>
           <p className="font-ui text-sm text-muted-foreground">
             Sent a confirmation link to <strong className="text-foreground">{email}</strong>.
             Click it to activate your account.
@@ -104,7 +104,7 @@ export default function LoginPage() {
         >
           <motion.div
             variants={{ hidden: { scale: 0.8, opacity: 0 }, visible: { scale: 1, opacity: 1, transition: { duration: 0.4, ease: [0.22, 1, 0.36, 1] } } }}
-            className="inline-flex h-12 w-12 items-center justify-center rounded-sm overflow-hidden"
+            className="inline-flex h-12 w-12 items-center justify-center rounded-sm overflow-hidden bg-[hsl(220,15%,7%)]"
           >
             <Image src="/icons/icon-192.png" alt="Evolve" width={48} height={48} className="object-cover" />
           </motion.div>
@@ -153,7 +153,7 @@ export default function LoginPage() {
           className="rounded-sm border border-border bg-ink-surface p-8 space-y-5"
         >
           <div className="space-y-1">
-            <h1 className="font-editorial text-xl font-bold">
+            <h1 className="font-ui text-xl font-semibold tracking-tight">
               {mode === 'login' ? 'Sign in' : 'Create account'}
             </h1>
             <p className="font-ui text-xs text-muted-foreground">

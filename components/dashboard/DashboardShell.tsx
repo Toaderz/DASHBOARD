@@ -41,7 +41,7 @@ export function DashboardShell({ user, children }: DashboardShellProps) {
     <>
       {/* Logo */}
       <div className="flex h-14 items-center gap-3 border-b border-border px-4">
-        <div className="flex h-7 w-7 items-center justify-center rounded-sm overflow-hidden">
+        <div className="flex h-7 w-7 items-center justify-center rounded-sm overflow-hidden bg-[hsl(220,15%,7%)]">
           <Image src="/icons/icon-192.png" alt="Evolve" width={28} height={28} className="object-cover" />
         </div>
         <span className="font-editorial text-base font-bold tracking-tight">Evolve</span>
@@ -128,7 +128,7 @@ export function DashboardShell({ user, children }: DashboardShellProps) {
           <Menu className="h-5 w-5" />
         </button>
         <div className="flex items-center gap-2">
-          <div className="flex h-6 w-6 items-center justify-center rounded-sm overflow-hidden">
+          <div className="flex h-6 w-6 items-center justify-center rounded-sm overflow-hidden bg-[hsl(220,15%,7%)]">
             <Image src="/icons/icon-192.png" alt="Evolve" width={24} height={24} className="object-cover" />
           </div>
           <span className="font-editorial text-sm font-bold tracking-tight">Evolve</span>
