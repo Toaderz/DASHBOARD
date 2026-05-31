@@ -190,3 +190,50 @@ export const METRIC_DEFINITIONS: MetricDefinition[] = [
   { key: 'morningstarCategory', label: 'MS Category', description: 'Morningstar Category', format: 'text' },
   { key: 'globalCategory', label: 'Global Cat.', description: 'Morningstar Global Category', format: 'text' },
 ]
+
+// ── Market Brief & News ──────────────────────────────────────
+
+export type MarketBrief = {
+  id: string
+  created_at: string
+  period_start: string
+  period_end: string
+  valid_until: string
+  status: 'generating' | 'ready' | 'failed'
+  context_md: string | null
+  strong_signals: number
+  moderate_signals: number
+  weak_noise: number
+  top_theme: string | null
+  key_risk: string | null
+  metadata: Record<string, unknown>
+}
+
+export type MarketNews = {
+  id: string
+  brief_id: string
+  rank: number
+  title: string
+  summary: string
+  insight: string
+  full_text_md: string | null
+  source_url: string
+  source_name: string
+  published_at: string | null
+  affected_tickers: string[]
+  score: number
+  rating: 'A' | 'B' | 'C' | 'D'
+  signal: 'STRONG' | 'MODERATE' | 'WEAK'
+  actionability: 'MONITOR' | 'REVIEW' | 'CONFIRMS' | 'CONTRADICTS' | null
+  score_breakdown: {
+    macro: number
+    surprise: number
+    market_rel: number
+    forward: number
+    structural: number
+    portfolio: number
+    time_decay: number
+  }
+}
+
+export type BriefWithNews = MarketBrief & { market_news: MarketNews[] }

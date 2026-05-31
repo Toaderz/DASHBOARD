@@ -145,6 +145,12 @@ NEXT_PUBLIC_SUPABASE_URL=
 NEXT_PUBLIC_SUPABASE_ANON_KEY=
 SUPABASE_SERVICE_ROLE_KEY=      # empieza con eyJ (no eeyJ)
 FINNHUB_API_KEY=                 # 'your-finnhub-api-key' → modo mock con 10 tickers hardcoded
+TAVILY_API_KEY=                  # Tavily search API — pipeline de noticias
+FIRECRAWL_API_KEY=               # Firecrawl — extracción de artículos completos (bypass paywalls)
+OLLAMA_API_URL=                  # Base URL del LLM (OpenAI-compatible). Usar Groq: https://api.groq.com/openai (gratuito, rápido). Ollama local: http://localhost:11434
+OLLAMA_API_KEY=                  # API key del proveedor. Groq: console.groq.com → API Keys. Ollama local: dejar vacío
+OLLAMA_MODEL=llama-3.3-70b-versatile  # Modelo a usar. Groq gratis: llama-3.3-70b-versatile | deepseek-r1-distill-llama-70b
+CRON_SECRET=                     # Header Authorization para el cron de Vercel (/api/cron/news-pipeline)
 ```
 
 ## Comandos

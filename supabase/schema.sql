@@ -606,6 +606,70 @@ create policy "recipient_view_shares" on watchlist_shares
 create policy "shared_read_watchlists" on watchlists
   for select using (id in (select get_shared_watchlist_ids()));
 
+-- ============================================================
+-- MARKET BRIEF & NEWS (AI pipeline output)
+-- ============================================================
+
+-- One row per cron run (Mon/Fri pipeline execution)
+create table market_briefs (
+  id uuid primary key default gen_random_uuid(),
+  created_at timestamptz default now(),
+  period_start date not null,
+  period_end date not null,
+  valid_until timestamptz not null,
+  status text default 'generating'
+    check (status in ('generating', 'ready', 'failed')),
+  context_md text,
+  strong_signals int default 0,
+  moderate_signals int default 0,
+  weak_noise int default 0,
+  top_theme text,
+  key_risk text,
+  metadata jsonb default '{}'
+);
+
+create index on market_briefs (status);
+create index on market_briefs (valid_until desc);
+
+-- Individual ranked news items per brief
+create table market_news (
+  id uuid primary key default gen_random_uuid(),
+  brief_id uuid references market_briefs(id) on delete cascade,
+  rank int not null,
+  title text not null,
+  summary text not null,
+  insight text not null,
+  full_text_md text,
+  source_url text not null,
+  source_name text not null,
+  published_at date,
+  affected_tickers text[] default '{}',
+  score int not null,
+  rating text check (rating in ('A','B','C','D')),
+  signal text check (signal in ('STRONG','MODERATE','WEAK')),
+  actionability text check (
+    actionability in ('MONITOR','REVIEW','CONFIRMS','CONTRADICTS')
+  ),
+  score_breakdown jsonb not null default '{}'
+);
+
+create index on market_news (brief_id);
+create index on market_news (rank);
+create index on market_news using gin (affected_tickers);
+
+alter table market_briefs enable row level security;
+alter table market_news enable row level security;
+
+create policy "authenticated_read_briefs" on market_briefs
+  for select using (auth.role() = 'authenticated');
+create policy "service_write_briefs" on market_briefs
+  for all using (auth.role() = 'service_role');
+
+create policy "authenticated_read_news" on market_news
+  for select using (auth.role() = 'authenticated');
+create policy "service_write_news" on market_news
+  for all using (auth.role() = 'service_role');
+
 -- Shared users can read assets of watchlists shared with them
 create policy "shared_read_assets" on watchlist_assets
   for select using (watchlist_id in (select get_shared_watchlist_ids()));
