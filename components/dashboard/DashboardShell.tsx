@@ -42,7 +42,7 @@ export function DashboardShell({ user, children }: DashboardShellProps) {
       {/* Logo */}
       <div className="flex h-14 items-center gap-3 border-b border-border px-4">
         <div className="flex h-7 w-7 items-center justify-center">
-          <Image src="/icons/icon-192.png" alt="Evolve" width={28} height={28} className="object-cover invert dark:invert-0" />
+          <Image src="/icons/icon-192.png" alt="Evolve" width={28} height={28} className="object-cover brightness-0 dark:brightness-100" />
         </div>
         <span className="font-editorial text-base font-bold tracking-tight">Evolve</span>
       </div>
@@ -129,7 +129,7 @@ export function DashboardShell({ user, children }: DashboardShellProps) {
         </button>
         <div className="flex items-center gap-2">
           <div className="flex h-6 w-6 items-center justify-center">
-            <Image src="/icons/icon-192.png" alt="Evolve" width={24} height={24} className="object-cover invert dark:invert-0" />
+            <Image src="/icons/icon-192.png" alt="Evolve" width={24} height={24} className="object-cover brightness-0 dark:brightness-100" />
           </div>
           <span className="font-editorial text-sm font-bold tracking-tight">Evolve</span>
         </div>
