@@ -141,7 +141,7 @@ export async function searchNews(tickers: string[]): Promise<RawArticle[]> {
   const seen = new Set<string>()
   const articles: RawArticle[] = []
   const cutoff = new Date()
-  cutoff.setDate(cutoff.getDate() - 10)
+  cutoff.setDate(cutoff.getDate() - 7)
 
   for (const result of results) {
     if (result.status === 'rejected') continue
@@ -210,6 +210,15 @@ export async function extractContent(urls: string[]): Promise<Map<string, string
         const result = await client.scrape(url, {
           formats: ['markdown'],
           onlyMainContent: true,
+          excludeTags: [
+            'nav', 'header', 'footer', 'aside', 'script', 'style',
+            '.nav', '.navigation', '.header', '.footer', '.sidebar',
+            '.cookie-banner', '.cookie-notice', '.cookie-consent',
+            '.paywall', '.subscription-wall', '.subscription-prompt',
+            '.related-articles', '.recommended', '.what-to-read',
+            '.advertisement', '.ad', '.promo', '.newsletter-signup',
+            '.share-buttons', '.social-share', '.comments-section',
+          ],
         })
         clearTimeout(timeout)
         if (result.markdown) {
@@ -259,7 +268,7 @@ SISTEMA DE SCORING (aplicar a cada artículo):
 - forward_implications (0-5): 0=sin cambio, 3=revisión menor, 5=cambia el caso base
 - structural_vs_noise (0-5): 0=ruido puro, 3=señal mixta, 5=cambio de régimen estructural
 - portfolio_relevance (0-5): 5=ticker directo en cartera, 4=impacto sectorial fuerte, 3=universo amplio, 2=indirecto débil, 1=lejano, 0=ninguno
-- time_decay: 0 si <=2 días, -1 si 3-4 días, -2 si 5-7 días, -4 si >7 días (EXCLUIR artículos >10 días)
+- time_decay: 0 si <=2 días, -1 si 3-4 días, -2 si 5-7 días (EXCLUIR completamente artículos con fecha >7 días — no incluirlos en el output)
 
 TOTAL = suma de todas las dimensiones (máx 30)
 RATING: A=22-30 | B=18-21 | C=14-17 | D<14

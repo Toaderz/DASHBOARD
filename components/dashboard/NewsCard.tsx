@@ -27,31 +27,52 @@ const actionabilityConfig = {
 }
 
 const JUNK_PATTERNS = [
-  /^skip to (navigation|main content|right column)/i,
+  /^skip to (navigation|main content|right column|content)/i,
   /^oops,?\s*(something went wrong)?$/i,
   /^view comments$/i,
-  /^terms and privacy policy$/i,
+  /^(terms and privacy policy|terms of service|privacy policy)$/i,
   /^your privacy choices$/i,
-  /^more info$/i,
-  /^story continues$/i,
+  /^(more info|read more|continue reading|story continues)$/i,
   /^advertisement$/i,
-  /^share this article$/i,
+  /^(share this article|share this story)$/i,
   /^related articles?$/i,
+  /^what to read next$/i,
+  /^you might also like$/i,
+  /^subscribe (now|to|for)/i,
+  /^sign (in|up) to (read|continue|access)/i,
+  /^already a subscriber/i,
+  /^this content is (for|available to) subscribers?/i,
+  /^(cookie|we use cookies)/i,
+  /^(accept all|reject all|manage preferences)$/i,
   /^\[.*\]\(#\)$/,           // empty anchor links
   /^!\[.*\]\(data:image/i,   // base64 images
+  /^!\[.*\]\(https?:\/\/.*\.(gif|png|jpg|jpeg|svg|webp)\?.*advert/i, // ad images
+  /^#{1,3}\s*(more stories|trending now|editor's picks|top stories)/i,
 ]
 
 function cleanMarkdown(md: string): string {
-  return md
-    .split('\n')
-    .filter((line) => {
-      const t = line.trim()
-      if (!t) return true
-      return !JUNK_PATTERNS.some((re) => re.test(t))
-    })
-    .join('\n')
-    .replace(/\n{3,}/g, '\n\n')
-    .trim()
+  // Strip sections that start with junk headings (e.g. "## Related articles")
+  const junkSectionHeadings = /^#{1,3}\s*(related|more stories|what to read next|recommended|trending|editor.s picks|newsletter|subscribe|sign in)/i
+
+  const lines = md.split('\n')
+  const kept: string[] = []
+  let skipSection = false
+
+  for (const line of lines) {
+    const t = line.trim()
+    if (!t) {
+      if (!skipSection) kept.push(line)
+      continue
+    }
+    if (/^#{1,3}\s/.test(t)) {
+      skipSection = junkSectionHeadings.test(t)
+    }
+    if (skipSection) continue
+    if (JUNK_PATTERNS.some((re) => re.test(t))) continue
+    kept.push(line)
+  }
+
+  return kept.join('\n').replace(/\n{3,}/g, '\n\n').trim()
 }
 
 interface Props {

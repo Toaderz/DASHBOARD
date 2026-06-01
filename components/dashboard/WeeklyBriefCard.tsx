@@ -15,7 +15,6 @@ const priorityConfig: Record<WatchlistItem['priority'], { badge: string; dot: st
 export function WeeklyBriefCard({ brief }: Props) {
   const paragraphs = (brief.context_md ?? '').split('\n\n').filter(Boolean)
   const watchlistItems = brief.metadata?.watchlist_items ?? []
-  const editorialStance = brief.metadata?.editorial_stance ?? null
 
   return (
     <div className="rounded-sm border border-border bg-ink-elevated p-5 space-y-4">
@@ -52,18 +51,6 @@ export function WeeklyBriefCard({ brief }: Props) {
               {p}
             </p>
           ))}
-        </div>
-      )}
-
-      {/* Posicionamiento editorial */}
-      {editorialStance && (
-        <div className="border-t border-border pt-3">
-          <p className="text-[11px] font-mono text-muted-foreground mb-1.5 uppercase tracking-wider">
-            Posicionamiento
-          </p>
-          <p className="text-sm text-foreground leading-relaxed italic">
-            {editorialStance}
-          </p>
         </div>
       )}
 
