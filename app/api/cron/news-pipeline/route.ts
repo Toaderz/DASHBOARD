@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import {
   getTopTickers,
+  getTickerCatalog,
   searchNews,
   selectTop7,
   extractContent,
@@ -79,11 +80,12 @@ export async function POST(req: Request) {
 
   try {
     const tickers = await getTopTickers(supabaseAdmin)
+    const tickerCatalog = await getTickerCatalog(supabaseAdmin, tickers)
     const rawArticles = await searchNews(tickers)
     const topUrls = await selectTop7(rawArticles)
     const topArticles = rawArticles.filter((a) => topUrls.includes(a.url))
     const contentMap = await extractContent(topUrls)
-    const result = await analyzeAndSynthesize(topArticles, contentMap, tickers)
+    const result = await analyzeAndSynthesize(topArticles, contentMap, tickers, tickerCatalog)
 
     // Descarta ruido (D) solo si quedan suficientes artículos; nunca deja el brief vacío.
     const nonNoise = result.articles.filter((article) => article.rating !== 'D')

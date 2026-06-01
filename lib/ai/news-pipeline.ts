@@ -161,6 +161,26 @@ export async function getTopTickers(supabase: SupabaseClient): Promise<string[]>
   return (data as Array<{ ticker: string }>).map((r) => r.ticker)
 }
 
+// Catálogo descriptivo (ticker — nombre [sector/industria]) para que el LLM sepa QUÉ es
+// cada ticker y solo asigne affected_tickers cuando hay relación real (no temática vaga).
+export async function getTickerCatalog(supabase: SupabaseClient, tickers: string[]): Promise<string> {
+  const top = tickers.slice(0, 25)
+  if (!top.length) return ''
+  const { data } = await supabase
+    .from('assets_metadata')
+    .select('ticker,name,sector,industry')
+    .in('ticker', top)
+  const byTicker = new Map((data ?? []).map((r) => [r.ticker as string, r]))
+  return top
+    .map((t) => {
+      const m = byTicker.get(t)
+      if (!m) return t
+      const tags = [m.sector, m.industry].filter(Boolean).join('/')
+      return `${t} — ${m.name ?? ''}${tags ? ` [${tags}]` : ''}`.trim()
+    })
+    .join('\n')
+}
+
 // ── Function B ───────────────────────────────────────────────
 
 // Fuentes oficiales/neutras y de acceso abierto (paywall ligero o nulo).
@@ -397,7 +417,8 @@ export async function extractContent(urls: string[]): Promise<Map<string, string
 export async function analyzeAndSynthesize(
   articles: RawArticle[],
   contentMap: Map<string, string>,
-  tickers: string[]
+  tickers: string[],
+  tickerCatalog = ''
 ): Promise<PipelineResult> {
   const articleBlocks = articles.map((a, i) => {
     const fullText = contentMap.get(a.url) ?? a.content
@@ -433,7 +454,10 @@ context_md — 3 párrafos descriptivos y CONCRETOS (con nombres y hechos de las
 
 TODO el texto del JSON en ESPAÑOL. Output: solo JSON válido, sin texto adicional.`
 
-  const prompt = `UNIVERSO (para scoring): ${tickers.slice(0, 30).join(', ')}. Exposición: S&P 500, NASDAQ, MSCI ACWI; temas tech/IA, tasas, geopolítica, commodities, FX.
+  const prompt = `CATÁLOGO DE TICKERS DE LA PLATAFORMA (usa SOLO estos para affected_tickers):
+${tickerCatalog || tickers.slice(0, 25).join(', ')}
+
+REGLA DE affected_tickers (estricta): incluye un ticker SOLO si el artículo menciona explícitamente esa empresa/activo, o si el sector/tema del ticker en el catálogo es el FOCO DIRECTO de la noticia. Si ninguno aplica directamente, devuelve []. PROHIBIDO asociaciones temáticas vagas — ejemplos de lo que NO se debe hacer: etiquetar un ETF de ciberseguridad para una noticia de chips de memoria; etiquetar un ETF de large caps de EE.UU. para una decisión de tasas de Corea; etiquetar un ETF de mid-cap growth para un récord del Dow. portfolio_relevance refleja esto: 0 si ningún ticker del catálogo está directamente afectado.
 
 SCORING (0-5 cada uno): macro_impact, surprise_factor, market_relevance, forward_implications, structural_vs_noise, portfolio_relevance (5=ticker directo,3=universo amplio,0=ninguno), time_decay (0 si <=2 días, -1 si 3-4, -2 si 5-7).
 TOTAL=suma (máx 30). RATING: A=22-30,B=18-21,C=14-17,D<14. SIGNAL: STRONG si score>=22 Y portfolio>=4; MODERATE si 18-21 O portfolio 3-4; WEAK otro. ACTIONABILITY (solo A/B): MONITOR|REVIEW|CONFIRMS|CONTRADICTS.
