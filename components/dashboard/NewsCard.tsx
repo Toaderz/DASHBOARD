@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, type ImgHTMLAttributes, type AnchorHTMLAttributes } from 'react'
 import ReactMarkdown from 'react-markdown'
 import { ExternalLink, ChevronDown, ChevronUp } from 'lucide-react'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -26,60 +26,15 @@ const actionabilityConfig = {
   CONTRADICTS: { emoji: '❌', label: 'CONTRADICTS' },
 }
 
-const JUNK_PATTERNS = [
-  /^!\[/,                     // all images (remove entirely)
-  /^skip to (navigation|main content|right column|content)/i,
-  /^oops,?\s*(something went wrong)?$/i,
-  /^view comments?$/i,
-  /^(terms and privacy policy|terms of service|privacy policy)$/i,
-  /^your privacy choices?$/i,
-  /^(more info|read more|continue reading|story continues)$/i,
-  /^advertisement$/i,
-  /^(share this article|share this story)$/i,
-  /^related articles?$/i,
-  /^what to read next$/i,
-  /^you might also like$/i,
-  /^subscribe (now|today|to|for)/i,
-  /^sign (in|up) (to|for|now)/i,
-  /^already a subscriber/i,
-  /^this content is (for|available to) subscribers?/i,
-  /^(cookie|we use cookies)/i,
-  /^(accept all|reject all|manage preferences)$/i,
-  /^©\s*\d{4}/,              // copyright lines
-  /^sign in\s*subscribe/i,
-  /^continue reading (your article|with a)/i,
-  /^up next$/i,
-  /^videos?$/i,
-  /^most (read|popular) (from|in|on|at)/i,
-  /^(breaking news|live updates|live blog)/i,
-  /^--\s*with (assistance|reporting) from/i,  // Bloomberg byline suffix
-  /^\(updates? with/i,       // Bloomberg update notes
-  /^\[.*\]\(#\)$/,           // empty anchor links
-  /^#{1,3}\s*(more stories|trending now|editor.?s picks|top stories|breaking)/i,
-]
-
-function cleanMarkdown(md: string): string {
-  const junkSectionHeadings = /^#{1,3}\s*(related|more stories?|what to read next|recommended|trending|editor.?s picks?|newsletter|subscribe|sign in|most read|most popular|up next|videos?|popular now|top picks|also in)/i
-
-  const lines = md.split('\n')
-  const kept: string[] = []
-  let skipSection = false
-
-  for (const line of lines) {
-    const t = line.trim()
-    if (!t) {
-      if (!skipSection) kept.push(line)
-      continue
-    }
-    if (/^#{1,6}\s/.test(t)) {
-      skipSection = junkSectionHeadings.test(t)
-    }
-    if (skipSection) continue
-    if (JUNK_PATTERNS.some((re) => re.test(t))) continue
-    kept.push(line)
-  }
-
-  return kept.join('\n').replace(/\n{3,}/g, '\n\n').trim()
+// Reader-friendly renderers for the stored (already-clean) article markdown.
+const markdownComponents = {
+  img: (props: ImgHTMLAttributes<HTMLImageElement>) => (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img {...props} alt={props.alt ?? ''} loading="lazy" className="w-full rounded-md my-4" />
+  ),
+  a: (props: AnchorHTMLAttributes<HTMLAnchorElement>) => (
+    <a {...props} target="_blank" rel="noopener noreferrer" className="text-electric hover:underline" />
+  ),
 }
 
 interface Props {
@@ -193,13 +148,13 @@ export function NewsCard({ news, userTickers }: Props) {
       {/* Full article dialog */}
       {news.full_text_md && (
         <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-          <DialogContent className="max-w-2xl">
+          <DialogContent className="max-w-3xl">
             <DialogHeader>
-              <DialogTitle className="text-sm font-medium leading-snug">{news.title}</DialogTitle>
+              <DialogTitle className="text-base font-medium leading-snug">{news.title}</DialogTitle>
             </DialogHeader>
             <div className="max-h-[70vh] overflow-y-auto">
-              <div className="prose prose-sm dark:prose-invert max-w-none">
-                <ReactMarkdown>{cleanMarkdown(news.full_text_md)}</ReactMarkdown>
+              <div className="prose prose-sm sm:prose-base dark:prose-invert max-w-none">
+                <ReactMarkdown components={markdownComponents}>{news.full_text_md}</ReactMarkdown>
               </div>
             </div>
             <div className="flex items-center justify-between border-t border-border pt-3 text-xs text-muted-foreground">

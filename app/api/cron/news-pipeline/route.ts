@@ -8,6 +8,9 @@ import {
   analyzeAndSynthesize,
 } from '@/lib/ai/news-pipeline'
 
+export const maxDuration = 300
+export const dynamic = 'force-dynamic'
+
 function getAdminClient() {
   return createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,

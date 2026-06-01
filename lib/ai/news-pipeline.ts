@@ -232,32 +232,95 @@ ${articleList}`
 
 // ── Function D ───────────────────────────────────────────────
 
+const EXTRACTION_PROMPT =
+  'Extract ONLY the main news article body. Return clean markdown with paragraphs and ' +
+  'any genuinely relevant inline images preserved as markdown image syntax. EXCLUDE: navigation, ' +
+  'stock-ticker rails, "skip to", "what to read next", related-article lists, subscriber/paywall ' +
+  'notices, copyright/legal lines and Dow Jones hashes, newsletter sign-ups, social share links, ' +
+  'cookie/consent banners, ads, and chart/widget text dumps (e.g. "Created with Highcharts"). ' +
+  'Exclude logos, icons, avatars and tracking pixels from images; keep only the hero photo and ' +
+  'content figures.'
+
+interface ExtractedJson {
+  body_markdown?: string
+  hero_image_url?: string
+}
+
+// Reject the scrape promise if Firecrawl takes longer than `ms` (stealth + AI extraction is slow).
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((_, reject) => setTimeout(() => reject(new Error('scrape timeout')), ms)),
+  ])
+}
+
+// Build the final clean markdown stored in `full_text_md`: hero image (if any) + article body.
+function buildCleanMarkdown(json: ExtractedJson): string | null {
+  const body = (json.body_markdown ?? '').trim()
+  if (!body) return null
+  const hero = json.hero_image_url?.trim()
+  if (hero && !body.includes(hero)) {
+    return `![](${hero})\n\n${body}`
+  }
+  return body
+}
+
 export async function extractContent(urls: string[]): Promise<Map<string, string>> {
   const client = getFirecrawlClient()
   const contentMap = new Map<string, string>()
 
   await Promise.allSettled(
     urls.map(async (url) => {
-      const controller = new AbortController()
-      const timeout = setTimeout(() => controller.abort(), 15_000)
-
       try {
-        const result = await client.scrape(url, {
-          formats: ['markdown'],
-          onlyMainContent: true,
-          excludeTags: [
-            'nav', 'footer', 'aside', 'script', 'style', 'iframe',
-            '.ad', '.promo', '.newsletter', '.disclaimer',
-            '.author-bio', '#read-more', '.related-articles',
-          ],
-        })
-        clearTimeout(timeout)
-        if (result.markdown) {
-          contentMap.set(url, result.markdown)
+        // Primary: Firecrawl server-side AI extraction (clean article + hero image), with
+        // paywall bypass via `proxy: 'auto'` (escalates to stealth only when the site blocks).
+        const result = await withTimeout(
+          client.scrape(url, {
+            formats: [{
+              type: 'json',
+              prompt: EXTRACTION_PROMPT,
+              schema: {
+                type: 'object',
+                properties: {
+                  body_markdown: { type: 'string' },
+                  hero_image_url: { type: 'string' },
+                },
+                required: ['body_markdown'],
+              },
+            }],
+            onlyMainContent: true,
+            blockAds: true,
+            proxy: 'auto',
+            removeBase64Images: true,
+          }),
+          55_000
+        )
+
+        const clean = buildCleanMarkdown((result.json ?? {}) as ExtractedJson)
+        if (clean) {
+          contentMap.set(url, clean)
+          return
         }
       } catch {
-        clearTimeout(timeout)
-        // Leave empty — caller uses Tavily snippet as fallback
+        // Fall through to plain-markdown fallback below.
+      }
+
+      try {
+        // Fallback: plain markdown scrape (better than nothing if AI extraction fails/empties).
+        const result = await withTimeout(
+          client.scrape(url, {
+            formats: ['markdown'],
+            onlyMainContent: true,
+            blockAds: true,
+            proxy: 'auto',
+          }),
+          45_000
+        )
+        if (result.markdown?.trim()) {
+          contentMap.set(url, result.markdown.trim())
+        }
+      } catch {
+        // Leave empty — caller uses Tavily snippet as scoring fallback; modal button hides when null.
       }
     })
   )
