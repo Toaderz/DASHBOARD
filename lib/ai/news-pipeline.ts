@@ -140,12 +140,15 @@ export async function searchNews(tickers: string[]): Promise<RawArticle[]> {
   const client = getTavilyClient()
   const topTickers = tickers.slice(0, 20).join(' OR ')
 
+  // Foco geográfico: EE.UU. + México (más temas globales que SÍ mueven esos mercados:
+  // petróleo/commodities, geopolítica de alto impacto, grandes tecnológicas, treasuries).
+  // Evita atraer decisiones domésticas de bancos centrales irrelevantes (Sudáfrica, Corea, etc.).
   const queries = [
-    { query: 'global markets macro economic outlook this week', topic: 'finance' as const, days: 7, max_results: 12 },
-    { query: 'central banks interest rates inflation monetary policy', topic: 'finance' as const, days: 7, max_results: 10 },
-    { query: 'geopolitical risk trade tariffs market impact', topic: 'news' as const, days: 7, max_results: 10 },
+    { query: 'US economy markets Federal Reserve outlook this week', topic: 'finance' as const, days: 7, max_results: 12 },
+    { query: 'Federal Reserve interest rates US inflation; Banxico Mexico monetary policy peso', topic: 'finance' as const, days: 7, max_results: 10 },
+    { query: 'US government policy tariffs trade geopolitical risk oil market impact', topic: 'news' as const, days: 7, max_results: 10 },
     { query: `${topTickers} earnings revenue guidance market news`, topic: 'finance' as const, days: 7, max_results: 10 },
-    { query: 'technology AI sector market institutional investors outlook', topic: 'finance' as const, days: 7, max_results: 8 },
+    { query: 'US technology AI sector stocks institutional investors outlook', topic: 'finance' as const, days: 7, max_results: 8 },
   ]
 
   const results = await Promise.allSettled(
@@ -264,9 +267,10 @@ export async function selectTop7(articles: RawArticle[]): Promise<string[]> {
     .map((a, i) => `${i + 1}. ${a.title} — ${a.source ?? ''}\n${a.url}\n${a.content.slice(0, 180)}`)
     .join('\n\n')
 
-  const prompt = `Eres un editor de mercados. De la lista, elige hasta ${TARGET} noticias MÁS IMPORTANTES por su impacto de mercado real (puedes elegir menos si no hay tantas que valgan la pena).
+  const prompt = `Eres un editor de mercados para un lector de EE.UU. y México. De la lista, elige hasta ${TARGET} noticias MÁS IMPORTANTES por su impacto de mercado real para ESE lector (puedes elegir menos si no hay tantas que valgan la pena).
 
-PRIORIZA: decisiones de bancos centrales y tasas de interés, datos macro (inflación, empleo, PIB), declaraciones del gobierno de EE.UU., geopolítica de alto impacto (p.ej. Irán), movimientos corporativos relevantes.
+FOCO GEOGRÁFICO (clave): prioriza EE.UU. y México. Cuentan como relevantes: la Reserva Federal y datos macro de EE.UU., Banxico/peso y macro de México, gobierno/Congreso de EE.UU., empresas de EE.UU., y temas GLOBALES que mueven los mercados de EE.UU. (petróleo/commodities, geopolítica de alto impacto como Irán/Medio Oriente, grandes tecnológicas, treasuries).
+DESPRIORIZA FUERTE: decisiones de tasas o política doméstica de OTROS países (p.ej. Sudáfrica, Corea del Sur, política interna europea aislada) cuyo impacto NO llegue claramente a EE.UU./México. No las elijas solo por ser "decisiones de banco central"; para este lector son de bajo interés salvo que el propio texto muestre contagio claro a EE.UU./México o a un activo global importante.
 DESCARTA: páginas índice de titulares, columnas tipo "Market Talk", "what to watch", live blogs, listicles ("top/bottom performers"), guías genéricas — salvo que sean claramente market-moving.
 DIVERSIDAD: cubre temas distintos; máximo 2 de la misma fuente.
 
@@ -514,6 +518,11 @@ TODO el texto del JSON en ESPAÑOL. Output: solo JSON válido, sin texto adicion
   const prompt = `CATÁLOGO DE TICKERS DE LA PLATAFORMA (SOLO contexto, para que entiendas el universo de la plataforma; NO decides tú la relevancia de portafolio — eso se calcula de forma determinista aparte):
 ${tickerCatalog || tickers.join(', ')}
 
+FOCO GEOGRÁFICO (regla de relevancia, clave): el lector es de EE.UU. y México. La relevancia de mercado se mide para esos mercados y para activos globales que los impacten.
+- Relevancia PLENA: la Reserva Federal y datos macro de EE.UU. (inflación, empleo, PIB), gobierno/Congreso de EE.UU., empresas de EE.UU.; Banxico, peso y macro de México; y temas GLOBALES que mueven a EE.UU.: petróleo/commodities, geopolítica de alto impacto (Irán/Medio Oriente), grandes tecnológicas, tasas/treasuries de EE.UU.
+- BAJA relevancia: decisiones de bancos centrales o política doméstica de OTROS países (p.ej. Sudáfrica, Corea del Sur, política interna europea aislada) cuyo impacto NO se transmita claramente a EE.UU./México según el propio artículo. En esos casos market_relevance y macro_impact deben ser BAJOS (≤2), aunque sean decisiones de tasas. NO las trates como señales fuertes solo por ser política monetaria; para este lector son de bajo interés.
+- Si una noticia extranjera SÍ describe contagio claro a EE.UU./México (o a un activo global importante), puntúala según ese impacto real, no por el país de origen.
+
 SCORING (0-5 cada uno): macro_impact, surprise_factor, market_relevance, forward_implications, structural_vs_noise; más time_decay (0 si <=2 días, -1 si 3-4, -2 si 5-7) y portfolio_relevance (SOLO informativo y orientativo: 5=toca un ticker del catálogo directamente, 3=universo amplio, 0=ninguno).
 IMPORTANTE: la importancia de la noticia NO depende del portafolio. TOTAL = macro_impact + surprise_factor + market_relevance + forward_implications + structural_vs_noise + time_decay (máx 25; portfolio_relevance NO suma al total).
 RATING: A=19-25, B=15-18, C=11-14, D<11. SIGNAL: STRONG si TOTAL>=19; MODERATE si 15-18; WEAK si <15. ACTIONABILITY (solo A/B): MONITOR|REVIEW|CONFIRMS|CONTRADICTS.
@@ -523,6 +532,7 @@ CALIBRACIÓN (ejemplos de referencia para anclar el rubric y reducir varianza):
 - B (≈16): Dato de empleo de EE.UU. por encima del consenso pero dentro del rango esperado; reacción moderada en tasas. macro=4, surprise=3, market_rel=4, forward=3, structural=2, time_decay=0.
 - C (≈12): Una empresa publica resultados en línea con lo esperado, sin guía nueva; impacto acotado al sector. macro=2, surprise=2, market_rel=3, forward=3, structural=2, time_decay=0.
 - D (≈8): Resumen/explainer genérico de mercado sin dato nuevo ni evento. macro=2, surprise=1, market_rel=2, forward=2, structural=1, time_decay=0 → ruido.
+- D/C bajo (≈7-9) por FOCO GEOGRÁFICO: un banco central extranjero sube tasas (p.ej. Sudáfrica +25 pb, o Corea del Sur con división hawkish) sin contagio claro a EE.UU./México descrito en el texto. macro=2, surprise=2, market_rel=1, forward=2, structural=2, time_decay=0 → bajo interés para este lector pese a ser decisión de tasas.
 
 OUTPUT JSON SCHEMA:
 {
