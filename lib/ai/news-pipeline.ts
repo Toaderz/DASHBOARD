@@ -208,15 +208,13 @@ export async function selectTop7(articles: RawArticle[]): Promise<string[]> {
     .map((a, i) => `${i + 1}. [${a.title}] ${a.url}\nSnippet: ${a.content.slice(0, 200)}`)
     .join('\n\n')
 
-  const prompt = `You are a financial news curator. Select the 10 most important articles from the list below.
+  const prompt = `You are a financial news curator. Select the 7 most important articles from the list below.
 
 Priority order: macro/geopolitical events > central bank decisions > commodity moves > sector-specific (only if market-moving).
 
-DIVERSITY REQUIREMENT: Your selection must cover at least 4 of these themes: (1) macro/global growth, (2) monetary policy/rates, (3) geopolitics/trade, (4) specific sectors or assets, (5) commodities/FX. Do not select 10 articles from the same theme.
+DIVERSITY REQUIREMENT: Cover at least 4 of these themes: (1) macro/global growth, (2) monetary policy/rates, (3) geopolitics/trade, (4) specific sectors or assets, (5) commodities/FX.
 
-CONTRADICTION VALUE: If two articles present opposing signals on the same asset (e.g. one bullish / one bearish on oil), include BOTH — contradictions reveal what the market is processing.
-
-Return ONLY a JSON array of up to 10 URLs in order of importance. No other text.
+Return ONLY a JSON array of up to 7 URLs in order of importance. No other text.
 
 Example: ["https://...", "https://..."]
 
@@ -225,7 +223,7 @@ ${articleList}`
 
   const response = await callOllama(prompt, 0.1)
   const urls = extractJson<string[]>(response)
-  return urls.filter((u) => articles.some((a) => a.url === u)).slice(0, 10)
+  return urls.filter((u) => articles.some((a) => a.url === u)).slice(0, 7)
 }
 
 // ── Function D ───────────────────────────────────────────────
@@ -278,7 +276,7 @@ Title: ${a.title}
 Source: ${a.source ?? 'unknown'}
 Date: ${a.published_date ?? 'unknown'}
 Content:
-${fullText.slice(0, 3000)}`
+${fullText.slice(0, 1200)}`
   }).join('\n\n')
 
   const prompt = `Eres un analista financiero senior que redacta un market brief semanal en ESPAÑOL para gestores de carteras institucionales.
