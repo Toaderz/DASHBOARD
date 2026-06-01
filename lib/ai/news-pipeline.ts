@@ -63,7 +63,7 @@ function getFirecrawlClient() {
   return new Firecrawl({ apiKey: process.env.FIRECRAWL_API_KEY! })
 }
 
-async function callOllama(prompt: string, temperature = 0.1): Promise<string> {
+async function callOllama(prompt: string, temperature = 0.1, systemPrompt?: string): Promise<string> {
   const baseUrl = process.env.OLLAMA_API_URL!
   const apiKey = process.env.OLLAMA_API_KEY
   const model = process.env.OLLAMA_MODEL ?? 'deepseek-r1:14b'
@@ -71,12 +71,16 @@ async function callOllama(prompt: string, temperature = 0.1): Promise<string> {
   const headers: Record<string, string> = { 'Content-Type': 'application/json' }
   if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`
 
+  const messages: Array<{ role: string; content: string }> = []
+  if (systemPrompt) messages.push({ role: 'system', content: systemPrompt })
+  messages.push({ role: 'user', content: prompt })
+
   const response = await fetch(`${baseUrl}/v1/chat/completions`, {
     method: 'POST',
     headers,
     body: JSON.stringify({
       model,
-      messages: [{ role: 'user', content: prompt }],
+      messages,
       temperature,
       stream: false,
     }),
@@ -279,90 +283,82 @@ Content:
 ${fullText.slice(0, 1200)}`
   }).join('\n\n')
 
-  const prompt = `Eres un analista financiero senior que redacta un market brief semanal en ESPAÑOL para gestores de carteras institucionales.
+  const systemPrompt = `Eres un motor de análisis macroeconómico tipo Bloomberg Terminal. Extraes hechos duros, datos numéricos e inercias del mercado. Produces JSON estructurado en español.
 
-REGLA CRÍTICA: TODO EL TEXTO del JSON debe estar en ESPAÑOL. Ningún campo de texto en inglés es aceptable.
+PROHIBICIÓN ABSOLUTA: No uses "inversores", "carteras", "deben", "deberían", "hay que estar atentos", "es importante", "se recomienda", "puede impactar", "afectar a los mercados en general". Cero relleno. Cero consejos. Cero generalidades.
 
-REGLAS DE TONO Y ESTILO (obligatorias, sin excepción):
-- El tono debe ser estrictamente serio, neutral y objetivo — estilo reporte institucional de Bloomberg o Reuters.
-- PROHIBIDO usar frases prescriptivas, recomendaciones o consejos directos. Elimina completamente expresiones como: "los inversores deben monitorear", "puede tener un impacto", "es importante entender", "se recomienda", "hay que estar atentos", "los gestores deberían considerar".
-- Tu objetivo NO es dar insights cerrados ni conclusiones masticadas. Presentas los hechos, los datos duros y la inercia del mercado de forma que la tendencia sea evidente por sí sola — el lector infiere las consecuencias y toma su propia postura.
-- DESCARTA radicalmente cualquier artículo con fecha anterior a los últimos 7 días. Usa la fecha exacta del artículo. Si la fecha es ambigua, EXCLUYE el artículo.
+FORMATO OBLIGATORIO para el campo "insight" — exactamente 2 oraciones:
+Oración 1: Hecho concreto con número, entidad y fecha exacta.
+Oración 2: Implicación directa en clase de activo, sector o tasa específica con datos o niveles.
 
-UNIVERSO DE INVERSIÓN (para scoring de relevancia):
-- Tickers top de la plataforma: ${tickers.join(', ')}
-- Exposición amplia: S&P 500, NASDAQ, MSCI ACWI, mercados globales
-- Temas: tecnología/IA, duración/tasas, geopolítica/aranceles, commodities, FX, mercados emergentes
+EJEMPLO PERFECTO:
+{"insight": "El BCE situó la tasa de depósito en 3.25% en junio, por encima del consenso de 3.0%, ante una inflación subyacente del 2.9% en la eurozona. Los Bunds a 10 años cedieron 15 bps en la sesión y el EUR/USD retrocedió 0.8%, reflejando retraso en expectativas de recorte."}
 
-SISTEMA DE SCORING (aplicar a cada artículo):
-- macro_impact (0-5): 0=evento local, 3=regional, 5=cambio macro global
-- surprise_factor (0-5): 0=totalmente descontado, 3=sorpresa parcial, 5=desviación significativa del consenso
-- market_relevance (0-5): 0=sin reacción, 3=reacción moderada, 5=reacción fuerte cross-asset
-- forward_implications (0-5): 0=sin cambio, 3=revisión menor, 5=cambia el caso base
-- structural_vs_noise (0-5): 0=ruido puro, 3=señal mixta, 5=cambio de régimen estructural
-- portfolio_relevance (0-5): 5=ticker directo en cartera, 4=impacto sectorial fuerte, 3=universo amplio, 2=indirecto débil, 1=lejano, 0=ninguno
-- time_decay: 0 si <=2 días, -1 si 3-4 días, -2 si 5-7 días (EXCLUIR completamente artículos con fecha >7 días — no incluirlos en el output)
+EJEMPLO PROHIBIDO:
+{"insight": "El BCE tomó una decisión importante. Los inversores deben estar atentos a cómo esto impactará a los mercados financieros y a sus carteras la próxima semana."}
 
-TOTAL = suma de todas las dimensiones (máx 30)
-RATING: A=22-30 | B=18-21 | C=14-17 | D<14
-SIGNAL: STRONG si score>=22 Y portfolio>=4; MODERATE si score 18-21 O portfolio 3-4; WEAK en otro caso
+WATCHLIST ITEMS — ultra-específicos, nunca genéricos:
+BIEN: "ISM Manufacturero EE.UU. lunes — prev. 49.2", "Datos PCE subyacente viernes — consenso 2.6%", "Vencimiento mensual opciones VIX miércoles"
+MAL: "La economía global", "Los mercados financieros", "La inflación en general"
+
+CAMPO summary — 3 partes obligatorias, sin relleno:
+1. QUÉ PASÓ: Evento específico con números, institución y fecha
+2. POR QUÉ IMPORTA MACRO: Transmisión a tasas, inflación o crecimiento
+3. IMPLICACIÓN CROSS-ASSET: Clases de activo, sectores o geografías afectadas con datos
+
+context_md — 3 párrafos: catalizador de la semana → implicaciones Fed/BCE/tasas → sentimiento risk-on/off con datos concretos.
+
+TODO el texto del JSON en ESPAÑOL. Output: solo JSON válido, sin texto adicional.`
+
+  const prompt = `UNIVERSO DE INVERSIÓN (para scoring):
+Tickers plataforma: ${tickers.slice(0, 30).join(', ')}
+Exposición: S&P 500, NASDAQ, MSCI ACWI, globales. Temas: tech/IA, tasas/duración, geopolítica/aranceles, commodities, FX, emergentes.
+
+SCORING (0-5 cada dimensión):
+macro_impact: 0=local, 3=regional, 5=cambio macro global
+surprise_factor: 0=descontado, 3=sorpresa parcial, 5=desviación vs consenso
+market_relevance: 0=sin reacción, 3=moderada, 5=fuerte cross-asset
+forward_implications: 0=sin cambio, 3=revisión menor, 5=cambia el caso base
+structural_vs_noise: 0=ruido, 3=señal mixta, 5=cambio de régimen
+portfolio_relevance: 5=ticker directo, 4=sectorial fuerte, 3=universo amplio, 2=indirecto, 1=lejano, 0=ninguno
+time_decay: 0 si <=2 días, -1 si 3-4 días, -2 si 5-7 días. EXCLUIR artículos >7 días.
+TOTAL = suma (máx 30). RATING: A=22-30, B=18-21, C=14-17, D<14
+SIGNAL: STRONG si score>=22 Y portfolio>=4; MODERATE si 18-21 O portfolio 3-4; WEAK otro caso
 ACTIONABILITY (solo A/B): MONITOR | REVIEW | CONFIRMS | CONTRADICTS
 
-REQUERIMIENTOS DE CALIDAD — campos summary e insight:
-- summary (8-10 oraciones estructuradas en 3 partes):
-  1. QUÉ PASÓ: El evento específico con números concretos, institución y fecha
-  2. POR QUÉ IMPORTA MACRO: Transmisión al mercado, implicación para tasas, inflación o crecimiento
-  3. IMPLICACIÓN DE ACTIVOS: Clases de activo, sectores o geografías afectadas y cómo
-- insight (1-2 párrafos): Nombra tickers/sectores específicos probablemente afectados. Lista datos económicos, discursos de bancos centrales o eventos de la próxima semana a monitorear. Incluye niveles técnicos relevantes si aplica. Señala si hay tensión o señales contradictorias entre artículos.
-
-NARRATIVA DEL RESUMEN SEMANAL (context_md — 3 párrafos en español con arquitectura explícita):
-- Párrafo 1 — CATALIZADOR: El evento o noticia que definió los movimientos de la semana. Qué pasó, cuándo, y cuál fue la reacción inmediata del mercado.
-- Párrafo 2 — PERSPECTIVA MACRO: Implicaciones para política monetaria (Fed, BCE y otros bancos centrales), inflación y tasas. Incluir niveles de índices, expectativas de recortes/alzas, o movimientos de commodities si los artículos los mencionan.
-- Párrafo 3 — SENTIMIENTO DE MERCADO: Posicionamiento actual (risk-on / risk-off / mixto). Explicar por qué coexisten sentimientos aparentemente contradictorios si los hay. Usar lenguaje de inversión profesional.
-
-OUTPUT: Solo JSON válido. Sin texto adicional. Incluir MÍNIMO 5 artículos con rating A o B (máximo 7). Incluir artículos C y D solo si hay menos de 5 con rating A/B. Todos los campos de texto en ESPAÑOL.
-
-JSON SCHEMA:
+OUTPUT JSON SCHEMA:
 {
-  "articles": [
-    {
-      "rank": 1,
-      "title": "Título en español (traducir si el original está en inglés)",
-      "date": "YYYY-MM-DD",
-      "source_name": "wsj.com",
-      "source_url": "https://...",
-      "summary": "8-10 oraciones en español con estructura: qué pasó / por qué importa macro / implicación de activos",
-      "insight": "1-2 párrafos en español: tickers/sectores afectados, agenda de seguimiento para la semana, niveles a monitorear",
-      "score": 24,
-      "rating": "A",
-      "signal": "STRONG",
-      "actionability": "MONITOR",
-      "score_breakdown": {"macro":5,"surprise":4,"market_rel":4,"forward":5,"structural":3,"portfolio":4,"time_decay":-1},
-      "affected_tickers": ["QQQ","AAPL"]
-    }
-  ],
+  "articles": [{
+    "rank": 1, "title": "Título en español", "date": "YYYY-MM-DD",
+    "source_name": "wsj.com", "source_url": "https://...",
+    "summary": "3 partes: qué pasó / por qué importa macro / implicación cross-asset",
+    "insight": "2 oraciones exactas: hecho con número → implicación en activo específico",
+    "score": 24, "rating": "A", "signal": "STRONG", "actionability": "MONITOR",
+    "score_breakdown": {"macro":5,"surprise":4,"market_rel":4,"forward":5,"structural":3,"portfolio":4,"time_decay":-1},
+    "affected_tickers": ["QQQ","AAPL"]
+  }],
   "weekly_summary": {
-    "strong_signals": 2,
-    "moderate_signals": 3,
-    "weak_noise": 1,
-    "top_theme": "frase en español sobre el tema dominante de la semana",
-    "key_risk": "frase en español sobre el riesgo principal para las carteras",
-    "context_md": "3 párrafos en español con estructura: catalizador → perspectiva macro → sentimiento de mercado",
-    "editorial_stance": "párrafo en español con posicionamiento editorial propio — visión del mercado con convicción ('Mantenemos una visión X con énfasis en Y'). No solo descripción, sino recomendación de postura para gestores de cartera.",
+    "strong_signals": 2, "moderate_signals": 3, "weak_noise": 1,
+    "top_theme": "tema dominante de la semana en español",
+    "key_risk": "riesgo principal concreto con datos en español",
+    "context_md": "párrafo1: catalizador\\n\\npárrafo2: implicaciones tasas/BC\\n\\npárrafo3: sentimiento con posicionamiento",
+    "editorial_stance": "posicionamiento editorial con convicción en español",
     "watchlist_items": [
-      {"priority": "Alta", "item": "descripción del dato/evento/nivel crítico a vigilar esta semana"},
-      {"priority": "Alta", "item": "segundo evento de alta prioridad"},
-      {"priority": "Media", "item": "evento de seguimiento moderado"},
+      {"priority": "Alta", "item": "dato/evento específico con fecha y nivel previo"},
+      {"priority": "Alta", "item": "segundo evento de alta prioridad específico"},
+      {"priority": "Media", "item": "evento de seguimiento con contexto numérico"},
       {"priority": "Media", "item": "segundo evento de seguimiento"},
-      {"priority": "Baja", "item": "evento de contexto o seguimiento de fondo"},
-      {"priority": "Baja", "item": "segundo evento de contexto"}
+      {"priority": "Baja", "item": "evento de fondo específico"},
+      {"priority": "Baja", "item": "segundo evento de fondo"}
     ]
   }
 }
 
-ARTÍCULOS A ANALIZAR:
+Incluir MÍNIMO 5 artículos rating A/B (máximo 7). Artículos C/D solo si hay menos de 5 con A/B.
+
+ARTÍCULOS:
 ${articleBlocks}`
 
-  const response = await callOllama(prompt, 0.1)
+  const response = await callOllama(prompt, 0.1, systemPrompt)
   return extractJson<PipelineResult>(response)
 }

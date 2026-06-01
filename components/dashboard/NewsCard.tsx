@@ -27,32 +27,39 @@ const actionabilityConfig = {
 }
 
 const JUNK_PATTERNS = [
+  /^!\[/,                     // all images (remove entirely)
   /^skip to (navigation|main content|right column|content)/i,
   /^oops,?\s*(something went wrong)?$/i,
-  /^view comments$/i,
+  /^view comments?$/i,
   /^(terms and privacy policy|terms of service|privacy policy)$/i,
-  /^your privacy choices$/i,
+  /^your privacy choices?$/i,
   /^(more info|read more|continue reading|story continues)$/i,
   /^advertisement$/i,
   /^(share this article|share this story)$/i,
   /^related articles?$/i,
   /^what to read next$/i,
   /^you might also like$/i,
-  /^subscribe (now|to|for)/i,
-  /^sign (in|up) to (read|continue|access)/i,
+  /^subscribe (now|today|to|for)/i,
+  /^sign (in|up) (to|for|now)/i,
   /^already a subscriber/i,
   /^this content is (for|available to) subscribers?/i,
   /^(cookie|we use cookies)/i,
   /^(accept all|reject all|manage preferences)$/i,
+  /^©\s*\d{4}/,              // copyright lines
+  /^sign in\s*subscribe/i,
+  /^continue reading (your article|with a)/i,
+  /^up next$/i,
+  /^videos?$/i,
+  /^most (read|popular) (from|in|on|at)/i,
+  /^(breaking news|live updates|live blog)/i,
+  /^--\s*with (assistance|reporting) from/i,  // Bloomberg byline suffix
+  /^\(updates? with/i,       // Bloomberg update notes
   /^\[.*\]\(#\)$/,           // empty anchor links
-  /^!\[.*\]\(data:image/i,   // base64 images
-  /^!\[.*\]\(https?:\/\/.*\.(gif|png|jpg|jpeg|svg|webp)\?.*advert/i, // ad images
-  /^#{1,3}\s*(more stories|trending now|editor's picks|top stories)/i,
+  /^#{1,3}\s*(more stories|trending now|editor.?s picks|top stories|breaking)/i,
 ]
 
 function cleanMarkdown(md: string): string {
-  // Strip sections that start with junk headings (e.g. "## Related articles")
-  const junkSectionHeadings = /^#{1,3}\s*(related|more stories|what to read next|recommended|trending|editor.s picks|newsletter|subscribe|sign in)/i
+  const junkSectionHeadings = /^#{1,3}\s*(related|more stories?|what to read next|recommended|trending|editor.?s picks?|newsletter|subscribe|sign in|most read|most popular|up next|videos?|popular now|top picks|also in)/i
 
   const lines = md.split('\n')
   const kept: string[] = []
@@ -64,7 +71,7 @@ function cleanMarkdown(md: string): string {
       if (!skipSection) kept.push(line)
       continue
     }
-    if (/^#{1,3}\s/.test(t)) {
+    if (/^#{1,6}\s/.test(t)) {
       skipSection = junkSectionHeadings.test(t)
     }
     if (skipSection) continue
