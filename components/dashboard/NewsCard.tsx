@@ -26,6 +26,34 @@ const actionabilityConfig = {
   CONTRADICTS: { emoji: '❌', label: 'CONTRADICTS' },
 }
 
+const JUNK_PATTERNS = [
+  /^skip to (navigation|main content|right column)/i,
+  /^oops,?\s*(something went wrong)?$/i,
+  /^view comments$/i,
+  /^terms and privacy policy$/i,
+  /^your privacy choices$/i,
+  /^more info$/i,
+  /^story continues$/i,
+  /^advertisement$/i,
+  /^share this article$/i,
+  /^related articles?$/i,
+  /^\[.*\]\(#\)$/,           // empty anchor links
+  /^!\[.*\]\(data:image/i,   // base64 images
+]
+
+function cleanMarkdown(md: string): string {
+  return md
+    .split('\n')
+    .filter((line) => {
+      const t = line.trim()
+      if (!t) return true
+      return !JUNK_PATTERNS.some((re) => re.test(t))
+    })
+    .join('\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
+}
+
 interface Props {
   news: MarketNews
   userTickers: string[]
@@ -143,7 +171,7 @@ export function NewsCard({ news, userTickers }: Props) {
             </DialogHeader>
             <div className="max-h-[70vh] overflow-y-auto">
               <div className="prose prose-sm dark:prose-invert max-w-none">
-                <ReactMarkdown>{news.full_text_md}</ReactMarkdown>
+                <ReactMarkdown>{cleanMarkdown(news.full_text_md)}</ReactMarkdown>
               </div>
             </div>
             <div className="flex items-center justify-between border-t border-border pt-3 text-xs text-muted-foreground">

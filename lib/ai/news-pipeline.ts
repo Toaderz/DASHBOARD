@@ -137,12 +137,19 @@ export async function searchNews(tickers: string[]): Promise<RawArticle[]> {
 
   const seen = new Set<string>()
   const articles: RawArticle[] = []
+  const cutoff = new Date()
+  cutoff.setDate(cutoff.getDate() - 10)
 
   for (const result of results) {
     if (result.status === 'rejected') continue
     for (const item of result.value.results) {
       if (!item.url || seen.has(item.url)) continue
       if ((item.score ?? 0) < 0.4) continue
+      // Hard reject articles older than 10 days
+      if (item.publishedDate) {
+        const pub = new Date(item.publishedDate)
+        if (!isNaN(pub.getTime()) && pub < cutoff) continue
+      }
       seen.add(item.url)
       articles.push({
         url: item.url,
@@ -243,14 +250,19 @@ SCORING SYSTEM (apply to each article):
 - forward_implications (0-5): 0=no change, 3=minor revision, 5=changes base case
 - structural_vs_noise (0-5): 0=pure noise, 3=mixed signal, 5=structural regime change
 - portfolio_relevance (0-5): 5=direct ticker match, 4=strong sector impact, 3=broad universe, 2=weak indirect, 1=distant, 0=none
-- time_decay: 0 if <=2 days old, -1 if 3-4 days, -2 if 5-7 days
+- time_decay: 0 if <=2 days old, -1 if 3-4 days, -2 if 5-7 days, -4 if >7 days (EXCLUDE articles >10 days old entirely)
 
 TOTAL = sum of all dimensions (max 30)
 RATING: A=22-30 | B=18-21 | C=14-17 | D<14
 SIGNAL: STRONG if score>=22 AND portfolio>=4; MODERATE if score 18-21 OR portfolio 3-4; WEAK otherwise
 ACTIONABILITY (A/B only): MONITOR | REVIEW | CONFIRMS | CONTRADICTS
 
-OUTPUT: Return valid JSON only. No other text. Include only A and B rated articles (minimum 3, maximum 7). Drop D items. context_md must be in Spanish (2-3 paragraphs about the week's market feeling).
+QUALITY REQUIREMENTS for summary and insight fields:
+- summary: Be specific. Name the actual numbers, institutions, policies, or events. State WHAT happened, WHY it matters for asset prices, and WHAT is the direct implication for equities/bonds/commodities.
+- insight: Name specific assets, sectors, or tickers likely affected. Describe what a portfolio manager should watch next week (data releases, speeches, levels to watch).
+- context_md: Write in Spanish. Include actual market data (index levels, rate expectations, commodity moves if relevant). 2-3 paragraphs with professional investment language.
+
+OUTPUT: Return valid JSON only. No other text. Include only A and B rated articles (minimum 3, maximum 7). Drop C and D items unless fewer than 3 A/B articles exist. context_md must be in Spanish.
 
 JSON SCHEMA:
 {
