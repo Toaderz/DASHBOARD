@@ -131,6 +131,7 @@ lib/
   ai/
     news-pipeline.ts               # Pipeline de noticias: searchNews→rankCandidates→selectTop7→extractContent→analyzeAndSynthesize→selectFinalArticles
     asset-enrichment.ts            # Relevancia determinista: enrichAssetProfiles (Fase A) + matchAffectedSymbols (Fase B)
+    article-clean.ts               # Limpieza determinista del full_text_md (quita nav/ads/social/bio/relacionados; corta en "Our Standards"/"Read Next")
     llm.ts                         # callLLM provider-agnostic (cadena Gemini→Groq→Cerebras) + extractJson robusto
     source-authority.ts            # Mapa dominio→autoridad (0..1) para pre-ranking determinista
   supabase/

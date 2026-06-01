@@ -3,6 +3,7 @@ import Firecrawl from 'firecrawl'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { callLLM, extractJson } from './llm'
 import { sourceAuthority } from './source-authority'
+import { buildCleanMarkdown, type ExtractedJson } from './article-clean'
 
 // ── Types ────────────────────────────────────────────────────
 
@@ -356,57 +357,12 @@ const EXTRACTION_PROMPT =
   'subscriber/paywall notices, copyright/legal lines and Dow Jones hashes, newsletter sign-ups, ' +
   'social share links, cookie/consent banners, ads, and chart/widget text dumps (e.g. "Created with Highcharts").'
 
-interface ExtractedJson {
-  body_markdown?: string
-}
-
 // Reject the scrape promise if Firecrawl takes longer than `ms` (stealth + AI extraction is slow).
 function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
   return Promise.race([
     promise,
     new Promise<T>((_, reject) => setTimeout(() => reject(new Error('scrape timeout')), ms)),
   ])
-}
-
-const MD_IMAGE_RE = /!\[([^\]]*)\]\(\s*(<[^>]+>|[^)\s]+)[^)]*\)/g
-
-// Deterministic backstop: drop logo / icon / avatar / agency-credit / tracking images.
-// Keeps content photos and charts/graphs (what the user wants).
-function isJunkImage(alt: string, url: string): boolean {
-  const a = alt.trim().toLowerCase()
-  const u = url.replace(/^<|>$/g, '').trim().toLowerCase()
-  if (!u || u.startsWith('data:')) return true
-  // Alt is exactly a news-agency wordmark → it's a credit logo, not a content photo.
-  if (/^(reuters|getty|getty images|associated press|ap|ap photo|bloomberg|afp|epa|shutterstock|istock|alamy|nurphoto|via getty images)$/.test(a)) return true
-  if (/\b(logo|icon|favicon|avatar|sprite|spacer|pixel|placeholder|watermark|wordmark|badge|headshot)\b/.test(a)) return true
-  if (/logo|favicon|sprite|\/icons?\/|avatar|placeholder|spacer|1x1|tracking|beacon|\.svg(\?|$)/.test(u)) return true
-  return false
-}
-
-// Remove junk images from the markdown but keep content photos/charts in place.
-function filterImages(md: string): string {
-  return md.replace(MD_IMAGE_RE, (full, alt: string, url: string) => (isJunkImage(alt, url) ? '' : full))
-}
-
-// Drop a leading H1 (the article title is shown separately in the modal header).
-function stripLeadingH1(md: string): string {
-  const lines = md.split('\n')
-  let i = 0
-  while (i < lines.length && !lines[i].trim()) i++
-  if (i < lines.length && /^#\s+\S/.test(lines[i].trim())) lines.splice(i, 1)
-  return lines.join('\n')
-}
-
-// Build the final clean markdown stored in `full_text_md`.
-function buildCleanMarkdown(json: ExtractedJson): string | null {
-  let md = (json.body_markdown ?? '').trim()
-  if (!md) return null
-  md = stripLeadingH1(md)
-  md = filterImages(md)
-  md = md.replace(/\n{3,}/g, '\n\n').trim()
-  // Require some actual prose, not just leftover image/whitespace.
-  const textOnly = md.replace(MD_IMAGE_RE, '').replace(/[#>*_`-]/g, '').trim()
-  return textOnly.length >= 80 ? md : null
 }
 
 export async function extractContent(urls: string[]): Promise<Map<string, string>> {
