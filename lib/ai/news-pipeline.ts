@@ -459,8 +459,9 @@ ${tickerCatalog || tickers.slice(0, 25).join(', ')}
 
 REGLA DE affected_tickers (estricta): incluye un ticker SOLO si el artículo menciona explícitamente esa empresa/activo, o si el sector/tema del ticker en el catálogo es el FOCO DIRECTO de la noticia. Si ninguno aplica directamente, devuelve []. PROHIBIDO asociaciones temáticas vagas — ejemplos de lo que NO se debe hacer: etiquetar un ETF de ciberseguridad para una noticia de chips de memoria; etiquetar un ETF de large caps de EE.UU. para una decisión de tasas de Corea; etiquetar un ETF de mid-cap growth para un récord del Dow. portfolio_relevance refleja esto: 0 si ningún ticker del catálogo está directamente afectado.
 
-SCORING (0-5 cada uno): macro_impact, surprise_factor, market_relevance, forward_implications, structural_vs_noise, portfolio_relevance (5=ticker directo,3=universo amplio,0=ninguno), time_decay (0 si <=2 días, -1 si 3-4, -2 si 5-7).
-TOTAL=suma (máx 30). RATING: A=22-30,B=18-21,C=14-17,D<14. SIGNAL: STRONG si score>=22 Y portfolio>=4; MODERATE si 18-21 O portfolio 3-4; WEAK otro. ACTIONABILITY (solo A/B): MONITOR|REVIEW|CONFIRMS|CONTRADICTS.
+SCORING (0-5 cada uno): macro_impact, surprise_factor, market_relevance, forward_implications, structural_vs_noise; más time_decay (0 si <=2 días, -1 si 3-4, -2 si 5-7) y portfolio_relevance (SOLO informativo: 5=ticker directo, 3=universo amplio, 0=ninguno).
+IMPORTANTE: la importancia de la noticia NO depende del portafolio. TOTAL = macro_impact + surprise_factor + market_relevance + forward_implications + structural_vs_noise + time_decay (máx 25; portfolio_relevance NO suma al total).
+RATING: A=19-25, B=15-18, C=11-14, D<11. SIGNAL: STRONG si TOTAL>=19; MODERATE si 15-18; WEAK si <15. ACTIONABILITY (solo A/B): MONITOR|REVIEW|CONFIRMS|CONTRADICTS.
 
 OUTPUT JSON SCHEMA:
 {
@@ -492,13 +493,31 @@ Analiza TODOS los artículos proporcionados (hasta 5), ordenados por importancia
 ARTÍCULOS:
 ${articleBlocks}`
 
-  try {
-    const response = await callOllama(prompt, 0.4, systemPrompt, ANALYSIS_MODEL, 4500)
-    return extractJson<PipelineResult>(response)
-  } catch {
-    // Fallback: si gpt-oss excede el límite de tokens/min o trunca el JSON, reintenta con
-    // el modelo por defecto (llama, mayor TPM y sin razonamiento) para no perder la corrida.
-    const response = await callOllama(prompt, 0.3, systemPrompt)
-    return extractJson<PipelineResult>(response)
+  // Intenta gpt-oss con reintentos (Groq a veces responde 503 "over capacity" o 429 TPM —
+  // ambos transitorios). Si agota reintentos, cae a llama (mayor TPM) con presupuesto amplio.
+  const isTransient = (e: unknown) => /50[023]|over capacity|429|rate.?limit|timeout/i.test(String(e))
+  let result: PipelineResult | null = null
+  for (let attempt = 0; attempt < 3 && !result; attempt++) {
+    try {
+      const response = await callOllama(prompt, 0.4, systemPrompt, ANALYSIS_MODEL, 4500)
+      result = extractJson<PipelineResult>(response)
+    } catch (e) {
+      if (attempt < 2 && isTransient(e)) {
+        await new Promise((r) => setTimeout(r, 2500 * (attempt + 1)))
+        continue
+      }
+      // Fallback: modelo por defecto (llama) con presupuesto amplio para producir el JSON completo.
+      const response = await callOllama(prompt, 0.3, systemPrompt, undefined, 6000)
+      result = extractJson<PipelineResult>(response)
+    }
   }
+
+  // No guardes un brief vacío: si hubo artículos de entrada pero el modelo no devolvió ninguno,
+  // falla la corrida (la ruta la marca 'failed' y el siguiente cron reintenta) en vez de mostrar vacío.
+  if (!result || !result.articles || result.articles.length === 0) {
+    if (articles.length > 0) {
+      throw new Error('El análisis devolvió 0 artículos pese a tener entrada; se reintentará')
+    }
+  }
+  return result!
 }

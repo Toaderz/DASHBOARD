@@ -104,7 +104,7 @@ export function NewsCard({ news, userTickers }: Props) {
         <p className="text-[11px] text-muted-foreground font-mono">
           {news.source_name}
           {news.published_at && ` · ${new Date(news.published_at).toLocaleDateString('es-MX', { day: 'numeric', month: 'short' })}`}
-          {' · '}Score: {news.score}/30
+          {' · '}Score: {news.score}/25
         </p>
       </div>
 
