@@ -29,6 +29,15 @@ function getAdminClient() {
   )
 }
 
+// Sanea la fecha del LLM: solo acepta YYYY-MM-DD (al inicio); cualquier otra cosa
+// ("unknown", "May 28", "2026-05", "") → null. Una fecha basura rompe el INSERT
+// atómico de timestamptz y tumba TODO el lote (brief sin noticias).
+function toValidDate(d: string | null | undefined): string | null {
+  if (!d || typeof d !== 'string') return null
+  const m = d.match(/^\d{4}-\d{2}-\d{2}/)
+  return m ? m[0] : null
+}
+
 function computeValidUntil(): Date {
   const now = new Date()
   const day = now.getUTCDay() // 0=Sun, 1=Mon, 5=Fri
@@ -140,7 +149,7 @@ export async function POST(req: Request) {
         full_text_md: fullText,
         source_url: article.source_url,
         source_name: article.source_name,
-        published_at: article.date ? article.date : null,
+        published_at: toValidDate(article.date),
         affected_tickers: affected.map((s) => s.ticker),
         affected_symbols: affected,
         relevance_source: affected.length
@@ -155,7 +164,12 @@ export async function POST(req: Request) {
       }
     })
 
-    await supabaseAdmin.from('market_news').insert(newsRows)
+    const { error: newsError } = await supabaseAdmin.from('market_news').insert(newsRows)
+    // No marcar el brief 'ready' con conteos fantasma si el insert falló: lanza para que
+    // el catch lo marque 'failed' con el error real (antes fallaba en silencio → brief vacío).
+    if (newsError) {
+      throw new Error(`Insert de market_news falló (${newsRows.length} filas): ${newsError.message}`)
+    }
 
     // Recalcula los conteos de señal desde los artículos REALMENTE incluidos (consistencia con la UI).
     const strong = finalArticles.filter((a) => a.signal === 'STRONG').length
