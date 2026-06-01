@@ -193,6 +193,11 @@ export const METRIC_DEFINITIONS: MetricDefinition[] = [
 
 // ── Market Brief & News ──────────────────────────────────────
 
+export type WatchlistItem = {
+  priority: 'Alta' | 'Media' | 'Baja'
+  item: string
+}
+
 export type MarketBrief = {
   id: string
   created_at: string
@@ -206,7 +211,12 @@ export type MarketBrief = {
   weak_noise: number
   top_theme: string | null
   key_risk: string | null
-  metadata: Record<string, unknown>
+  metadata: {
+    watchlist_items?: WatchlistItem[]
+    editorial_stance?: string
+    error?: string
+    [key: string]: unknown
+  }
 }
 
 export type MarketNews = {

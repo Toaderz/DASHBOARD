@@ -77,10 +77,10 @@ export async function POST(req: Request) {
   try {
     const tickers = await getTopTickers(supabaseAdmin)
     const rawArticles = await searchNews(tickers)
-    const top7Urls = await selectTop7(rawArticles)
-    const top7 = rawArticles.filter((a) => top7Urls.includes(a.url))
-    const contentMap = await extractContent(top7Urls)
-    const result = await analyzeAndSynthesize(top7, contentMap, tickers)
+    const topUrls = await selectTop7(rawArticles)
+    const topArticles = rawArticles.filter((a) => topUrls.includes(a.url))
+    const contentMap = await extractContent(topUrls)
+    const result = await analyzeAndSynthesize(topArticles, contentMap, tickers)
 
     const newsRows = result.articles.map((article) => ({
       brief_id: brief.id,
@@ -91,7 +91,7 @@ export async function POST(req: Request) {
       full_text_md: contentMap.get(article.source_url) ?? null,
       source_url: article.source_url,
       source_name: article.source_name,
-      published_at: article.date ?? null,
+      published_at: article.date ? article.date : null,
       affected_tickers: article.affected_tickers ?? [],
       score: article.score,
       rating: article.rating,
@@ -112,6 +112,10 @@ export async function POST(req: Request) {
         weak_noise: result.weekly_summary.weak_noise,
         top_theme: result.weekly_summary.top_theme,
         key_risk: result.weekly_summary.key_risk,
+        metadata: {
+          editorial_stance: result.weekly_summary.editorial_stance ?? null,
+          watchlist_items: result.weekly_summary.watchlist_items ?? [],
+        },
       })
       .eq('id', brief.id)
 
