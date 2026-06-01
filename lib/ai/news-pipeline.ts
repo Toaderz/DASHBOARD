@@ -135,7 +135,15 @@ export async function searchNews(tickers: string[]): Promise<RawArticle[]> {
   ]
 
   const results = await Promise.allSettled(
-    queries.map((q) => client.search(q.query, { topic: q.topic, days: q.days, maxResults: q.max_results }))
+    queries.map((q) =>
+      client.search(q.query, {
+        topic: q.topic,
+        days: q.days,
+        maxResults: q.max_results,
+        timeRange: 'week',
+        includeAnswer: false,
+      })
+    )
   )
 
   const seen = new Set<string>()
@@ -211,13 +219,9 @@ export async function extractContent(urls: string[]): Promise<Map<string, string
           formats: ['markdown'],
           onlyMainContent: true,
           excludeTags: [
-            'nav', 'header', 'footer', 'aside', 'script', 'style',
-            '.nav', '.navigation', '.header', '.footer', '.sidebar',
-            '.cookie-banner', '.cookie-notice', '.cookie-consent',
-            '.paywall', '.subscription-wall', '.subscription-prompt',
-            '.related-articles', '.recommended', '.what-to-read',
-            '.advertisement', '.ad', '.promo', '.newsletter-signup',
-            '.share-buttons', '.social-share', '.comments-section',
+            'nav', 'footer', 'aside', 'script', 'style', 'iframe',
+            '.ad', '.promo', '.newsletter', '.disclaimer',
+            '.author-bio', '#read-more', '.related-articles',
           ],
         })
         clearTimeout(timeout)
@@ -255,6 +259,12 @@ ${fullText.slice(0, 3000)}`
   const prompt = `Eres un analista financiero senior que redacta un market brief semanal en ESPAÑOL para gestores de carteras institucionales.
 
 REGLA CRÍTICA: TODO EL TEXTO del JSON debe estar en ESPAÑOL. Ningún campo de texto en inglés es aceptable.
+
+REGLAS DE TONO Y ESTILO (obligatorias, sin excepción):
+- El tono debe ser estrictamente serio, neutral y objetivo — estilo reporte institucional de Bloomberg o Reuters.
+- PROHIBIDO usar frases prescriptivas, recomendaciones o consejos directos. Elimina completamente expresiones como: "los inversores deben monitorear", "puede tener un impacto", "es importante entender", "se recomienda", "hay que estar atentos", "los gestores deberían considerar".
+- Tu objetivo NO es dar insights cerrados ni conclusiones masticadas. Presentas los hechos, los datos duros y la inercia del mercado de forma que la tendencia sea evidente por sí sola — el lector infiere las consecuencias y toma su propia postura.
+- DESCARTA radicalmente cualquier artículo con fecha anterior a los últimos 7 días. Usa la fecha exacta del artículo. Si la fecha es ambigua, EXCLUYE el artículo.
 
 UNIVERSO DE INVERSIÓN (para scoring de relevancia):
 - Tickers top de la plataforma: ${tickers.join(', ')}
