@@ -90,10 +90,35 @@ async function callOllama(prompt: string, temperature = 0.1): Promise<string> {
   return data.choices[0].message.content
 }
 
+function sanitizeJsonString(raw: string): string {
+  // Escape literal control characters inside JSON string values (common LLM output issue)
+  let result = ''
+  let inString = false
+  let escaped = false
+  for (let i = 0; i < raw.length; i++) {
+    const ch = raw[i]
+    if (escaped) { result += ch; escaped = false; continue }
+    if (ch === '\\') { result += ch; escaped = true; continue }
+    if (ch === '"') { inString = !inString; result += ch; continue }
+    if (inString) {
+      if (ch === '\n') { result += '\\n'; continue }
+      if (ch === '\r') { result += '\\r'; continue }
+      if (ch === '\t') { result += '\\t'; continue }
+    }
+    result += ch
+  }
+  // Remove trailing commas before } or ]
+  return result.replace(/,(\s*[}\]])/g, '$1')
+}
+
 function extractJson<T>(text: string): T {
   const match = text.match(/```json\s*([\s\S]*?)```/) ?? text.match(/(\{[\s\S]*\}|\[[\s\S]*\])/)
   const raw = match ? match[1] ?? match[0] : text.trim()
-  return JSON.parse(raw) as T
+  try {
+    return JSON.parse(raw) as T
+  } catch {
+    return JSON.parse(sanitizeJsonString(raw)) as T
+  }
 }
 
 // ── Function A ───────────────────────────────────────────────
