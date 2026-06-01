@@ -147,10 +147,18 @@ SUPABASE_SERVICE_ROLE_KEY=      # empieza con eyJ (no eeyJ)
 FINNHUB_API_KEY=                 # 'your-finnhub-api-key' → modo mock con 10 tickers hardcoded
 TAVILY_API_KEY=                  # Tavily search API — pipeline de noticias
 FIRECRAWL_API_KEY=               # Firecrawl — extracción de artículos completos (bypass paywalls)
-OLLAMA_API_URL=                  # Base URL del LLM (OpenAI-compatible). Usar Groq: https://api.groq.com/openai (gratuito, rápido). Ollama local: http://localhost:11434
-OLLAMA_API_KEY=                  # API key del proveedor. Groq: console.groq.com → API Keys. Ollama local: dejar vacío
-OLLAMA_MODEL=llama-3.3-70b-versatile  # Modelo a usar. Groq gratis: llama-3.3-70b-versatile | deepseek-r1-distill-llama-70b
 CRON_SECRET=                     # Header Authorization para el cron de Vercel (/api/cron/news-pipeline)
+# ── Cadena LLM (lib/ai/llm.ts) — endpoints OpenAI-compatibles con fallback automático ──
+# callLLM recorre NEWS_LLM_CHAIN en orden; un proveedor SIN api key se salta solo.
+# Modelos DISTINTOS para 'analysis' vs 'selection' por proveedor (no compiten por TPM).
+NEWS_LLM_CHAIN=gemini,groq,cerebras   # orden de fallback (default si no se define)
+GEMINI_API_KEY=                  # Principal: Gemini 2.5 Flash (Google AI Studio, free, 1M ctx) — aistudio.google.com
+# GEMINI_ANALYSIS_MODEL=gemini-2.5-flash | GEMINI_SELECTION_MODEL=gemini-2.5-flash-lite (defaults)
+OLLAMA_API_URL=https://api.groq.com/openai  # Fallback 1: Groq (OpenAI-compatible). Ollama local: http://localhost:11434
+OLLAMA_API_KEY=                  # Groq: console.groq.com → API Keys. Ollama local: dejar vacío
+OLLAMA_MODEL=llama-3.3-70b-versatile        # modelo de SELECCIÓN/enriquecimiento (Groq)
+NEWS_ANALYSIS_MODEL=openai/gpt-oss-120b     # modelo de ANÁLISIS (Groq)
+CEREBRAS_API_KEY=                # Fallback 2: Cerebras (free, ~1M tokens/día) — cloud.cerebras.ai
 ```
 
 ## Comandos

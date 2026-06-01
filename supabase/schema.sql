@@ -23,6 +23,9 @@ create table if not exists assets_metadata (
   industry text,
   benchmark text,
   manager text,
+  -- Perfil de relevancia estable por activo (señales factuales: entities/themes/issuer/geography).
+  -- Poblado automáticamente por el enriquecimiento LLM (Fase A del pipeline de noticias); editable a mano.
+  relevance_profile jsonb,
   updated_at timestamptz default now()
 );
 
@@ -644,6 +647,12 @@ create table market_news (
   source_name text not null,
   published_at date,
   affected_tickers text[] default '{}',
+  -- Símbolos afectados calculados de forma DETERMINISTA (Fase B): [{ ticker, source }].
+  affected_symbols jsonb default '[]'::jsonb,
+  -- Resumen legible del origen del match (entity|ticker|text_scan) para trazabilidad.
+  relevance_source text,
+  -- Autoridad/neutralidad de la fuente (señal de pre-ranking, poblada en Tarea 3).
+  source_authority numeric,
   score int not null,
   rating text check (rating in ('A','B','C','D')),
   signal text check (signal in ('STRONG','MODERATE','WEAK')),
@@ -715,4 +724,13 @@ create policy "authenticated_read_profiles" on profiles
 --     AND watchlist_id IN (SELECT id FROM watchlists WHERE name = 'Evolve Universe');
 --   DELETE FROM assets_metadata WHERE ticker = 'PSH'
 --     AND NOT EXISTS (SELECT 1 FROM watchlist_assets WHERE asset_ticker = 'PSH');
+--
+-- Step 8 — Relevancia de portafolio determinista (idempotente, run once per DB):
+--   -- Perfil estable por activo, poblado automáticamente por el enriquecimiento LLM (Fase A).
+--   -- Editable a mano con un simple UPDATE; nullable para no romper filas existentes.
+--   ALTER TABLE assets_metadata ADD COLUMN IF NOT EXISTS relevance_profile jsonb;
+--   -- Símbolos afectados calculados de forma DETERMINISTA por noticia (Fase B), con su origen.
+--   ALTER TABLE market_news ADD COLUMN IF NOT EXISTS affected_symbols jsonb DEFAULT '[]'::jsonb;
+--   ALTER TABLE market_news ADD COLUMN IF NOT EXISTS relevance_source text;
+--   ALTER TABLE market_news ADD COLUMN IF NOT EXISTS source_authority numeric;
 -- ============================================================

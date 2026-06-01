@@ -38,6 +38,16 @@ export interface Profile {
   is_team_evolve?: boolean
 }
 
+// Perfil de relevancia estable por activo (Fase A del pipeline de noticias).
+// Solo descriptores factuales: gestor, estrategia, clase de activo, geografía, sector/tema.
+export interface RelevanceProfile {
+  asset_type: 'stock' | 'etf' | 'index' | 'fund' | 'closed_end_fund' | 'crypto' | string
+  themes: string[]
+  issuer_or_manager: string | null
+  geography: string | null
+  entities: string[]
+}
+
 export interface AssetMetadata {
   ticker: string
   name: string
@@ -47,6 +57,7 @@ export interface AssetMetadata {
   industry: string | null
   benchmark: string | null
   manager: string | null
+  relevance_profile?: RelevanceProfile | null
 }
 
 export interface Watchlist {
@@ -231,6 +242,9 @@ export type MarketNews = {
   source_name: string
   published_at: string | null
   affected_tickers: string[]
+  affected_symbols?: AffectedSymbol[]
+  relevance_source?: string | null
+  source_authority?: number | null
   score: number
   rating: 'A' | 'B' | 'C' | 'D'
   signal: 'STRONG' | 'MODERATE' | 'WEAK'
@@ -244,6 +258,12 @@ export type MarketNews = {
     portfolio: number
     time_decay: number
   }
+}
+
+// Símbolo afectado por una noticia + cómo se determinó (matching determinista, Fase B).
+export type AffectedSymbol = {
+  ticker: string
+  source: 'entity' | 'ticker' | 'text_scan'
 }
 
 export type BriefWithNews = MarketBrief & { market_news: MarketNews[] }

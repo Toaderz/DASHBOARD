@@ -1,6 +1,8 @@
 import { tavily } from '@tavily/core'
 import Firecrawl from 'firecrawl'
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { callLLM, extractJson } from './llm'
+import { sourceAuthority } from './source-authority'
 
 // ── Types ────────────────────────────────────────────────────
 
@@ -34,7 +36,9 @@ export interface AnalyzedArticle {
     portfolio: number
     time_decay: number
   }
-  affected_tickers: string[]
+  // El LLM ya NO emite esto: affected_symbols se calcula de forma determinista (Fase B)
+  // tras el análisis. Se mantiene opcional por compatibilidad.
+  affected_tickers?: string[]
 }
 
 export interface WeeklySummary {
@@ -63,80 +67,6 @@ function getFirecrawlClient() {
   return new Firecrawl({ apiKey: process.env.FIRECRAWL_API_KEY! })
 }
 
-// Modelo para el análisis/síntesis (mejor seguimiento de instrucciones, sin relleno).
-// Distinto al de selección (selectTop7) a propósito: Groq aplica el límite de tokens/min
-// POR MODELO, así que usar modelos distintos evita que ambas llamadas compitan por el mismo cupo.
-const ANALYSIS_MODEL = process.env.NEWS_ANALYSIS_MODEL ?? 'openai/gpt-oss-120b'
-
-async function callOllama(
-  prompt: string,
-  temperature = 0.1,
-  systemPrompt?: string,
-  model?: string,
-  maxTokens?: number
-): Promise<string> {
-  const baseUrl = process.env.OLLAMA_API_URL!
-  const apiKey = process.env.OLLAMA_API_KEY
-  const resolvedModel = model ?? process.env.OLLAMA_MODEL ?? 'deepseek-r1:14b'
-
-  const headers: Record<string, string> = { 'Content-Type': 'application/json' }
-  if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`
-
-  const messages: Array<{ role: string; content: string }> = []
-  if (systemPrompt) messages.push({ role: 'system', content: systemPrompt })
-  messages.push({ role: 'user', content: prompt })
-
-  const response = await fetch(`${baseUrl}/v1/chat/completions`, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify({
-      model: resolvedModel,
-      messages,
-      temperature,
-      stream: false,
-      ...(maxTokens ? { max_tokens: maxTokens } : {}),
-    }),
-  })
-
-  if (!response.ok) {
-    throw new Error(`Ollama error: ${response.status} ${await response.text()}`)
-  }
-
-  const data = await response.json() as { choices: Array<{ message: { content: string } }> }
-  return data.choices[0].message.content
-}
-
-function sanitizeJsonString(raw: string): string {
-  // Escape literal control characters inside JSON string values (common LLM output issue)
-  let result = ''
-  let inString = false
-  let escaped = false
-  for (let i = 0; i < raw.length; i++) {
-    const ch = raw[i]
-    if (escaped) { result += ch; escaped = false; continue }
-    if (ch === '\\') { result += ch; escaped = true; continue }
-    if (ch === '"') { inString = !inString; result += ch; continue }
-    if (inString) {
-      if (ch === '\n') { result += '\\n'; continue }
-      if (ch === '\r') { result += '\\r'; continue }
-      if (ch === '\t') { result += '\\t'; continue }
-    }
-    result += ch
-  }
-  // Remove trailing commas before } or ]
-  return result.replace(/,(\s*[}\]])/g, '$1')
-}
-
-function extractJson<T>(text: string): T {
-  const match = text.match(/```json\s*([\s\S]*?)```/) ?? text.match(/(\{[\s\S]*\}|\[[\s\S]*\])/)
-  const raw = match ? match[1] ?? match[0] : text.trim()
-  try {
-    return JSON.parse(raw) as T
-  } catch {
-    return JSON.parse(sanitizeJsonString(raw)) as T
-  }
-}
-
 // ── Function A ───────────────────────────────────────────────
 
 export async function getTopTickers(supabase: SupabaseClient): Promise<string[]> {
@@ -161,10 +91,11 @@ export async function getTopTickers(supabase: SupabaseClient): Promise<string[]>
   return (data as Array<{ ticker: string }>).map((r) => r.ticker)
 }
 
-// Catálogo descriptivo (ticker — nombre [sector/industria]) para que el LLM sepa QUÉ es
-// cada ticker y solo asigne affected_tickers cuando hay relación real (no temática vaga).
+// Catálogo descriptivo (ticker — nombre [sector/industria]) — SOLO para que el LLM entienda
+// el CONTEXTO del universo de la plataforma. El LLM ya NO decide relevancia (eso es determinista).
+// Se pasa el universo completo de tickers más repetidos (cabe de sobra en el contexto del modelo).
 export async function getTickerCatalog(supabase: SupabaseClient, tickers: string[]): Promise<string> {
-  const top = tickers.slice(0, 25)
+  const top = tickers
   if (!top.length) return ''
   const { data } = await supabase
     .from('assets_metadata')
@@ -188,10 +119,18 @@ export async function getTickerCatalog(supabase: SupabaseClient, tickers: string
 // y los de paywall duro (WSJ, Bloomberg, FT), y permite extraer el artículo completo.
 // Nota: se excluyen los sitios .gov/IMF como FUENTE DE NOTICIAS porque devuelven
 // explainers/discursos/datos en vez de artículos; sus decisiones se cubren vía estas agencias.
+// Todas de acceso abierto o paywall ligero (extraíbles por Firecrawl) y neutras/profesionales.
+// El pre-ranking por autoridad (source-authority.ts) prioriza las de cable/profesional, así que
+// ampliar la lista no degrada calidad: las de menor autoridad quedan al fondo solas.
+// Enfoque trader: tasas, declaraciones del gobierno de EE.UU., geopolítica de alto impacto.
 const NEWS_SOURCES = [
-  'reuters.com', 'apnews.com',
-  'bbc.com', 'theguardian.com',
-  'cnbc.com', 'marketwatch.com',
+  'reuters.com', 'apnews.com',        // agencias de cable (máxima neutralidad)
+  'bbc.com', 'theguardian.com',       // prensa general de calidad
+  'cnbc.com', 'marketwatch.com',      // mercados
+  'axios.com', 'npr.org',             // política/macro EE.UU., texto limpio
+  'thehill.com', 'politico.com',      // gobierno y política de EE.UU.
+  'aljazeera.com',                    // geopolítica (Medio Oriente, Irán)
+  'semafor.com', 'fortune.com',       // negocios/mercados, acceso abierto
 ]
 
 // Títulos que NO son artículos de noticia (páginas índice, columnas de mercado, live blogs).
@@ -254,19 +193,57 @@ export async function searchNews(tickers: string[]): Promise<RawArticle[]> {
   return articles.sort((a, b) => b.score - a.score).slice(0, 25)
 }
 
+// ── Pre-ranking determinista ─────────────────────────────────
+
+// Cuántos candidatos pasan a extracción/análisis (cota superior; el conteo FINAL del brief
+// lo decide la calidad: 3 a 7, ver selectFinalArticles).
+const MAX_CANDIDATES = 7
+
+// Recencia 0..1 (hoy = 1, ~0 a los 10 días). Penaliza noticias viejas sin descartarlas.
+function recencyScore(publishedDate?: string): number {
+  if (!publishedDate) return 0.5
+  const pub = new Date(publishedDate)
+  if (isNaN(pub.getTime())) return 0.5
+  const days = (Date.now() - pub.getTime()) / 86_400_000
+  return Math.max(0, Math.min(1, 1 - days / 10))
+}
+
+// Ordena candidatos por una señal compuesta y determinista ANTES del LLM:
+// relevancia de búsqueda (Tavily) + autoridad de fuente + recencia + un empujón si toca
+// el portafolio (para que esas noticias no se caigan del set de candidatos). Devuelve el top.
+// `relevantUrls`: URLs que cruzan el universo (matching preliminar por snippet, hecho por el caller).
+export function rankCandidates(
+  articles: RawArticle[],
+  relevantUrls?: Set<string>,
+  limit = 14
+): RawArticle[] {
+  const composite = (a: RawArticle): number => {
+    const tavily = Math.max(0, Math.min(1, a.score))
+    const authority = sourceAuthority(a.source ?? a.url)
+    const recency = recencyScore(a.published_date)
+    const portfolio = relevantUrls?.has(a.url) ? 1 : 0
+    return 0.4 * tavily + 0.3 * authority + 0.2 * recency + 0.1 * portfolio
+  }
+  return [...articles]
+    .map((a) => ({ a, c: composite(a) }))
+    .sort((x, y) => y.c - x.c)
+    .slice(0, limit)
+    .map((x) => x.a)
+}
+
 // ── Function C ───────────────────────────────────────────────
 
 // Selección por IMPORTANCIA de mercado vía LLM (el score de Tavily mide relevancia de búsqueda,
 // no importancia, y pondría páginas índice/opinión por encima de decisiones de bancos centrales).
-// Respaldo determinista (top por score + diversidad de dominio) si el LLM falla.
+// Recibe candidatos YA pre-rankeados; el respaldo determinista preserva ese orden + diversidad.
 export async function selectTop7(articles: RawArticle[]): Promise<string[]> {
-  const TARGET = 5
+  const TARGET = MAX_CANDIDATES
 
+  // El input ya viene pre-rankeado: el fallback respeta ese orden y limita 2 por fuente.
   const deterministic = (): string[] => {
-    const sorted = [...articles].sort((a, b) => b.score - a.score)
     const perDomain = new Map<string, number>()
     const picked: string[] = []
-    for (const a of sorted) {
+    for (const a of articles) {
       const domain = a.source ?? a.url
       const count = perDomain.get(domain) ?? 0
       if (count >= 2) continue
@@ -274,7 +251,7 @@ export async function selectTop7(articles: RawArticle[]): Promise<string[]> {
       picked.push(a.url)
       if (picked.length >= TARGET) break
     }
-    for (const a of sorted) {
+    for (const a of articles) {
       if (picked.length >= TARGET) break
       if (!picked.includes(a.url)) picked.push(a.url)
     }
@@ -287,26 +264,77 @@ export async function selectTop7(articles: RawArticle[]): Promise<string[]> {
     .map((a, i) => `${i + 1}. ${a.title} — ${a.source ?? ''}\n${a.url}\n${a.content.slice(0, 180)}`)
     .join('\n\n')
 
-  const prompt = `Eres un editor de mercados. De la lista, elige las ${TARGET} noticias MÁS IMPORTANTES por su impacto de mercado real.
+  const prompt = `Eres un editor de mercados. De la lista, elige hasta ${TARGET} noticias MÁS IMPORTANTES por su impacto de mercado real (puedes elegir menos si no hay tantas que valgan la pena).
 
-PRIORIZA: decisiones de bancos centrales, datos macro (inflación, empleo, PIB), movimientos corporativos relevantes, geopolítica que mueva mercados.
+PRIORIZA: decisiones de bancos centrales y tasas de interés, datos macro (inflación, empleo, PIB), declaraciones del gobierno de EE.UU., geopolítica de alto impacto (p.ej. Irán), movimientos corporativos relevantes.
 DESCARTA: páginas índice de titulares, columnas tipo "Market Talk", "what to watch", live blogs, listicles ("top/bottom performers"), guías genéricas — salvo que sean claramente market-moving.
 DIVERSIDAD: cubre temas distintos; máximo 2 de la misma fuente.
 
-Devuelve SOLO un array JSON de ${TARGET} URLs por orden de importancia, sin texto adicional.
+Devuelve SOLO un array JSON de hasta ${TARGET} URLs por orden de importancia, sin texto adicional.
 Ejemplo: ["https://...", "https://..."]
 
 NOTICIAS:
 ${list}`
 
   try {
-    const response = await callOllama(prompt, 0.2)
+    const response = await callLLM({ role: 'selection', prompt, temperature: 0.2 })
     const urls = extractJson<string[]>(response)
     const valid = urls.filter((u) => articles.some((a) => a.url === u)).slice(0, TARGET)
     return valid.length >= 3 ? valid : deterministic()
   } catch {
     return deterministic()
   }
+}
+
+// ── Selección final del brief (conteo variable 3–7 + garantía de inclusión) ──
+
+export interface SelectableArticle {
+  source_url: string
+  score: number
+  rating: 'A' | 'B' | 'C' | 'D'
+}
+
+// Decide qué artículos ENTRAN al brief tras el análisis. Reglas:
+// - Núcleo de calidad: ratings A/B (STRONG/MODERATE), ordenados por score.
+// - Conteo variable 3–7: si el núcleo es <3, rellena con los mejores siguientes; nunca >7.
+// - Garantía de inclusión: una noticia que TOCA el portafolio y supera el mínimo (score>=11, C+)
+//   entra aunque no sea top macro, SUSTITUYENDO a la de menor importancia NO relevante del set,
+//   priorizando entre las garantizadas las de mayor score. Nunca excede el tope de 7.
+export function selectFinalArticles<T extends SelectableArticle>(
+  articles: T[],
+  isRelevant: (a: T) => boolean,
+  min = 3,
+  max = 7
+): T[] {
+  if (!articles.length) return []
+  const byScore = (a: T, b: T) => b.score - a.score
+  const sorted = [...articles].sort(byScore)
+
+  // Núcleo: A/B. Si no llega al mínimo, rellena con los siguientes mejores (incluye D solo si hace falta).
+  const selected = sorted.filter((a) => a.rating === 'A' || a.rating === 'B').slice(0, max)
+  if (selected.length < min) {
+    for (const a of sorted) {
+      if (selected.length >= min) break
+      if (!selected.includes(a)) selected.push(a)
+    }
+  }
+
+  // Garantía de inclusión por portafolio (mayor score primero), respetando el tope.
+  const guaranteed = sorted.filter((a) => isRelevant(a) && a.score >= 11 && !selected.includes(a))
+  for (const g of guaranteed) {
+    if (selected.length < max) {
+      selected.push(g)
+      continue
+    }
+    // Sustituye a la de MENOR importancia NO relevante del set; si todas son relevantes, no toca.
+    const replaceables = selected.filter((s) => !isRelevant(s))
+    if (!replaceables.length) break
+    const weakest = replaceables.reduce((lo, s) => (s.score < lo.score ? s : lo), replaceables[0])
+    selected.splice(selected.indexOf(weakest), 1)
+    selected.push(g)
+  }
+
+  return selected.sort(byScore).slice(0, max)
 }
 
 // ── Function D ───────────────────────────────────────────────
@@ -463,15 +491,16 @@ ${fullText.slice(0, 1000)}`
 
 REGLAS DURAS (inviolables):
 1. PROHIBIDO inventar datos. Usa SOLO cifras, fechas, nombres, instituciones y niveles que aparezcan EXPLÍCITAMENTE en el contenido del artículo. Si un dato no está en el texto, NO lo menciones. Nunca inventes reacciones de mercado, puntos básicos ni porcentajes.
-2. PROHIBIDO predecir o recomendar. Nada de llamadas de mercado ("los bonos subirán", "el dólar caerá"), consejos ni "los inversores deben/deberían".
-3. CADA oración debe contener un detalle ESPECÍFICO de ESE artículo: un nombre propio, lugar, cifra, fecha o argumento concreto tomado del texto. Una oración que podría aplicar a cualquier noticia está PROHIBIDA y debe eliminarse.
-4. PROHIBIDO repetir frases entre artículos. Cada resumen y cada análisis deben ser únicos y referirse a los detalles propios de su artículo.
+2. CIFRAS (máxima importancia): si el artículo DA un dato numérico (una subida de tasas, un %, un nivel, un monto), DEBE aparecer con su magnitud en el summary. Si el artículo NO menciona el número (p.ej. dice "se espera una subida" o "el gobierno está hawkish" sin cifra), NO lo inventes bajo ninguna circunstancia: descríbelo de forma cualitativa.
+3. PROHIBIDO recomendar o imponer postura. Nada de consejos ("los inversores deben/deberían"), ni llamadas de mercado con niveles concretos inventados ("el dólar caerá a X"). SÍ se permite una DIRECCIÓN SUAVE y cualitativa cuando se desprende del propio artículo (p.ej. "esto tiende a presionar a los semiconductores", "suele favorecer a los exportadores"), siempre matizada y sin predecir cifras. El objetivo: que el lector forme su propio juicio.
+4. CADA oración debe contener un detalle ESPECÍFICO de ESE artículo: un nombre propio, lugar, cifra, fecha o argumento concreto tomado del texto. Una oración que podría aplicar a cualquier noticia está PROHIBIDA y debe eliminarse.
+5. PROHIBIDO repetir frases entre artículos. Cada resumen y cada análisis deben ser únicos y referirse a los detalles propios de su artículo.
 
 FRASES PROHIBIDAS (no las uses nunca, ni variantes): "tendrá un impacto significativo en la economía y los mercados financieros", "serán clave para tomar decisiones informadas", "debe equilibrar su mandato dual", "es importante monitorear", "puede tener implicaciones en los mercados", "afecta a la economía en general", "es crucial para mantener la estabilidad", "navegar este escenario desafiante", "incertidumbre y volatilidad en los mercados".
 
 CAMPO "summary" — 1 párrafo de 3 a 4 oraciones: QUÉ pasó con los hechos y datos concretos del artículo + el contexto necesario para entenderlo. Puramente descriptivo.
 
-CAMPO "insight" (es el ANÁLISIS de contexto) — 1 párrafo de 2 a 3 oraciones: el TRASFONDO y HACIA DÓNDE APUNTA el tema según ESTE artículo: por qué surge, qué fuerzas o argumentos concretos están en juego, qué posturas o desenlaces describe el texto. Cita los detalles específicos del artículo (quién dijo qué, dónde, con qué dato). Das contexto para que el lector forme su propio juicio; NO des tú el juicio ni predigas niveles.
+CAMPO "insight" (es el ANÁLISIS de contexto) — 1 párrafo de 2 a 3 oraciones: el TRASFONDO y HACIA DÓNDE APUNTA el tema según ESTE artículo: por qué surge, qué fuerzas o argumentos concretos están en juego, qué posturas o desenlaces describe el texto. Cita los detalles específicos del artículo (quién dijo qué, dónde, con qué dato). Puedes incluir una DIRECCIÓN SUAVE y matizada que se desprenda del texto (cómo tiende a afectar a un sector/activo), pero sin recomendar ni predecir niveles. Das contexto para que el lector forme su propio juicio; NO des tú el juicio.
 
 EJEMPLO BIEN (insight): "El recelo sobre la independencia del banco central resurge porque, según Helge Berger (FMI) en Dubrovnik, controlar la inflación obliga a medidas impopulares que invitan a la interferencia política. El texto subraya que la credibilidad, una vez dañada, es difícil de reconstruir, y cita la presión de Trump sobre la Fed como el caso más visible."
 EJEMPLO MAL (insight): "La decisión de la Fed tendrá un impacto significativo en la economía y los mercados. La institución debe equilibrar su mandato dual y será clave para tomar decisiones informadas."
@@ -482,14 +511,18 @@ context_md — 3 párrafos descriptivos y CONCRETOS (con nombres y hechos de las
 
 TODO el texto del JSON en ESPAÑOL. Output: solo JSON válido, sin texto adicional.`
 
-  const prompt = `CATÁLOGO DE TICKERS DE LA PLATAFORMA (usa SOLO estos para affected_tickers):
-${tickerCatalog || tickers.slice(0, 25).join(', ')}
+  const prompt = `CATÁLOGO DE TICKERS DE LA PLATAFORMA (SOLO contexto, para que entiendas el universo de la plataforma; NO decides tú la relevancia de portafolio — eso se calcula de forma determinista aparte):
+${tickerCatalog || tickers.join(', ')}
 
-REGLA DE affected_tickers (estricta): incluye un ticker SOLO si el artículo menciona explícitamente esa empresa/activo, o si el sector/tema del ticker en el catálogo es el FOCO DIRECTO de la noticia. Si ninguno aplica directamente, devuelve []. PROHIBIDO asociaciones temáticas vagas — ejemplos de lo que NO se debe hacer: etiquetar un ETF de ciberseguridad para una noticia de chips de memoria; etiquetar un ETF de large caps de EE.UU. para una decisión de tasas de Corea; etiquetar un ETF de mid-cap growth para un récord del Dow. portfolio_relevance refleja esto: 0 si ningún ticker del catálogo está directamente afectado.
-
-SCORING (0-5 cada uno): macro_impact, surprise_factor, market_relevance, forward_implications, structural_vs_noise; más time_decay (0 si <=2 días, -1 si 3-4, -2 si 5-7) y portfolio_relevance (SOLO informativo: 5=ticker directo, 3=universo amplio, 0=ninguno).
+SCORING (0-5 cada uno): macro_impact, surprise_factor, market_relevance, forward_implications, structural_vs_noise; más time_decay (0 si <=2 días, -1 si 3-4, -2 si 5-7) y portfolio_relevance (SOLO informativo y orientativo: 5=toca un ticker del catálogo directamente, 3=universo amplio, 0=ninguno).
 IMPORTANTE: la importancia de la noticia NO depende del portafolio. TOTAL = macro_impact + surprise_factor + market_relevance + forward_implications + structural_vs_noise + time_decay (máx 25; portfolio_relevance NO suma al total).
 RATING: A=19-25, B=15-18, C=11-14, D<11. SIGNAL: STRONG si TOTAL>=19; MODERATE si 15-18; WEAK si <15. ACTIONABILITY (solo A/B): MONITOR|REVIEW|CONFIRMS|CONTRADICTS.
+
+CALIBRACIÓN (ejemplos de referencia para anclar el rubric y reducir varianza):
+- A (≈22): La Fed sube tasas 50 pb por sorpresa y revisa al alza la senda de inflación. macro=5, surprise=5, market_rel=5, forward=4, structural=3, time_decay=0 → cambio de régimen, fuerte reacción cross-asset.
+- B (≈16): Dato de empleo de EE.UU. por encima del consenso pero dentro del rango esperado; reacción moderada en tasas. macro=4, surprise=3, market_rel=4, forward=3, structural=2, time_decay=0.
+- C (≈12): Una empresa publica resultados en línea con lo esperado, sin guía nueva; impacto acotado al sector. macro=2, surprise=2, market_rel=3, forward=3, structural=2, time_decay=0.
+- D (≈8): Resumen/explainer genérico de mercado sin dato nuevo ni evento. macro=2, surprise=1, market_rel=2, forward=2, structural=1, time_decay=0 → ruido.
 
 OUTPUT JSON SCHEMA:
 {
@@ -499,8 +532,7 @@ OUTPUT JSON SCHEMA:
     "summary": "1 párrafo 3-4 oraciones: qué pasó (hechos/datos del artículo) + contexto. Descriptivo, sin pronóstico ni cifras inventadas",
     "insight": "1 párrafo 2-3 oraciones: trasfondo y hacia dónde apunta el tema según el artículo, con detalles específicos. Sin llamadas de mercado ni datos inventados",
     "score": 24, "rating": "A", "signal": "STRONG", "actionability": "MONITOR",
-    "score_breakdown": {"macro":5,"surprise":4,"market_rel":4,"forward":5,"structural":3,"portfolio":4,"time_decay":-1},
-    "affected_tickers": ["QQQ","AAPL"]
+    "score_breakdown": {"macro":5,"surprise":4,"market_rel":4,"forward":5,"structural":3,"portfolio":4,"time_decay":-1}
   }],
   "weekly_summary": {
     "strong_signals": 2, "moderate_signals": 3, "weak_noise": 1,
@@ -516,33 +548,38 @@ OUTPUT JSON SCHEMA:
   }
 }
 
-Analiza TODOS los artículos proporcionados (hasta 5), ordenados por importancia. Cada summary e insight ÚNICO y específico; cero frases prohibidas. Devuelve SOLO el JSON.
+Analiza TODOS los artículos proporcionados (hasta 7), ordenados por importancia. Cada summary e insight ÚNICO y específico; cero frases prohibidas. Devuelve SOLO el JSON.
 
 ARTÍCULOS:
 ${articleBlocks}`
 
-  // Intenta gpt-oss con reintentos (Groq a veces responde 503 "over capacity" o 429 TPM —
-  // ambos transitorios). Si agota reintentos, cae a llama (mayor TPM) con presupuesto amplio.
-  const isTransient = (e: unknown) => /50[023]|over capacity|429|rate.?limit|timeout/i.test(String(e))
+  // callLLM recorre la cadena de proveedores (Gemini → Groq → Cerebras) con reintentos/backoff
+  // internos ante errores transitorios (429/503/timeout). Aquí solo reintentamos si el PARSEO de
+  // JSON falla (output sucio): hasta 2 pasadas, bajando temperatura. maxTokens amplio: Gemini (1M
+  // contexto) elimina el truncamiento que degradaba el análisis con el free tier de Groq.
   let result: PipelineResult | null = null
-  for (let attempt = 0; attempt < 3 && !result; attempt++) {
+  let lastErr: unknown
+  for (let attempt = 0; attempt < 2 && !result; attempt++) {
     try {
-      const response = await callOllama(prompt, 0.4, systemPrompt, ANALYSIS_MODEL, 4500)
+      const response = await callLLM({
+        role: 'analysis',
+        prompt,
+        system: systemPrompt,
+        temperature: attempt === 0 ? 0.4 : 0.3,
+        maxTokens: 8000,
+      })
       result = extractJson<PipelineResult>(response)
     } catch (e) {
-      if (attempt < 2 && isTransient(e)) {
-        await new Promise((r) => setTimeout(r, 2500 * (attempt + 1)))
-        continue
-      }
-      // Fallback: modelo por defecto (llama) con presupuesto amplio para producir el JSON completo.
-      const response = await callOllama(prompt, 0.3, systemPrompt, undefined, 6000)
-      result = extractJson<PipelineResult>(response)
+      lastErr = e
     }
   }
 
   // No guardes un brief vacío: si hubo artículos de entrada pero el modelo no devolvió ninguno,
   // falla la corrida (la ruta la marca 'failed' y el siguiente cron reintenta) en vez de mostrar vacío.
-  if (!result || !result.articles || result.articles.length === 0) {
+  if (!result) {
+    throw new Error(`El análisis LLM falló tras reintentos: ${String(lastErr)}`)
+  }
+  if (!result.articles || result.articles.length === 0) {
     if (articles.length > 0) {
       throw new Error('El análisis devolvió 0 artículos pese a tener entrada; se reintentará')
     }
