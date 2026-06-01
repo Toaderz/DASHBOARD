@@ -57,6 +57,7 @@ FINNHUB_API_KEY=             # 'your-finnhub-api-key' activa modo mock
 # Pipeline de noticias (Market Brief)
 TAVILY_API_KEY=              # búsqueda de noticias
 FIRECRAWL_API_KEY=           # extracción del artículo completo
+FIRECRAWL_API_KEY_2=         # respaldo: se usa si la primaria se queda sin créditos
 CRON_SECRET=                 # Bearer token del cron de Vercel (/api/cron/news-pipeline)
 NEWS_LLM_CHAIN=gemini,groq,cerebras   # cadena de fallback LLM (default)
 GEMINI_API_KEY=              # principal: Gemini 2.5 Flash (free, 1M ctx)

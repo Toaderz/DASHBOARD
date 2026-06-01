@@ -164,6 +164,7 @@ SUPABASE_SERVICE_ROLE_KEY=      # empieza con eyJ (no eeyJ)
 FINNHUB_API_KEY=                 # 'your-finnhub-api-key' → modo mock con 10 tickers hardcoded
 TAVILY_API_KEY=                  # Tavily search API — pipeline de noticias
 FIRECRAWL_API_KEY=               # Firecrawl — extracción de artículos completos (bypass paywalls)
+FIRECRAWL_API_KEY_2=             # Respaldo Firecrawl: si la primaria se queda sin créditos, extractContent salta aquí
 CRON_SECRET=                     # Header Authorization para el cron de Vercel (/api/cron/news-pipeline)
 # ── Cadena LLM (lib/ai/llm.ts) — endpoints OpenAI-compatibles con fallback automático ──
 # callLLM recorre NEWS_LLM_CHAIN en orden; un proveedor SIN api key se salta solo.

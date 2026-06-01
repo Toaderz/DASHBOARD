@@ -64,9 +64,19 @@ function getTavilyClient() {
   return tavily({ apiKey: process.env.TAVILY_API_KEY! })
 }
 
-function getFirecrawlClient() {
-  return new Firecrawl({ apiKey: process.env.FIRECRAWL_API_KEY! })
+// Cadena de clientes Firecrawl: clave primaria + respaldo (FIRECRAWL_API_KEY_2).
+// Si la primaria se queda sin créditos, extractContent salta a la siguiente automáticamente.
+function buildFirecrawlClients(): Firecrawl[] {
+  const keys = [process.env.FIRECRAWL_API_KEY, process.env.FIRECRAWL_API_KEY_2]
+    .map((k) => k?.trim())
+    .filter((k): k is string => !!k)
+  return keys.map((apiKey) => new Firecrawl({ apiKey }))
 }
+
+// Errores que indican que la CLAVE está agotada/bloqueada (créditos/cuota/rate-limit),
+// no un fallo del sitio: marcan la clave como muerta para el resto de la corrida.
+const isFirecrawlKeyExhausted = (e: unknown) =>
+  /\b(401|402|429)\b|payment required|insufficient|out of credits|no credits|\bcredit|quota|rate.?limit|too many requests/i.test(String(e))
 
 // ── Function A ───────────────────────────────────────────────
 
@@ -366,34 +376,48 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
 }
 
 export async function extractContent(urls: string[]): Promise<Map<string, string>> {
-  const client = getFirecrawlClient()
+  const clients = buildFirecrawlClients()
   const contentMap = new Map<string, string>()
+  const dead = new Set<number>() // índices de claves agotadas: no reintentarlas en esta corrida
+
+  // Ejecuta `fn` recorriendo la cadena de claves Firecrawl. Salta las ya agotadas; si una
+  // devuelve error de créditos/cuota la marca muerta. Devuelve el primer éxito; lanza si todas fallan.
+  async function withClientChain<T>(fn: (client: Firecrawl) => Promise<T>, ms: number): Promise<T> {
+    let lastErr: unknown
+    for (let i = 0; i < clients.length; i++) {
+      if (dead.has(i)) continue
+      try {
+        return await withTimeout(fn(clients[i]), ms)
+      } catch (e) {
+        lastErr = e
+        if (isFirecrawlKeyExhausted(e)) dead.add(i)
+      }
+    }
+    throw lastErr ?? new Error('no hay clientes Firecrawl disponibles (revisa FIRECRAWL_API_KEY)')
+  }
 
   await Promise.allSettled(
     urls.map(async (url) => {
       try {
         // Primary: Firecrawl server-side AI extraction. Las fuentes son de acceso abierto,
         // así que `proxy: 'auto'` (sólo escala si el sitio bloquea) ahorra créditos vs stealth.
-        const result = await withTimeout(
-          client.scrape(url, {
-            formats: [{
-              type: 'json',
-              prompt: EXTRACTION_PROMPT,
-              schema: {
-                type: 'object',
-                properties: {
-                  body_markdown: { type: 'string' },
-                },
-                required: ['body_markdown'],
+        const result = await withClientChain((client) => client.scrape(url, {
+          formats: [{
+            type: 'json',
+            prompt: EXTRACTION_PROMPT,
+            schema: {
+              type: 'object',
+              properties: {
+                body_markdown: { type: 'string' },
               },
-            }],
-            onlyMainContent: true,
-            blockAds: true,
-            proxy: 'auto',
-            removeBase64Images: true,
-          }),
-          70_000
-        )
+              required: ['body_markdown'],
+            },
+          }],
+          onlyMainContent: true,
+          blockAds: true,
+          proxy: 'auto',
+          removeBase64Images: true,
+        }), 70_000)
 
         const clean = buildCleanMarkdown((result.json ?? {}) as ExtractedJson)
         if (clean) {
@@ -406,16 +430,13 @@ export async function extractContent(urls: string[]): Promise<Map<string, string
 
       try {
         // Fallback: plain markdown scrape, run through the same cleaner (junk-image + leading-H1 strip).
-        const result = await withTimeout(
-          client.scrape(url, {
-            formats: ['markdown'],
-            onlyMainContent: true,
-            blockAds: true,
-            proxy: 'auto',
-            removeBase64Images: true,
-          }),
-          60_000
-        )
+        const result = await withClientChain((client) => client.scrape(url, {
+          formats: ['markdown'],
+          onlyMainContent: true,
+          blockAds: true,
+          proxy: 'auto',
+          removeBase64Images: true,
+        }), 60_000)
         const clean = buildCleanMarkdown({ body_markdown: result.markdown })
         if (clean) {
           contentMap.set(url, clean)

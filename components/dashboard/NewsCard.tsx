@@ -59,7 +59,16 @@ const markdownComponents = {
   ),
   img: (props: ComponentPropsWithoutRef<'img'>) => (
     // eslint-disable-next-line @next/next/no-img-element
-    <img {...props} alt={props.alt ?? ''} loading="lazy" className="w-full max-h-[55vh] object-contain rounded-lg my-5 bg-ink-base" />
+    <img
+      {...props}
+      alt={props.alt ?? ''}
+      loading="lazy"
+      // Sin Referer: los CDN de noticias (Reuters/CNBC) bloquean el hotlink cross-origin por Referer.
+      referrerPolicy="no-referrer"
+      // Si la imagen falla igual (token expirado/403), la ocultamos en vez de mostrar ícono roto.
+      onError={(e) => { e.currentTarget.style.display = 'none' }}
+      className="w-full max-h-[55vh] object-contain rounded-lg my-5 bg-ink-base"
+    />
   ),
 }
 

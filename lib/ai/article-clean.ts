@@ -19,6 +19,15 @@ function isJunkImage(alt: string, url: string): boolean {
   if (/^(reuters|getty|getty images|associated press|ap|ap photo|bloomberg|afp|epa|shutterstock|istock|alamy|nurphoto|via getty images)$/.test(a)) return true
   if (/\b(logo|icon|favicon|avatar|sprite|spacer|pixel|placeholder|watermark|wordmark|badge|headshot)\b/.test(a)) return true
   if (/logo|favicon|sprite|\/icons?\/|avatar|placeholder|spacer|1x1|tracking|beacon|\.svg(\?|$)/.test(u)) return true
+  // La URL debe PARECER un archivo de imagen. Muchas "imágenes" extraídas son en realidad
+  // enlaces a páginas/PDF (bea.gov, dol.gov/...pdf, /quotes/, /kevin-warsh/) que el extractor
+  // envolvió como ![]() → romperían el <img> con ícono roto. Conservar solo extensión de imagen,
+  // subdominio de CDN de imágenes, o ruta típica de imagen (p.ej. Reuters /resizer/).
+  const looksLikeImage =
+    /\.(jpe?g|png|webp|gif|avif)(\?|#|$)/i.test(u) ||
+    /\/\/(?:image|images|img|media|cdn|i)\d*\.[^/]+\//i.test(u) ||
+    /\/(?:resizer|image|images|img|photo|media)\//i.test(u)
+  if (!looksLikeImage) return true
   return false
 }
 
