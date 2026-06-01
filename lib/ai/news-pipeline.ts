@@ -194,6 +194,9 @@ const NEWS_SOURCES = [
   'cnbc.com', 'marketwatch.com',
 ]
 
+// Títulos que NO son artículos de noticia (páginas índice, columnas de mercado, live blogs).
+const JUNK_TITLE = /stock market headlines|breaking stock market news|^market talk\b|live (updates|blog|coverage)|what to watch|markets? (wrap|roundup)|things to know|newsletter/i
+
 export async function searchNews(tickers: string[]): Promise<RawArticle[]> {
   const client = getTavilyClient()
   const topTickers = tickers.slice(0, 20).join(' OR ')
@@ -229,6 +232,8 @@ export async function searchNews(tickers: string[]): Promise<RawArticle[]> {
     for (const item of result.value.results) {
       if (!item.url || seen.has(item.url)) continue
       if ((item.score ?? 0) < 0.4) continue
+      // Descarta páginas no-artículo: índices de titulares, "Market Talk", live blogs, "what to watch".
+      if (JUNK_TITLE.test(item.title ?? '')) continue
       // Hard reject articles older than 10 days
       if (item.publishedDate) {
         const pub = new Date(item.publishedDate)
@@ -251,34 +256,57 @@ export async function searchNews(tickers: string[]): Promise<RawArticle[]> {
 
 // ── Function C ───────────────────────────────────────────────
 
-// Selección determinista (sin LLM): top por score de relevancia de Tavily, con un máximo
-// de 2 artículos por dominio para forzar diversidad de fuentes. El scoring/redacción real lo
-// hace analyzeAndSynthesize. Evita una llamada LLM (ahorra cupo y costo) y es reproducible.
+// Selección por IMPORTANCIA de mercado vía LLM (el score de Tavily mide relevancia de búsqueda,
+// no importancia, y pondría páginas índice/opinión por encima de decisiones de bancos centrales).
+// Respaldo determinista (top por score + diversidad de dominio) si el LLM falla.
 export async function selectTop7(articles: RawArticle[]): Promise<string[]> {
   const TARGET = 5
-  const MAX_PER_DOMAIN = 2
-  const sorted = [...articles].sort((a, b) => b.score - a.score)
 
-  const perDomain = new Map<string, number>()
-  const picked: string[] = []
-  for (const a of sorted) {
-    const domain = a.source ?? a.url
-    const count = perDomain.get(domain) ?? 0
-    if (count >= MAX_PER_DOMAIN) continue
-    perDomain.set(domain, count + 1)
-    picked.push(a.url)
-    if (picked.length >= TARGET) break
-  }
-  // Si el tope por dominio dejó menos de TARGET, completa por score.
-  if (picked.length < TARGET) {
+  const deterministic = (): string[] => {
+    const sorted = [...articles].sort((a, b) => b.score - a.score)
+    const perDomain = new Map<string, number>()
+    const picked: string[] = []
     for (const a of sorted) {
-      if (!picked.includes(a.url)) {
-        picked.push(a.url)
-        if (picked.length >= TARGET) break
-      }
+      const domain = a.source ?? a.url
+      const count = perDomain.get(domain) ?? 0
+      if (count >= 2) continue
+      perDomain.set(domain, count + 1)
+      picked.push(a.url)
+      if (picked.length >= TARGET) break
     }
+    for (const a of sorted) {
+      if (picked.length >= TARGET) break
+      if (!picked.includes(a.url)) picked.push(a.url)
+    }
+    return picked.slice(0, TARGET)
   }
-  return picked
+
+  if (articles.length <= TARGET) return articles.map((a) => a.url)
+
+  const list = articles
+    .map((a, i) => `${i + 1}. ${a.title} — ${a.source ?? ''}\n${a.url}\n${a.content.slice(0, 180)}`)
+    .join('\n\n')
+
+  const prompt = `Eres un editor de mercados. De la lista, elige las ${TARGET} noticias MÁS IMPORTANTES por su impacto de mercado real.
+
+PRIORIZA: decisiones de bancos centrales, datos macro (inflación, empleo, PIB), movimientos corporativos relevantes, geopolítica que mueva mercados.
+DESCARTA: páginas índice de titulares, columnas tipo "Market Talk", "what to watch", live blogs, listicles ("top/bottom performers"), guías genéricas — salvo que sean claramente market-moving.
+DIVERSIDAD: cubre temas distintos; máximo 2 de la misma fuente.
+
+Devuelve SOLO un array JSON de ${TARGET} URLs por orden de importancia, sin texto adicional.
+Ejemplo: ["https://...", "https://..."]
+
+NOTICIAS:
+${list}`
+
+  try {
+    const response = await callOllama(prompt, 0.2)
+    const urls = extractJson<string[]>(response)
+    const valid = urls.filter((u) => articles.some((a) => a.url === u)).slice(0, TARGET)
+    return valid.length >= 3 ? valid : deterministic()
+  } catch {
+    return deterministic()
+  }
 }
 
 // ── Function D ───────────────────────────────────────────────
