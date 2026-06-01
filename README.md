@@ -12,6 +12,7 @@ Dashboard financiero multiusuario SaaS para monitoreo de portafolios globales en
 - **Precios**: Yahoo Finance v8 REST (sin API key)
 - **Fundamentals**: `yahoo-finance2` v3 (maneja crumb/cookies automáticamente)
 - **Históricos**: Yahoo Finance v8 REST
+- **Noticias**: Tavily (búsqueda) + Firecrawl (extracción) + cadena LLM Gemini→Groq→Cerebras
 - **Animaciones**: Framer Motion
 - **Charts**: Recharts
 - **PWA**: Serwist (service worker)
@@ -30,6 +31,7 @@ Dashboard financiero multiusuario SaaS para monitoreo de portafolios globales en
 - **Compartir watchlists** — por email; el destinatario ve la lista (solo lectura) con `de @usuario`; puede dejar de seguirla
 - **Modal de detalle** — gráfico histórico (Recharts) + panel de fundamentals animado + peers curados
 - **Top 10 / Bottom 10** — vistas dedicadas de mejores y peores performers por período
+- **Market Brief (noticias)** — brief de mercado generado por IA dos veces por semana: resumen semanal (tema dominante, riesgo clave, qué vigilar) + tarjetas de noticias con señal (STRONG/MODERATE/WEAK), score 0–25, análisis y artículo completo legible. Foco geográfico EE.UU./México, sin redundancia temática, y badge 🎯 cuando la noticia toca un activo de tu watchlist
 - **Tema oscuro** por defecto con toggle dark/light
 
 ## Watchlists por defecto
@@ -51,7 +53,19 @@ NEXT_PUBLIC_SUPABASE_URL=
 NEXT_PUBLIC_SUPABASE_ANON_KEY=
 SUPABASE_SERVICE_ROLE_KEY=   # empieza con eyJ
 FINNHUB_API_KEY=             # 'your-finnhub-api-key' activa modo mock
+
+# Pipeline de noticias (Market Brief)
+TAVILY_API_KEY=              # búsqueda de noticias
+FIRECRAWL_API_KEY=           # extracción del artículo completo
+CRON_SECRET=                 # Bearer token del cron de Vercel (/api/cron/news-pipeline)
+NEWS_LLM_CHAIN=gemini,groq,cerebras   # cadena de fallback LLM (default)
+GEMINI_API_KEY=              # principal: Gemini 2.5 Flash (free, 1M ctx)
+OLLAMA_API_URL=https://api.groq.com/openai   # fallback 1: Groq
+OLLAMA_API_KEY=
+CEREBRAS_API_KEY=            # fallback 2: Cerebras (free)
 ```
+
+> Ver `CLAUDE.md` para la lista completa de variables del LLM (modelos por rol, etc.).
 
 ### 2. Base de datos
 
@@ -77,6 +91,10 @@ app/api/market/
   export/   → export CSV de watchlist
 app/api/users/
   find/     → resuelve email → user_id (service role, para compartir)
+app/api/news/
+  current/  → brief vigente (o último como stale) + market_news (auth)
+app/api/cron/
+  news-pipeline/  → POST (Bearer CRON_SECRET) — orquesta el pipeline de noticias
 ```
 
 ### Hooks
@@ -101,10 +119,29 @@ TopPerformers.tsx      → top 10 por período con FX
 BottomPerformers.tsx   → bottom 10 por período con FX
 ```
 
+### Pipeline de noticias (Market Brief)
+
+Genera el brief dos veces por semana (cron de Vercel, Lun/Vie 07:00 MX). Flujo:
+
+```
+enrichAssetProfiles → searchNews (Tavily) → rankCandidates (pre-ranking) →
+selectTop7 (LLM) → extractContent (Firecrawl) → analyzeAndSynthesize (LLM) →
+matchAffectedSymbols (determinista) → market_briefs + market_news
+```
+
+```
+lib/ai/news-pipeline.ts    → pipeline completo (búsqueda, selección, análisis, scoring)
+lib/ai/asset-enrichment.ts → relevancia de portafolio 100% determinista (sin que el LLM adivine)
+lib/ai/llm.ts              → callLLM con cadena de fallback (Gemini → Groq → Cerebras)
+lib/ai/source-authority.ts → autoridad de fuente para el pre-ranking
+```
+
+Características: selección por **importancia de mercado** (no por score de búsqueda), **foco geográfico EE.UU./México**, **sin redundancia temática**, relevancia de portafolio **determinista** (badge 🎯 calculado por usuario), scoring de 5 dimensiones (máx 25) con calibración few-shot, y redacción neutral en español sin cifras inventadas.
+
 ## Diagnóstico
 
 ```bash
-node scripts/diagnose.mjs <TICKER>
+node scripts/diagnose.mjs <TICKER>      # 3 capas: HTTP, paths JSON de Yahoo, API route interna
+node scripts/refresh-news.mjs           # regenera el brief ahora (necesita npm run dev corriendo)
+node scripts/check-llm.mjs              # verifica la cadena LLM (Gemini/Groq/Cerebras)
 ```
-
-Verifica HTTP (capa 1), paths JSON de Yahoo Finance (capa 2) y API route interna (capa 3).

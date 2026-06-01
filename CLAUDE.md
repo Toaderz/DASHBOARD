@@ -85,6 +85,7 @@ app/
     page.tsx                       # Redirect a primera watchlist del usuario
     top10/page.tsx                 # Vista top 10 performers (wrapper de TopPerformers)
     bottom10/page.tsx              # Vista bottom 10 performers (wrapper de BottomPerformers)
+    news/page.tsx                  # Brief de mercado (wrapper de NewsBlock)
     watchlist/[id]/page.tsx        # Server — carga watchlist + assets por ID
   api/
     market/
@@ -92,6 +93,10 @@ app/
       history/route.ts             # Yahoo Finance v8 históricos + FX period returns
       search/route.ts              # Búsqueda de tickers (Finnhub)
       export/route.ts              # Export de watchlist a CSV
+    news/
+      current/route.ts             # GET — brief vigente (o último como stale) + market_news (auth)
+    cron/
+      news-pipeline/route.ts       # POST (Bearer CRON_SECRET) — orquesta el pipeline de noticias
     users/
       find/route.ts                # GET ?email= — resuelve email → user_id (service role)
 components/
@@ -110,6 +115,9 @@ components/
     TickerSearch.tsx               # Búsqueda con debounce 300ms
     TopPerformers.tsx              # Vista top 10 performers por período
     BottomPerformers.tsx           # Vista bottom 10 performers por período
+    NewsBlock.tsx                  # Brief de mercado: header + WeeklyBriefCard + grid de NewsCard
+    WeeklyBriefCard.tsx            # Resumen semanal: tema/riesgo, conteos de señal, qué vigilar
+    NewsCard.tsx                   # Tarjeta de noticia: señal/rating, badge 🎯, análisis, artículo completo
     ThemeToggle.tsx                # Toggle dark/light mode
   ui/                              # shadcn/ui: badge, button, checkbox, dialog, input, label, popover, skeleton
 hooks/
@@ -118,7 +126,13 @@ hooks/
   usePerformanceMetrics.ts         # Cálculo retornos históricos (1D→MAX)
   useFxData.ts                     # FX spot rates (1-min) + period returns (5-min)
   useTopPerformers.ts              # useAllWatchlistTickers + rankings top/bottom por período
+  useNewsBrief.ts                  # GET /api/news/current — brief vigente + market_news
 lib/
+  ai/
+    news-pipeline.ts               # Pipeline de noticias: searchNews→rankCandidates→selectTop7→extractContent→analyzeAndSynthesize→selectFinalArticles
+    asset-enrichment.ts            # Relevancia determinista: enrichAssetProfiles (Fase A) + matchAffectedSymbols (Fase B)
+    llm.ts                         # callLLM provider-agnostic (cadena Gemini→Groq→Cerebras) + extractJson robusto
+    source-authority.ts            # Mapa dominio→autoridad (0..1) para pre-ranking determinista
   supabase/
     client.ts                      # Browser Supabase client (createBrowserClient)
     server.ts                      # Server Supabase client (cookies async)
@@ -137,6 +151,8 @@ supabase/schema.sql                # DDL completo + RLS + triggers + funciones s
 scripts/
   diagnose.mjs                     # node scripts/diagnose.mjs <TICKER> — 3 capas de debug
   inspect-asset.mjs                # Inspección de metadata + peers de un activo
+  refresh-news.mjs                 # Expira el brief vigente + dispara el pipeline (default localhost:3000)
+  check-llm.mjs                    # Verifica conectividad de la cadena LLM (Gemini/Groq/Cerebras)
 ```
 
 ## Variables de entorno requeridas
@@ -166,6 +182,11 @@ CEREBRAS_API_KEY=                # Fallback 2: Cerebras (free, ~1M tokens/día) 
 npm run dev    # Turbopack dev server
 npm run build  # Webpack build con TypeScript check
 node scripts/diagnose.mjs <TICKER>   # Diagnóstico de ticker en 3 capas
+node scripts/refresh-news.mjs        # Regenera el brief AHORA (expira el vigente + dispara el pipeline)
+                                     # ⚠️ ejecuta el código del server destino (default localhost:3000 → necesita npm run dev).
+                                     #    Escribe en Supabase (DB compartida), así que el brief se ve en local y prod.
+                                     #    Para prod: node scripts/refresh-news.mjs https://TU-APP.vercel.app (requiere deploy ya hecho)
+node scripts/check-llm.mjs           # Verifica que la cadena LLM responde (Gemini/Groq/Cerebras)
 ```
 
 ## Notas de arquitectura
@@ -185,3 +206,16 @@ node scripts/diagnose.mjs <TICKER>   # Diagnóstico de ticker en 3 capas
 - **Top/Bottom performers** (`useTopPerformers.ts`): `useAllWatchlistTickers` carga todos los tickers del usuario vía Supabase (join `watchlist_assets` + `assets_metadata`). Luego `/api/market/history` por período para calcular retornos y ordenar
 - **FundamentalsPanel**: panel bento premium con `NumberTicker` (Framer Motion spring) para animar métricas. Tooltips de información con posición `fixed` para evitar clipping en contenedores `overflow-y-auto`
 - **PriceMarquee**: marquee header con tickers globales fijos (SPY, QQQ, IWM, GLD, TLT, BND, DX-Y.NYB, CL=F, GC=F, BTC-USD) — polling independiente de las watchlists del usuario
+
+### Sección de noticias (Market Brief)
+- **Pipeline** (`lib/ai/news-pipeline.ts`, orquestado en `app/api/cron/news-pipeline/route.ts`): `enrichAssetProfiles` → `searchNews` (Tavily) → `rankCandidates` (pre-ranking determinista) → `selectTop7` (selección LLM) → `extractContent` (Firecrawl) → `analyzeAndSynthesize` (análisis/scoring LLM) → `matchAffectedSymbols` (matching determinista) → `selectFinalArticles` → insert en `market_briefs` + `market_news`
+- **Cron**: Vercel dispara el POST con `Authorization: Bearer CRON_SECRET` los **Lun/Vie 13:00 UTC** (07:00 MX). Guard anti-doble-ejecución: salta si ya hay un brief `generating` o `ready` aún válido. `computeValidUntil()` fija la vigencia (Lun→Vie, Vie→Lun)
+- **Lectura**: `GET /api/news/current` (auth) devuelve el brief vigente; si no hay vigente, sirve el último como `stale: true`. `useNewsBrief` lo consume; `NewsBlock` renderiza `WeeklyBriefCard` + grid de `NewsCard`
+- **Cadena LLM** (`lib/ai/llm.ts`): `callLLM({ role })` recorre `NEWS_LLM_CHAIN` (default `gemini,groq,cerebras`); un proveedor sin API key se salta solo; reintentos con backoff ante 429/503/timeout. Modelos DISTINTOS para `analysis` vs `selection` (no compiten por TPM). `extractJson`/`sanitizeJsonString` parsean salidas sucias sin depender del modo JSON del proveedor
+- **Relevancia de portafolio = 100% DETERMINISTA** (el LLM ya NO adivina `affected_tickers`): **Fase A** `enrichAssetProfiles` enriquece cada activo UNA vez (cacheado en `assets_metadata.relevance_profile`) con señales estables (entities, themes, geography, issuer); perfiles "pobres" (sin entities ni themes) NO se cachean → reintentan. **Fase B** `matchAffectedSymbols` cruza esos perfiles contra `title + full_text_md` con guardas estrictas (entity preferido; ticker literal solo con `\b` + MAYÚSCULAS o cashtag `$XXX`, nunca substring/case-insensitive; themes solo corroboran). Índices (`type='index'`) NO generan badge 🎯. `affected_tickers` (text[]) se deriva de `affected_symbols` para no romper frontend ni el índice GIN
+- **Badge 🎯 multi-tenant**: se calcula en cliente (`NewsCard` filtra `affected_tickers` contra los tickers de la watchlist activa del usuario) — la misma fila de `market_news` muestra/oculta el badge por usuario
+- **Scoring**: 5 dimensiones 0–5 (`macro_impact`, `surprise_factor`, `market_relevance`, `forward_implications`, `structural_vs_noise`) + `time_decay` → TOTAL máx 25. `portfolio_relevance` NO suma al total (solo informativo + garantía de inclusión). RATING A(19-25)/B(15-18)/C(11-14)/D(<11); SIGNAL STRONG/MODERATE/WEAK. Few-shot de calibración para reducir varianza. `selectFinalArticles` arma conteo variable 3–7 por umbral de calidad, con garantía de inclusión por portafolio (≥C/score≥11) sin exceder 7
+- **FOCO GEOGRÁFICO EE.UU./México**: queries de Tavily, prompt de `selectTop7` y rubric de `analyzeAndSynthesize` priorizan Fed/macro de EE.UU., Banxico/peso, gobierno/empresas de EE.UU. y temas globales que mueven esos mercados (petróleo, geopolítica, grandes tecnológicas, treasuries). DESPRIORIZA fuerte decisiones de bancos centrales/política doméstica de OTROS países (Sudáfrica, Corea, etc.) salvo contagio claro a EE.UU./México descrito en el texto (`market_relevance`/`macro_impact` ≤2 en esos casos)
+- **NO REDUNDANCIA** (regla en `selectTop7`): agrupa noticias del MISMO evento/sub-tema (p.ej. varias declaraciones de funcionarios de la Fed la misma semana = UN tema) y elige solo la MEJOR de cada grupo; una 2ª del mismo tema solo si aporta un ángulo nuevo (dato/postura opuesta/consecuencia distinta). Prefiere cobertura amplia sobre profundizar en un solo tema
+- **Redacción** (`analyzeAndSynthesize`): `summary`/`insight` en español, neutral; prohibido inventar cifras (si el artículo no da el número, descríbelo cualitativamente); dirección suave permitida, recomendaciones prescriptivas no; lista de frases prohibidas para evitar relleno genérico
+- **Disparo manual**: `scripts/refresh-news.mjs` (ver Comandos). Verificación de la cadena LLM: `scripts/check-llm.mjs`
