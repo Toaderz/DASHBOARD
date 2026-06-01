@@ -85,7 +85,11 @@ export async function POST(req: Request) {
     const contentMap = await extractContent(topUrls)
     const result = await analyzeAndSynthesize(topArticles, contentMap, tickers)
 
-    const newsRows = result.articles.map((article) => ({
+    // Descarta ruido (D) solo si quedan suficientes artículos; nunca deja el brief vacío.
+    const nonNoise = result.articles.filter((article) => article.rating !== 'D')
+    const selectedArticles = nonNoise.length >= 3 ? nonNoise : result.articles
+
+    const newsRows = selectedArticles.map((article) => ({
       brief_id: brief.id,
       rank: article.rank,
       title: article.title,

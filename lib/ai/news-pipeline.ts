@@ -163,16 +163,27 @@ export async function getTopTickers(supabase: SupabaseClient): Promise<string[]>
 
 // ── Function B ───────────────────────────────────────────────
 
+// Fuentes oficiales/neutras y de acceso abierto (paywall ligero o nulo).
+// Restringe la búsqueda de Tavily a estas → excluye automáticamente Yahoo Finance
+// y los de paywall duro (WSJ, Bloomberg, FT), y permite extraer el artículo completo.
+// Nota: se excluyen los sitios .gov/IMF como FUENTE DE NOTICIAS porque devuelven
+// explainers/discursos/datos en vez de artículos; sus decisiones se cubren vía estas agencias.
+const NEWS_SOURCES = [
+  'reuters.com', 'apnews.com',
+  'bbc.com', 'theguardian.com',
+  'cnbc.com', 'marketwatch.com',
+]
+
 export async function searchNews(tickers: string[]): Promise<RawArticle[]> {
   const client = getTavilyClient()
   const topTickers = tickers.slice(0, 20).join(' OR ')
 
   const queries = [
-    { query: 'global markets macro economic outlook this week', topic: 'finance' as const, days: 7, max_results: 10 },
-    { query: 'central banks interest rates inflation monetary policy', topic: 'finance' as const, days: 7, max_results: 8 },
-    { query: 'geopolitical risk trade tariffs market impact', topic: 'news' as const, days: 7, max_results: 8 },
-    { query: `${topTickers} earnings revenue guidance market news`, topic: 'finance' as const, days: 7, max_results: 8 },
-    { query: 'technology AI sector market institutional investors outlook', topic: 'finance' as const, days: 7, max_results: 6 },
+    { query: 'global markets macro economic outlook this week', topic: 'finance' as const, days: 7, max_results: 12 },
+    { query: 'central banks interest rates inflation monetary policy', topic: 'finance' as const, days: 7, max_results: 10 },
+    { query: 'geopolitical risk trade tariffs market impact', topic: 'news' as const, days: 7, max_results: 10 },
+    { query: `${topTickers} earnings revenue guidance market news`, topic: 'finance' as const, days: 7, max_results: 10 },
+    { query: 'technology AI sector market institutional investors outlook', topic: 'finance' as const, days: 7, max_results: 8 },
   ]
 
   const results = await Promise.allSettled(
@@ -183,6 +194,7 @@ export async function searchNews(tickers: string[]): Promise<RawArticle[]> {
         maxResults: q.max_results,
         timeRange: 'week',
         includeAnswer: false,
+        includeDomains: NEWS_SOURCES,
       })
     )
   )
@@ -219,27 +231,34 @@ export async function searchNews(tickers: string[]): Promise<RawArticle[]> {
 
 // ── Function C ───────────────────────────────────────────────
 
+// Selección determinista (sin LLM): top por score de relevancia de Tavily, con un máximo
+// de 2 artículos por dominio para forzar diversidad de fuentes. El scoring/redacción real lo
+// hace analyzeAndSynthesize. Evita una llamada LLM (ahorra cupo y costo) y es reproducible.
 export async function selectTop7(articles: RawArticle[]): Promise<string[]> {
-  const articleList = articles
-    .map((a, i) => `${i + 1}. [${a.title}] ${a.url}\nSnippet: ${a.content.slice(0, 200)}`)
-    .join('\n\n')
+  const TARGET = 5
+  const MAX_PER_DOMAIN = 2
+  const sorted = [...articles].sort((a, b) => b.score - a.score)
 
-  const prompt = `You are a financial news curator. Select the 5 most important articles from the list below.
-
-Priority order: macro/geopolitical events > central bank decisions > commodity moves > sector-specific (only if market-moving).
-
-DIVERSITY REQUIREMENT: Cover at least 4 of these themes: (1) macro/global growth, (2) monetary policy/rates, (3) geopolitics/trade, (4) specific sectors or assets, (5) commodities/FX.
-
-Return ONLY a JSON array of up to 5 URLs in order of importance. No other text.
-
-Example: ["https://...", "https://..."]
-
-ARTICLES:
-${articleList}`
-
-  const response = await callOllama(prompt, 0.1)
-  const urls = extractJson<string[]>(response)
-  return urls.filter((u) => articles.some((a) => a.url === u)).slice(0, 5)
+  const perDomain = new Map<string, number>()
+  const picked: string[] = []
+  for (const a of sorted) {
+    const domain = a.source ?? a.url
+    const count = perDomain.get(domain) ?? 0
+    if (count >= MAX_PER_DOMAIN) continue
+    perDomain.set(domain, count + 1)
+    picked.push(a.url)
+    if (picked.length >= TARGET) break
+  }
+  // Si el tope por dominio dejó menos de TARGET, completa por score.
+  if (picked.length < TARGET) {
+    for (const a of sorted) {
+      if (!picked.includes(a.url)) {
+        picked.push(a.url)
+        if (picked.length >= TARGET) break
+      }
+    }
+  }
+  return picked
 }
 
 // ── Function D ───────────────────────────────────────────────
@@ -316,7 +335,8 @@ export async function extractContent(urls: string[]): Promise<Map<string, string
   await Promise.allSettled(
     urls.map(async (url) => {
       try {
-        // Primary: Firecrawl server-side AI extraction with paywall bypass via `proxy: 'stealth'`.
+        // Primary: Firecrawl server-side AI extraction. Las fuentes son de acceso abierto,
+        // así que `proxy: 'auto'` (sólo escala si el sitio bloquea) ahorra créditos vs stealth.
         const result = await withTimeout(
           client.scrape(url, {
             formats: [{
@@ -332,7 +352,7 @@ export async function extractContent(urls: string[]): Promise<Map<string, string
             }],
             onlyMainContent: true,
             blockAds: true,
-            proxy: 'stealth',
+            proxy: 'auto',
             removeBase64Images: true,
           }),
           70_000
@@ -354,7 +374,7 @@ export async function extractContent(urls: string[]): Promise<Map<string, string
             formats: ['markdown'],
             onlyMainContent: true,
             blockAds: true,
-            proxy: 'stealth',
+            proxy: 'auto',
             removeBase64Images: true,
           }),
           60_000
@@ -387,7 +407,7 @@ Title: ${a.title}
 Source: ${a.source ?? 'unknown'}
 Date: ${a.published_date ?? 'unknown'}
 Content:
-${fullText.slice(0, 1200)}`
+${fullText.slice(0, 1000)}`
   }).join('\n\n')
 
   const systemPrompt = `Eres un editor de research financiero. Resumes noticias de forma DESCRIPTIVA, FACTUAL y NEUTRAL para que un equipo profesional entienda qué pasó, el contexto y hacia dónde apunta el tema, y SAQUE SUS PROPIAS conclusiones. Produces JSON estructurado en español.
@@ -448,6 +468,13 @@ Analiza TODOS los artículos proporcionados (hasta 5), ordenados por importancia
 ARTÍCULOS:
 ${articleBlocks}`
 
-  const response = await callOllama(prompt, 0.4, systemPrompt, ANALYSIS_MODEL, 5000)
-  return extractJson<PipelineResult>(response)
+  try {
+    const response = await callOllama(prompt, 0.4, systemPrompt, ANALYSIS_MODEL, 4500)
+    return extractJson<PipelineResult>(response)
+  } catch {
+    // Fallback: si gpt-oss excede el límite de tokens/min o trunca el JSON, reintenta con
+    // el modelo por defecto (llama, mayor TPM y sin razonamiento) para no perder la corrida.
+    const response = await callOllama(prompt, 0.3, systemPrompt)
+    return extractJson<PipelineResult>(response)
+  }
 }

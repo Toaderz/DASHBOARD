@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, type ImgHTMLAttributes, type AnchorHTMLAttributes } from 'react'
+import { useState, type ComponentPropsWithoutRef } from 'react'
 import ReactMarkdown from 'react-markdown'
 import { ExternalLink, ChevronDown, ChevronUp } from 'lucide-react'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -28,12 +28,38 @@ const actionabilityConfig = {
 
 // Reader-friendly renderers for the stored (already-clean) article markdown.
 const markdownComponents = {
-  img: (props: ImgHTMLAttributes<HTMLImageElement>) => (
-    // eslint-disable-next-line @next/next/no-img-element
-    <img {...props} alt={props.alt ?? ''} loading="lazy" className="w-full max-h-[60vh] object-contain rounded-md my-4 bg-ink-base" />
+  p: (props: ComponentPropsWithoutRef<'p'>) => (
+    <p {...props} className="text-[15px] leading-7 text-foreground/90 my-3.5" />
   ),
-  a: (props: AnchorHTMLAttributes<HTMLAnchorElement>) => (
-    <a {...props} target="_blank" rel="noopener noreferrer" className="text-electric hover:underline" />
+  h1: (props: ComponentPropsWithoutRef<'h1'>) => (
+    <h1 {...props} className="font-editorial text-xl font-bold text-foreground mt-6 mb-2" />
+  ),
+  h2: (props: ComponentPropsWithoutRef<'h2'>) => (
+    <h2 {...props} className="font-editorial text-lg font-semibold text-foreground mt-6 mb-2" />
+  ),
+  h3: (props: ComponentPropsWithoutRef<'h3'>) => (
+    <h3 {...props} className="font-semibold text-base text-foreground mt-5 mb-2" />
+  ),
+  ul: (props: ComponentPropsWithoutRef<'ul'>) => (
+    <ul {...props} className="list-disc pl-5 my-3 space-y-1.5 text-[15px] leading-7 text-foreground/90 marker:text-muted-foreground" />
+  ),
+  ol: (props: ComponentPropsWithoutRef<'ol'>) => (
+    <ol {...props} className="list-decimal pl-5 my-3 space-y-1.5 text-[15px] leading-7 text-foreground/90 marker:text-muted-foreground" />
+  ),
+  li: (props: ComponentPropsWithoutRef<'li'>) => <li {...props} className="pl-1" />,
+  blockquote: (props: ComponentPropsWithoutRef<'blockquote'>) => (
+    <blockquote {...props} className="border-l-2 border-electric pl-4 my-4 italic text-muted-foreground" />
+  ),
+  strong: (props: ComponentPropsWithoutRef<'strong'>) => (
+    <strong {...props} className="font-semibold text-foreground" />
+  ),
+  hr: () => <hr className="my-6 border-border" />,
+  a: (props: ComponentPropsWithoutRef<'a'>) => (
+    <a {...props} target="_blank" rel="noopener noreferrer" className="text-electric underline-offset-2 hover:underline" />
+  ),
+  img: (props: ComponentPropsWithoutRef<'img'>) => (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img {...props} alt={props.alt ?? ''} loading="lazy" className="w-full max-h-[55vh] object-contain rounded-lg my-5 bg-ink-base" />
   ),
 }
 
@@ -149,13 +175,17 @@ export function NewsCard({ news, userTickers }: Props) {
       {news.full_text_md && (
         <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
           <DialogContent className="max-w-3xl">
-            <DialogHeader>
-              <DialogTitle className="text-base font-medium leading-snug">{news.title}</DialogTitle>
+            <DialogHeader className="space-y-1.5">
+              <DialogTitle className="font-editorial text-xl font-bold leading-tight text-foreground">{news.title}</DialogTitle>
+              <p className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
+                {news.source_name}
+                {news.published_at && ` · ${new Date(news.published_at).toLocaleDateString('es-MX', { day: 'numeric', month: 'long', year: 'numeric' })}`}
+              </p>
             </DialogHeader>
-            <div className="max-h-[70vh] overflow-y-auto">
-              <div className="prose prose-sm sm:prose-base dark:prose-invert max-w-none">
+            <div className="max-h-[68vh] overflow-y-auto pr-2 -mr-2 border-t border-border pt-2">
+              <article className="max-w-none">
                 <ReactMarkdown components={markdownComponents}>{news.full_text_md}</ReactMarkdown>
-              </div>
+              </article>
             </div>
             <div className="flex items-center justify-between border-t border-border pt-3 text-xs text-muted-foreground">
               <span>
