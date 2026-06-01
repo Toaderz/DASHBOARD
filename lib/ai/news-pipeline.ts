@@ -63,10 +63,21 @@ function getFirecrawlClient() {
   return new Firecrawl({ apiKey: process.env.FIRECRAWL_API_KEY! })
 }
 
-async function callOllama(prompt: string, temperature = 0.1, systemPrompt?: string): Promise<string> {
+// Modelo para el análisis/síntesis (mejor seguimiento de instrucciones, sin relleno).
+// Distinto al de selección (selectTop7) a propósito: Groq aplica el límite de tokens/min
+// POR MODELO, así que usar modelos distintos evita que ambas llamadas compitan por el mismo cupo.
+const ANALYSIS_MODEL = process.env.NEWS_ANALYSIS_MODEL ?? 'openai/gpt-oss-120b'
+
+async function callOllama(
+  prompt: string,
+  temperature = 0.1,
+  systemPrompt?: string,
+  model?: string,
+  maxTokens?: number
+): Promise<string> {
   const baseUrl = process.env.OLLAMA_API_URL!
   const apiKey = process.env.OLLAMA_API_KEY
-  const model = process.env.OLLAMA_MODEL ?? 'deepseek-r1:14b'
+  const resolvedModel = model ?? process.env.OLLAMA_MODEL ?? 'deepseek-r1:14b'
 
   const headers: Record<string, string> = { 'Content-Type': 'application/json' }
   if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`
@@ -79,10 +90,11 @@ async function callOllama(prompt: string, temperature = 0.1, systemPrompt?: stri
     method: 'POST',
     headers,
     body: JSON.stringify({
-      model,
+      model: resolvedModel,
       messages,
       temperature,
       stream: false,
+      ...(maxTokens ? { max_tokens: maxTokens } : {}),
     }),
   })
 
@@ -212,13 +224,13 @@ export async function selectTop7(articles: RawArticle[]): Promise<string[]> {
     .map((a, i) => `${i + 1}. [${a.title}] ${a.url}\nSnippet: ${a.content.slice(0, 200)}`)
     .join('\n\n')
 
-  const prompt = `You are a financial news curator. Select the 7 most important articles from the list below.
+  const prompt = `You are a financial news curator. Select the 5 most important articles from the list below.
 
 Priority order: macro/geopolitical events > central bank decisions > commodity moves > sector-specific (only if market-moving).
 
 DIVERSITY REQUIREMENT: Cover at least 4 of these themes: (1) macro/global growth, (2) monetary policy/rates, (3) geopolitics/trade, (4) specific sectors or assets, (5) commodities/FX.
 
-Return ONLY a JSON array of up to 7 URLs in order of importance. No other text.
+Return ONLY a JSON array of up to 5 URLs in order of importance. No other text.
 
 Example: ["https://...", "https://..."]
 
@@ -227,23 +239,25 @@ ${articleList}`
 
   const response = await callOllama(prompt, 0.1)
   const urls = extractJson<string[]>(response)
-  return urls.filter((u) => articles.some((a) => a.url === u)).slice(0, 7)
+  return urls.filter((u) => articles.some((a) => a.url === u)).slice(0, 5)
 }
 
 // ── Function D ───────────────────────────────────────────────
 
 const EXTRACTION_PROMPT =
-  'Extract ONLY the main news article body. Return clean markdown with paragraphs and ' +
-  'any genuinely relevant inline images preserved as markdown image syntax. EXCLUDE: navigation, ' +
-  'stock-ticker rails, "skip to", "what to read next", related-article lists, subscriber/paywall ' +
-  'notices, copyright/legal lines and Dow Jones hashes, newsletter sign-ups, social share links, ' +
-  'cookie/consent banners, ads, and chart/widget text dumps (e.g. "Created with Highcharts"). ' +
-  'Exclude logos, icons, avatars and tracking pixels from images; keep only the hero photo and ' +
-  'content figures.'
+  'Extract ONLY the main news article. Return clean markdown of the article body: the dek/standfirst ' +
+  '(if any) followed by the full article paragraphs, with a blank line between every paragraph. ' +
+  'Do NOT repeat the article headline as a heading (omit the H1 title). Keep genuinely relevant ' +
+  'CONTENT images embedded inline as markdown images with their original alt/caption text — that ' +
+  'means photos that illustrate the story and charts/graphs/data visualizations. EXCLUDE every other ' +
+  'image: agency logos (e.g. a "Reuters"/"Getty"/"AP" wordmark), site logos, section icons, author ' +
+  'avatars/headshots, ad banners, social buttons and tracking pixels. Also EXCLUDE all non-article ' +
+  'text: navigation, stock-ticker rails, "skip to", "what to read next", related/most-popular lists, ' +
+  'subscriber/paywall notices, copyright/legal lines and Dow Jones hashes, newsletter sign-ups, ' +
+  'social share links, cookie/consent banners, ads, and chart/widget text dumps (e.g. "Created with Highcharts").'
 
 interface ExtractedJson {
   body_markdown?: string
-  hero_image_url?: string
 }
 
 // Reject the scrape promise if Firecrawl takes longer than `ms` (stealth + AI extraction is slow).
@@ -254,15 +268,45 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
   ])
 }
 
-// Build the final clean markdown stored in `full_text_md`: hero image (if any) + article body.
+const MD_IMAGE_RE = /!\[([^\]]*)\]\(\s*(<[^>]+>|[^)\s]+)[^)]*\)/g
+
+// Deterministic backstop: drop logo / icon / avatar / agency-credit / tracking images.
+// Keeps content photos and charts/graphs (what the user wants).
+function isJunkImage(alt: string, url: string): boolean {
+  const a = alt.trim().toLowerCase()
+  const u = url.replace(/^<|>$/g, '').trim().toLowerCase()
+  if (!u || u.startsWith('data:')) return true
+  // Alt is exactly a news-agency wordmark → it's a credit logo, not a content photo.
+  if (/^(reuters|getty|getty images|associated press|ap|ap photo|bloomberg|afp|epa|shutterstock|istock|alamy|nurphoto|via getty images)$/.test(a)) return true
+  if (/\b(logo|icon|favicon|avatar|sprite|spacer|pixel|placeholder|watermark|wordmark|badge|headshot)\b/.test(a)) return true
+  if (/logo|favicon|sprite|\/icons?\/|avatar|placeholder|spacer|1x1|tracking|beacon|\.svg(\?|$)/.test(u)) return true
+  return false
+}
+
+// Remove junk images from the markdown but keep content photos/charts in place.
+function filterImages(md: string): string {
+  return md.replace(MD_IMAGE_RE, (full, alt: string, url: string) => (isJunkImage(alt, url) ? '' : full))
+}
+
+// Drop a leading H1 (the article title is shown separately in the modal header).
+function stripLeadingH1(md: string): string {
+  const lines = md.split('\n')
+  let i = 0
+  while (i < lines.length && !lines[i].trim()) i++
+  if (i < lines.length && /^#\s+\S/.test(lines[i].trim())) lines.splice(i, 1)
+  return lines.join('\n')
+}
+
+// Build the final clean markdown stored in `full_text_md`.
 function buildCleanMarkdown(json: ExtractedJson): string | null {
-  const body = (json.body_markdown ?? '').trim()
-  if (!body) return null
-  const hero = json.hero_image_url?.trim()
-  if (hero && !body.includes(hero)) {
-    return `![](${hero})\n\n${body}`
-  }
-  return body
+  let md = (json.body_markdown ?? '').trim()
+  if (!md) return null
+  md = stripLeadingH1(md)
+  md = filterImages(md)
+  md = md.replace(/\n{3,}/g, '\n\n').trim()
+  // Require some actual prose, not just leftover image/whitespace.
+  const textOnly = md.replace(MD_IMAGE_RE, '').replace(/[#>*_`-]/g, '').trim()
+  return textOnly.length >= 80 ? md : null
 }
 
 export async function extractContent(urls: string[]): Promise<Map<string, string>> {
@@ -272,8 +316,7 @@ export async function extractContent(urls: string[]): Promise<Map<string, string
   await Promise.allSettled(
     urls.map(async (url) => {
       try {
-        // Primary: Firecrawl server-side AI extraction (clean article + hero image), with
-        // paywall bypass via `proxy: 'auto'` (escalates to stealth only when the site blocks).
+        // Primary: Firecrawl server-side AI extraction with paywall bypass via `proxy: 'stealth'`.
         const result = await withTimeout(
           client.scrape(url, {
             formats: [{
@@ -283,17 +326,16 @@ export async function extractContent(urls: string[]): Promise<Map<string, string
                 type: 'object',
                 properties: {
                   body_markdown: { type: 'string' },
-                  hero_image_url: { type: 'string' },
                 },
                 required: ['body_markdown'],
               },
             }],
             onlyMainContent: true,
             blockAds: true,
-            proxy: 'auto',
+            proxy: 'stealth',
             removeBase64Images: true,
           }),
-          55_000
+          70_000
         )
 
         const clean = buildCleanMarkdown((result.json ?? {}) as ExtractedJson)
@@ -306,18 +348,20 @@ export async function extractContent(urls: string[]): Promise<Map<string, string
       }
 
       try {
-        // Fallback: plain markdown scrape (better than nothing if AI extraction fails/empties).
+        // Fallback: plain markdown scrape, run through the same cleaner (junk-image + leading-H1 strip).
         const result = await withTimeout(
           client.scrape(url, {
             formats: ['markdown'],
             onlyMainContent: true,
             blockAds: true,
-            proxy: 'auto',
+            proxy: 'stealth',
+            removeBase64Images: true,
           }),
-          45_000
+          60_000
         )
-        if (result.markdown?.trim()) {
-          contentMap.set(url, result.markdown.trim())
+        const clean = buildCleanMarkdown({ body_markdown: result.markdown })
+        if (clean) {
+          contentMap.set(url, clean)
         }
       } catch {
         // Leave empty — caller uses Tavily snippet as scoring fallback; modal button hides when null.
@@ -346,82 +390,64 @@ Content:
 ${fullText.slice(0, 1200)}`
   }).join('\n\n')
 
-  const systemPrompt = `Eres un motor de análisis macroeconómico tipo Bloomberg Terminal. Extraes hechos duros, datos numéricos e inercias del mercado. Produces JSON estructurado en español.
+  const systemPrompt = `Eres un editor de research financiero. Resumes noticias de forma DESCRIPTIVA, FACTUAL y NEUTRAL para que un equipo profesional entienda qué pasó, el contexto y hacia dónde apunta el tema, y SAQUE SUS PROPIAS conclusiones. Produces JSON estructurado en español.
 
-PROHIBICIÓN ABSOLUTA: No uses "inversores", "carteras", "deben", "deberían", "hay que estar atentos", "es importante", "se recomienda", "puede impactar", "afectar a los mercados en general". Cero relleno. Cero consejos. Cero generalidades.
+REGLAS DURAS (inviolables):
+1. PROHIBIDO inventar datos. Usa SOLO cifras, fechas, nombres, instituciones y niveles que aparezcan EXPLÍCITAMENTE en el contenido del artículo. Si un dato no está en el texto, NO lo menciones. Nunca inventes reacciones de mercado, puntos básicos ni porcentajes.
+2. PROHIBIDO predecir o recomendar. Nada de llamadas de mercado ("los bonos subirán", "el dólar caerá"), consejos ni "los inversores deben/deberían".
+3. CADA oración debe contener un detalle ESPECÍFICO de ESE artículo: un nombre propio, lugar, cifra, fecha o argumento concreto tomado del texto. Una oración que podría aplicar a cualquier noticia está PROHIBIDA y debe eliminarse.
+4. PROHIBIDO repetir frases entre artículos. Cada resumen y cada análisis deben ser únicos y referirse a los detalles propios de su artículo.
 
-FORMATO OBLIGATORIO para el campo "insight" — exactamente 2 oraciones:
-Oración 1: Hecho concreto con número, entidad y fecha exacta.
-Oración 2: Implicación directa en clase de activo, sector o tasa específica con datos o niveles.
+FRASES PROHIBIDAS (no las uses nunca, ni variantes): "tendrá un impacto significativo en la economía y los mercados financieros", "serán clave para tomar decisiones informadas", "debe equilibrar su mandato dual", "es importante monitorear", "puede tener implicaciones en los mercados", "afecta a la economía en general", "es crucial para mantener la estabilidad", "navegar este escenario desafiante", "incertidumbre y volatilidad en los mercados".
 
-EJEMPLO PERFECTO:
-{"insight": "El BCE situó la tasa de depósito en 3.25% en junio, por encima del consenso de 3.0%, ante una inflación subyacente del 2.9% en la eurozona. Los Bunds a 10 años cedieron 15 bps en la sesión y el EUR/USD retrocedió 0.8%, reflejando retraso en expectativas de recorte."}
+CAMPO "summary" — 1 párrafo de 3 a 4 oraciones: QUÉ pasó con los hechos y datos concretos del artículo + el contexto necesario para entenderlo. Puramente descriptivo.
 
-EJEMPLO PROHIBIDO:
-{"insight": "El BCE tomó una decisión importante. Los inversores deben estar atentos a cómo esto impactará a los mercados financieros y a sus carteras la próxima semana."}
+CAMPO "insight" (es el ANÁLISIS de contexto) — 1 párrafo de 2 a 3 oraciones: el TRASFONDO y HACIA DÓNDE APUNTA el tema según ESTE artículo: por qué surge, qué fuerzas o argumentos concretos están en juego, qué posturas o desenlaces describe el texto. Cita los detalles específicos del artículo (quién dijo qué, dónde, con qué dato). Das contexto para que el lector forme su propio juicio; NO des tú el juicio ni predigas niveles.
 
-WATCHLIST ITEMS — ultra-específicos, nunca genéricos:
-BIEN: "ISM Manufacturero EE.UU. lunes — prev. 49.2", "Datos PCE subyacente viernes — consenso 2.6%", "Vencimiento mensual opciones VIX miércoles"
-MAL: "La economía global", "Los mercados financieros", "La inflación en general"
+EJEMPLO BIEN (insight): "El recelo sobre la independencia del banco central resurge porque, según Helge Berger (FMI) en Dubrovnik, controlar la inflación obliga a medidas impopulares que invitan a la interferencia política. El texto subraya que la credibilidad, una vez dañada, es difícil de reconstruir, y cita la presión de Trump sobre la Fed como el caso más visible."
+EJEMPLO MAL (insight): "La decisión de la Fed tendrá un impacto significativo en la economía y los mercados. La institución debe equilibrar su mandato dual y será clave para tomar decisiones informadas."
 
-CAMPO summary — 3 partes obligatorias, sin relleno:
-1. QUÉ PASÓ: Evento específico con números, institución y fecha
-2. POR QUÉ IMPORTA MACRO: Transmisión a tasas, inflación o crecimiento
-3. IMPLICACIÓN CROSS-ASSET: Clases de activo, sectores o geografías afectadas con datos
+WATCHLIST ITEMS — eventos concretos a vigilar que aparezcan o se infieran claramente de las noticias (con fecha si se conoce). Nunca genéricos como "la economía global".
 
-context_md — 3 párrafos: catalizador de la semana → implicaciones Fed/BCE/tasas → sentimiento risk-on/off con datos concretos.
+context_md — 3 párrafos descriptivos y CONCRETOS (con nombres y hechos de las noticias de la semana): qué dominó la semana → qué dijeron los bancos centrales/funcionarios citados → panorama factual. Sin pronósticos, sin las frases prohibidas.
 
 TODO el texto del JSON en ESPAÑOL. Output: solo JSON válido, sin texto adicional.`
 
-  const prompt = `UNIVERSO DE INVERSIÓN (para scoring):
-Tickers plataforma: ${tickers.slice(0, 30).join(', ')}
-Exposición: S&P 500, NASDAQ, MSCI ACWI, globales. Temas: tech/IA, tasas/duración, geopolítica/aranceles, commodities, FX, emergentes.
+  const prompt = `UNIVERSO (para scoring): ${tickers.slice(0, 30).join(', ')}. Exposición: S&P 500, NASDAQ, MSCI ACWI; temas tech/IA, tasas, geopolítica, commodities, FX.
 
-SCORING (0-5 cada dimensión):
-macro_impact: 0=local, 3=regional, 5=cambio macro global
-surprise_factor: 0=descontado, 3=sorpresa parcial, 5=desviación vs consenso
-market_relevance: 0=sin reacción, 3=moderada, 5=fuerte cross-asset
-forward_implications: 0=sin cambio, 3=revisión menor, 5=cambia el caso base
-structural_vs_noise: 0=ruido, 3=señal mixta, 5=cambio de régimen
-portfolio_relevance: 5=ticker directo, 4=sectorial fuerte, 3=universo amplio, 2=indirecto, 1=lejano, 0=ninguno
-time_decay: 0 si <=2 días, -1 si 3-4 días, -2 si 5-7 días. EXCLUIR artículos >7 días.
-TOTAL = suma (máx 30). RATING: A=22-30, B=18-21, C=14-17, D<14
-SIGNAL: STRONG si score>=22 Y portfolio>=4; MODERATE si 18-21 O portfolio 3-4; WEAK otro caso
-ACTIONABILITY (solo A/B): MONITOR | REVIEW | CONFIRMS | CONTRADICTS
+SCORING (0-5 cada uno): macro_impact, surprise_factor, market_relevance, forward_implications, structural_vs_noise, portfolio_relevance (5=ticker directo,3=universo amplio,0=ninguno), time_decay (0 si <=2 días, -1 si 3-4, -2 si 5-7).
+TOTAL=suma (máx 30). RATING: A=22-30,B=18-21,C=14-17,D<14. SIGNAL: STRONG si score>=22 Y portfolio>=4; MODERATE si 18-21 O portfolio 3-4; WEAK otro. ACTIONABILITY (solo A/B): MONITOR|REVIEW|CONFIRMS|CONTRADICTS.
 
 OUTPUT JSON SCHEMA:
 {
   "articles": [{
     "rank": 1, "title": "Título en español", "date": "YYYY-MM-DD",
     "source_name": "wsj.com", "source_url": "https://...",
-    "summary": "3 partes: qué pasó / por qué importa macro / implicación cross-asset",
-    "insight": "2 oraciones exactas: hecho con número → implicación en activo específico",
+    "summary": "1 párrafo 3-4 oraciones: qué pasó (hechos/datos del artículo) + contexto. Descriptivo, sin pronóstico ni cifras inventadas",
+    "insight": "1 párrafo 2-3 oraciones: trasfondo y hacia dónde apunta el tema según el artículo, con detalles específicos. Sin llamadas de mercado ni datos inventados",
     "score": 24, "rating": "A", "signal": "STRONG", "actionability": "MONITOR",
     "score_breakdown": {"macro":5,"surprise":4,"market_rel":4,"forward":5,"structural":3,"portfolio":4,"time_decay":-1},
     "affected_tickers": ["QQQ","AAPL"]
   }],
   "weekly_summary": {
     "strong_signals": 2, "moderate_signals": 3, "weak_noise": 1,
-    "top_theme": "tema dominante de la semana en español",
-    "key_risk": "riesgo principal concreto con datos en español",
-    "context_md": "párrafo1: catalizador\\n\\npárrafo2: implicaciones tasas/BC\\n\\npárrafo3: sentimiento con posicionamiento",
-    "editorial_stance": "posicionamiento editorial con convicción en español",
+    "top_theme": "tema dominante concreto y factual",
+    "key_risk": "riesgo principal concreto descrito en las noticias",
+    "context_md": "párrafo1\\n\\npárrafo2\\n\\npárrafo3",
+    "editorial_stance": "síntesis neutral del panorama, sin recomendaciones",
     "watchlist_items": [
-      {"priority": "Alta", "item": "dato/evento específico con fecha y nivel previo"},
-      {"priority": "Alta", "item": "segundo evento de alta prioridad específico"},
-      {"priority": "Media", "item": "evento de seguimiento con contexto numérico"},
-      {"priority": "Media", "item": "segundo evento de seguimiento"},
-      {"priority": "Baja", "item": "evento de fondo específico"},
-      {"priority": "Baja", "item": "segundo evento de fondo"}
+      {"priority": "Alta", "item": "evento/dato concreto a vigilar"},
+      {"priority": "Media", "item": "evento de seguimiento concreto"},
+      {"priority": "Baja", "item": "evento de fondo concreto"}
     ]
   }
 }
 
-Incluir MÍNIMO 5 artículos rating A/B (máximo 7). Artículos C/D solo si hay menos de 5 con A/B.
+Analiza TODOS los artículos proporcionados (hasta 5), ordenados por importancia. Cada summary e insight ÚNICO y específico; cero frases prohibidas. Devuelve SOLO el JSON.
 
 ARTÍCULOS:
 ${articleBlocks}`
 
-  const response = await callOllama(prompt, 0.1, systemPrompt)
+  const response = await callOllama(prompt, 0.4, systemPrompt, ANALYSIS_MODEL, 5000)
   return extractJson<PipelineResult>(response)
 }

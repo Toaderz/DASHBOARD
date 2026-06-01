@@ -30,7 +30,7 @@ const actionabilityConfig = {
 const markdownComponents = {
   img: (props: ImgHTMLAttributes<HTMLImageElement>) => (
     // eslint-disable-next-line @next/next/no-img-element
-    <img {...props} alt={props.alt ?? ''} loading="lazy" className="w-full rounded-md my-4" />
+    <img {...props} alt={props.alt ?? ''} loading="lazy" className="w-full max-h-[60vh] object-contain rounded-md my-4 bg-ink-base" />
   ),
   a: (props: AnchorHTMLAttributes<HTMLAnchorElement>) => (
     <a {...props} target="_blank" rel="noopener noreferrer" className="text-electric hover:underline" />
