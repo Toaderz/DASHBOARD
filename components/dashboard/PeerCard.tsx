@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { ChevronDown } from 'lucide-react'
 import { formatPercent, percentColor } from '@/lib/utils/formatters'
 import { cn } from '@/lib/utils/cn'
+import { Card } from '@/components/ui/card'
 import { PEER_CMP_PERIODS, type AssetComparison } from '@/hooks/usePeerComparison'
 import { METRIC_DEFINITIONS } from '@/types'
 
@@ -17,7 +18,7 @@ export function PeerCard({ asset }: { asset: AssetComparison }) {
   const [expanded, setExpanded] = useState<string | null>(null)
 
   return (
-    <div className="rounded-sm border border-border bg-card">
+    <Card className="overflow-hidden">
       {/* Header */}
       <div className="flex items-center gap-3 px-3 py-2.5">
         <div className="flex-1 min-w-0">
@@ -45,7 +46,7 @@ export function PeerCard({ asset }: { asset: AssetComparison }) {
           <div
             className={cn(
               'text-sm font-mono font-bold',
-              asset.metricsWon >= 4 ? 'text-green-500' : asset.metricsWon > 0 ? 'text-foreground' : 'text-muted-foreground'
+              asset.metricsWon >= 4 ? 'text-gain' : asset.metricsWon > 0 ? 'text-foreground' : 'text-muted-foreground'
             )}
           >
             {asset.metricsWon}/{TOTAL_PERIODS}
@@ -84,7 +85,7 @@ export function PeerCard({ asset }: { asset: AssetComparison }) {
                     <span
                       className={cn(
                         'font-mono text-xs font-semibold',
-                        r.won ? 'text-green-500' : 'text-muted-foreground'
+                        r.won ? 'text-gain' : 'text-muted-foreground'
                       )}
                     >
                       ganó a {r.beaten.length}/{r.total}
@@ -106,7 +107,7 @@ export function PeerCard({ asset }: { asset: AssetComparison }) {
                 <div className="space-y-1 px-3 pb-2 pl-12">
                   {r.beaten.length > 0 && (
                     <div className="flex flex-wrap items-baseline gap-1">
-                      <span className="text-[10px] font-mono uppercase tracking-wide text-green-500">le ganó a:</span>
+                      <span className="text-[10px] font-mono uppercase tracking-wide text-gain">le ganó a:</span>
                       {r.beaten.map((t) => (
                         <span key={t} className="font-mono text-[11px] text-foreground bg-ink-elevated px-1.5 py-0.5 rounded-sm">
                           {t}
@@ -116,7 +117,7 @@ export function PeerCard({ asset }: { asset: AssetComparison }) {
                   )}
                   {notBeaten.length > 0 && (
                     <div className="flex flex-wrap items-baseline gap-1">
-                      <span className="text-[10px] font-mono uppercase tracking-wide text-red-500">no le ganó a:</span>
+                      <span className="text-[10px] font-mono uppercase tracking-wide text-loss">no le ganó a:</span>
                       {notBeaten.map((t) => (
                         <span key={t} className="font-mono text-[11px] text-muted-foreground bg-ink-elevated px-1.5 py-0.5 rounded-sm">
                           {t}
@@ -130,6 +131,6 @@ export function PeerCard({ asset }: { asset: AssetComparison }) {
           )
         })}
       </div>
-    </div>
+    </Card>
   )
 }

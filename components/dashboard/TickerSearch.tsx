@@ -5,23 +5,8 @@ import { Search, Plus, Loader2 } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { typeBadgeClass, typeLabel } from '@/lib/asset-style'
 import type { SearchResult, AssetType } from '@/types'
-
-const TYPE_LABELS: Record<AssetType, string> = {
-  stock: 'Stock',
-  etf: 'ETF',
-  index: 'Index',
-  fund: 'Fund',
-  crypto: 'Crypto',
-}
-
-const TYPE_COLORS: Record<AssetType, string> = {
-  stock: 'bg-blue-500/10 text-blue-600 dark:text-blue-400',
-  etf: 'bg-purple-500/10 text-purple-600 dark:text-purple-400',
-  index: 'bg-amber-500/10 text-amber-600 dark:text-amber-400',
-  fund: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400',
-  crypto: 'bg-orange-500/10 text-orange-600 dark:text-orange-400',
-}
 
 interface TickerSearchProps {
   onAdd: (ticker: string, name: string, type: AssetType) => Promise<void>
@@ -72,7 +57,7 @@ export function TickerSearch({ onAdd, existingTickers }: TickerSearchProps) {
           value={query}
           onChange={(e) => handleChange(e.target.value)}
           placeholder="Search ticker or company..."
-          className="pl-9 pr-9"
+          className="focus-ring pl-9 pr-9"
           onFocus={() => results.length > 0 && setOpen(true)}
           onBlur={() => setTimeout(() => setOpen(false), 150)}
         />
@@ -96,9 +81,9 @@ export function TickerSearch({ onAdd, existingTickers }: TickerSearchProps) {
                   <span className="truncate text-xs text-muted-foreground">{result.name}</span>
                   <Badge
                     variant="outline"
-                    className={`shrink-0 border-0 text-xs ${TYPE_COLORS[result.type]}`}
+                    className={`shrink-0 border-0 text-xs ${typeBadgeClass(result.type)}`}
                   >
-                    {TYPE_LABELS[result.type]}
+                    {typeLabel(result.type)}
                   </Badge>
                 </div>
                 <Button

@@ -77,6 +77,63 @@
   }
 }
 
+/* ── Design system extension (additive — does not touch --gain/--loss/--radius) ── */
+@layer base {
+  :root {
+    /* Brand anchors */
+    --brand-navy: 204 60% 26%;   /* #1B4B6C */
+    --brand-teal: 199 72% 30%;   /* #156082 */
+
+    /* Chart series — navy → petróleo → teal → sky (8 hues) */
+    --chart-1: 204 60% 26%;   /* #1B4B6C */
+    --chart-2: 199 72% 30%;   /* #156082 */
+    --chart-3: 199 56% 41%;   /* #2E7DA1 */
+    --chart-4: 196 51% 50%;   /* #3E9DBF */
+    --chart-5: 194 58% 59%;   /* #5BB8D4 */
+    --chart-6: 204 71% 20%;   /* #0F3A57 */
+    --chart-7: 207 41% 64%;   /* #7FA8C9 */
+    --chart-8: 195 54% 78%;   /* #A9D6E5 */
+
+    --chart-grid:           220 15% 18%;
+    --chart-axis:           215 16% 45%;
+    --chart-tooltip-bg:     220 11% 13%;
+    --chart-tooltip-border: 220 15% 20%;
+
+    /* Elevation aliases → ink surfaces (use as hsl(var(--elevation-N))) */
+    --elevation-0: var(--ink-base);
+    --elevation-1: var(--ink-surface);
+    --elevation-2: var(--ink-elevated);
+    --elevation-3: var(--ink-overlay);
+
+    /* Radii (independent of global --radius) */
+    --radius-card: 0.5rem;
+    --radius-pill: 9999px;
+
+    /* Shadows */
+    --shadow-sm:   0 1px 2px 0 hsl(220 40% 2% / 0.40);
+    --shadow-card: 0 1px 3px 0 hsl(220 40% 2% / 0.50), 0 1px 2px -1px hsl(220 40% 2% / 0.50);
+    --shadow-pop:  0 10px 30px -10px hsl(220 40% 2% / 0.60);
+    --shadow-glow: 0 0 20px hsl(var(--electric) / 0.15);
+  }
+
+  .light {
+    /* Chart series — darken the palest hues for contrast on white */
+    --chart-5: 194 58% 48%;
+    --chart-7: 207 41% 50%;
+    --chart-8: 195 54% 55%;
+
+    --chart-grid:           214 22% 80%;
+    --chart-axis:           215 22% 45%;
+    --chart-tooltip-bg:     0 0% 100%;
+    --chart-tooltip-border: 214 22% 62%;
+
+    --shadow-sm:   0 1px 2px 0 hsl(214 30% 40% / 0.10);
+    --shadow-card: 0 1px 3px 0 hsl(214 30% 40% / 0.12), 0 1px 2px -1px hsl(214 30% 40% / 0.10);
+    --shadow-pop:  0 10px 30px -10px hsl(214 30% 30% / 0.25);
+    --shadow-glow: 0 0 20px hsl(var(--electric) / 0.20);
+  }
+}
+
 @layer base {
   * {
     @apply border-border;
@@ -123,5 +180,20 @@
   .tabular {
     font-variant-numeric: tabular-nums;
     font-feature-settings: "tnum";
+  }
+
+  /* Consistent keyboard focus ring for raw <button>/<input> elements */
+  .focus-ring:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 2px hsl(var(--background)), 0 0 0 4px hsl(var(--ring));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-fade-in-up,
+  .animate-pulse-ring,
+  .pause-on-hover,
+  [class*='animate-marquee'] {
+    animation: none !important;
   }
 }

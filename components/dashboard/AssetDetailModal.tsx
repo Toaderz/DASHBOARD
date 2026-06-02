@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import {
   Dialog,
   DialogContent,
@@ -13,6 +13,9 @@ import { X } from 'lucide-react'
 import {
   AreaChart,
   Area,
+  BarChart,
+  Bar,
+  Cell,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -21,9 +24,14 @@ import {
 } from 'recharts'
 import { TickerSearch } from './TickerSearch'
 import { FundamentalsPanel } from './FundamentalsPanel'
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
+import { SegmentedControl } from './SegmentedControl'
+import { useChartTheme, chartTooltipStyle } from '@/lib/chart-theme'
+import { typeBadgeClass, typeLabel } from '@/lib/asset-style'
 import { formatPrice, formatPercent, percentColor, annualizeReturn } from '@/lib/utils/formatters'
 import { useFxData } from '@/hooks/useFxData'
 import { usePeerSet } from '@/hooks/usePeerSet'
+import { useCalendarYearReturns } from '@/hooks/useCalendarYearReturns'
 import type { AssetMetadata, HistoricalDataPoint, QuoteData, AssetType, MetricKey } from '@/types'
 
 const PEER_PERIOD_OPTIONS = ['1W', '1M', 'YTD', '1Y', '3Y', '5Y', '10Y', 'MAX'] as const
@@ -32,16 +40,10 @@ type PeerPeriod = typeof PEER_PERIOD_OPTIONS[number]
 const CHART_PERIODS = ['1M', 'YTD', '1Y', '3Y', '10Y', 'MAX'] as const
 type ChartPeriod = typeof CHART_PERIODS[number]
 
+type TabKey = 'summary' | 'calendar' | 'peers'
+
 // Periods > 1Y with a fixed known duration — annualizable
 const ANNUALIZE_YEARS: Partial<Record<string, number>> = { '3Y': 3, '5Y': 5, '10Y': 10 }
-
-const TYPE_COLORS: Record<string, string> = {
-  stock: 'bg-blue-500/10 text-blue-600 dark:text-blue-400',
-  etf: 'bg-purple-500/10 text-purple-600 dark:text-purple-400',
-  index: 'bg-amber-500/10 text-amber-600 dark:text-amber-400',
-  fund: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400',
-  crypto: 'bg-orange-500/10 text-orange-600 dark:text-orange-400',
-}
 
 type ReturnMap = Partial<Record<PeerPeriod, number | null>>
 
@@ -60,6 +62,7 @@ export function AssetDetailModal({
   onClose,
   initialPeers,
 }: AssetDetailModalProps) {
+  const [activeTab, setActiveTab] = useState<TabKey>('summary')
   const [history, setHistory] = useState<HistoricalDataPoint[]>([])
   const [loadingChart, setLoadingChart] = useState(false)
   const [chartPeriod, setChartPeriod] = useState<ChartPeriod>('1Y')
@@ -69,10 +72,18 @@ export function AssetDetailModal({
   const [usd, setUsd] = useState(false)
 
   const [peerMetrics, setPeerMetrics] = useState<PeerPeriod[]>(['1M', 'YTD', '1Y'])
+  const [peerChartPeriod, setPeerChartPeriod] = useState<PeerPeriod>('1Y')
+
+  const chartTheme = useChartTheme()
 
   // Persisted, per-user curated peer set (shared with the Beating-Peers page).
   // `initialPeers` is only a name/type hydration seed — the source of truth is the DB.
   const { peers: allPeers, addPeer, removePeer } = usePeerSet(open ? (asset?.ticker ?? null) : null, initialPeers)
+
+  // Calendar-year returns — only fetched while the Calendar Years tab is active.
+  const { data: calYears, loading: calLoading } = useCalendarYearReturns(
+    open && activeTab === 'calendar' ? (asset?.ticker ?? null) : null
+  )
 
   const [peerQuotes, setPeerQuotes] = useState<Record<string, QuoteData>>({})
   const [peerReturns, setPeerReturns] = useState<Record<string, ReturnMap>>({})
@@ -83,6 +94,7 @@ export function AssetDetailModal({
   // Reset on close (peer curation is NOT reset — it lives in the DB now)
   useEffect(() => {
     if (!open) {
+      setActiveTab('summary')
       setPeerQuotes({})
       setPeerReturns({})
       setPeerMaxYears({})
@@ -262,7 +274,26 @@ export function AssetDetailModal({
   if (!asset) return null
 
   const isPositive = (chartPeriodReturn ?? quote?.change_percent ?? 0) >= 0
+  const areaColor = isPositive ? chartTheme.gain : chartTheme.loss
   const existingPeerTickers = allPeers.map((p) => p.ticker)
+
+  // Peer comparison bar data (asset + peers) for one selected period — reuses fetched returns.
+  const effectivePeerChartPeriod = peerMetrics.includes(peerChartPeriod) ? peerChartPeriod : peerMetrics[0]
+  const peerChartData = (() => {
+    if (!effectivePeerChartPeriod) return [] as Array<{ ticker: string; value: number; isAsset: boolean }>
+    const rows = [
+      { ticker: asset.ticker, isAsset: true },
+      ...allPeers.map((p) => ({ ticker: p.ticker, isAsset: false })),
+    ]
+    return rows
+      .map(({ ticker, isAsset }) => {
+        const raw = adjReturn(peerReturns[ticker]?.[effectivePeerChartPeriod], ticker, effectivePeerChartPeriod)
+        const years = ANNUALIZE_YEARS[effectivePeerChartPeriod] ?? (effectivePeerChartPeriod === 'MAX' ? (peerMaxYears[ticker] ?? null) : null)
+        const v = annualize && years ? annualizeReturn(raw, years) : raw
+        return { ticker, value: v, isAsset }
+      })
+      .filter((d): d is { ticker: string; value: number; isAsset: boolean } => d.value != null)
+  })()
 
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
@@ -276,265 +307,376 @@ export function AssetDetailModal({
             <span className="text-base font-normal text-muted-foreground">{assetDisplayName ?? asset.name}</span>
             <Badge
               variant="outline"
-              className={`border-0 text-xs ${TYPE_COLORS[asset.type] ?? ''}`}
+              className={`border-0 text-xs ${typeBadgeClass(asset.type)}`}
             >
-              {asset.type}
+              {typeLabel(asset.type)}
             </Badge>
           </DialogTitle>
         </DialogHeader>
 
-        <div className="flex-1 overflow-y-auto space-y-4 pr-1">
-          {/* Price header — return synced with selected chart period */}
-          {quote && (
-            <div className="flex items-baseline gap-3">
-              <span className="text-3xl font-bold tabular-nums">{formatPrice(quote.price)}</span>
-              {(() => {
-                const years = ANNUALIZE_YEARS[chartPeriod] ?? (chartPeriod === 'MAX' ? chartYears : null)
-                const displayReturn = annualize && years
-                  ? annualizeReturn(chartPeriodReturn, years)
-                  : chartPeriodReturn
-                return (
-                  <>
-                    <span className={`text-lg font-semibold ${percentColor(displayReturn)}`}>
-                      {formatPercent(displayReturn)}
-                    </span>
-                    <span className="text-sm text-muted-foreground">
-                      {chartPeriod}{annualize && years ? ' ann' : ''}
-                    </span>
-                  </>
-                )
-              })()}
-            </div>
-          )}
+        <Tabs
+          value={activeTab}
+          onValueChange={(v) => setActiveTab(v as TabKey)}
+          className="flex min-h-0 flex-1 flex-col"
+        >
+          <TabsList className="shrink-0 self-start">
+            <TabsTrigger value="summary">Summary</TabsTrigger>
+            <TabsTrigger value="calendar">Calendar Years</TabsTrigger>
+            <TabsTrigger value="peers">Peers</TabsTrigger>
+          </TabsList>
 
-          {/* Chart period selector + chart */}
-          <div>
-            <div className="mb-2 flex gap-1">
-              {CHART_PERIODS.map((p) => (
-                <button
-                  key={p}
-                  onClick={() => setChartPeriod(p)}
-                  className={`rounded px-2 py-0.5 text-xs font-medium transition-colors ${
-                    chartPeriod === p
-                      ? 'bg-foreground text-background'
-                      : 'text-muted-foreground hover:text-foreground'
-                  }`}
-                >
-                  {p}
-                </button>
-              ))}
-            </div>
-            <div className="h-48">
-              {loadingChart ? (
-                <Skeleton className="h-full w-full" />
-              ) : history.length > 0 ? (
-                <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={history} margin={{ top: 4, right: 4, left: 4, bottom: 4 }}>
-                    <defs>
-                      <linearGradient id="colorClose" x1="0" y1="0" x2="0" y2="1">
-                        <stop
-                          offset="5%"
-                          stopColor={isPositive ? '#22c55e' : '#ef4444'}
-                          stopOpacity={0.3}
-                        />
-                        <stop
-                          offset="95%"
-                          stopColor={isPositive ? '#22c55e' : '#ef4444'}
-                          stopOpacity={0}
-                        />
-                      </linearGradient>
-                    </defs>
-                    <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                    <XAxis
-                      dataKey="date"
-                      tick={{ fontSize: 10 }}
-                      tickLine={false}
-                      axisLine={false}
-                      tickFormatter={(v: string) => v.slice(5)}
-                    />
-                    <YAxis
-                      tick={{ fontSize: 10 }}
-                      tickLine={false}
-                      axisLine={false}
-                      tickFormatter={(v: number) => `$${v.toFixed(0)}`}
-                      domain={['auto', 'auto']}
-                    />
-                    <Tooltip
-                      contentStyle={{ fontSize: 12 }}
-                      formatter={(v: number) => [formatPrice(v), 'Price']}
-                    />
-                    <Area
-                      type="monotone"
-                      dataKey="close"
-                      stroke={isPositive ? '#22c55e' : '#ef4444'}
-                      strokeWidth={2}
-                      fill="url(#colorClose)"
-                      dot={false}
-                    />
-                  </AreaChart>
-                </ResponsiveContainer>
-              ) : (
-                <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-                  No chart data available
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Fundamentals section */}
-          {quote && (
-            <FundamentalsPanel quote={quote} assetType={asset.type} benchmark={asset.benchmark} />
-          )}
-
-          {/* Peers section */}
-          <div>
-            {/* Peers header: title + period toggles + ann toggle + search */}
-            <div className="mb-3 flex flex-wrap items-center gap-2">
-              <span className="text-sm font-semibold shrink-0">Peers</span>
-
-              <div className="flex flex-wrap gap-1">
-                {PEER_PERIOD_OPTIONS.map((period) => (
-                  <button
-                    key={period}
-                    onClick={() => togglePeerMetric(period)}
-                    className={`rounded border px-2 py-0.5 text-xs font-medium transition-colors ${
-                      peerMetrics.includes(period)
-                        ? 'bg-foreground text-background border-foreground'
-                        : 'border-border text-muted-foreground hover:border-foreground hover:text-foreground'
-                    }`}
-                  >
-                    {period}
-                  </button>
-                ))}
-              </div>
-
-              <button
-                onClick={() => setAnnualize((v) => !v)}
-                title="Annualize returns for 3Y, 5Y, 10Y periods"
-                className={`rounded border px-2 py-0.5 text-xs font-medium transition-colors ${
-                  annualize
-                    ? 'bg-foreground text-background border-foreground'
-                    : 'border-border text-muted-foreground hover:border-foreground hover:text-foreground'
-                }`}
-              >
-                Ann.
-              </button>
-
-              <button
-                onClick={() => setUsd((v) => !v)}
-                title="Convert all values to USD using live FX rates"
-                className={`rounded border px-2 py-0.5 text-xs font-medium transition-colors ${
-                  usd
-                    ? 'bg-foreground text-background border-foreground'
-                    : 'border-border text-muted-foreground hover:border-foreground hover:text-foreground'
-                }`}
-              >
-                USD
-              </button>
-
-              <div className="flex-1 min-w-48 relative z-[100]">
-                <TickerSearch
-                  onAdd={handleAddCustomPeer}
-                  existingTickers={existingPeerTickers}
-                />
-              </div>
-            </div>
-
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b text-xs text-muted-foreground">
-                    <th className="pb-1 text-left font-medium">Ticker</th>
-                    <th className="pb-1 text-left font-medium">Name</th>
-                    <th className="pb-1 text-right font-medium">Price</th>
-                    <th className="pb-1 text-right font-medium">1D %</th>
-                    {peerMetrics.map((p) => (
-                      <th key={p} className="pb-1 text-right font-medium">
-                        {p} %{annualize && (ANNUALIZE_YEARS[p] || p === 'MAX') ? <span className="text-[10px] text-muted-foreground ml-0.5">ann</span> : null}
-                      </th>
-                    ))}
-                    <th className="pb-1 w-5" />
-                  </tr>
-                </thead>
-                <tbody>
-                  {/* Pinned row — the asset being viewed, always first, not removable */}
+          <div className="mt-3 flex-1 overflow-y-auto pr-1">
+            {/* ── Summary ───────────────────────────────────────────────── */}
+            <TabsContent value="summary" className="space-y-4">
+              {quote && (
+                <div className="flex items-baseline gap-3">
+                  <span className="text-3xl font-bold tabular-nums">{formatPrice(quote.price)}</span>
                   {(() => {
-                    const pq = peerQuotes[asset.ticker]
-                    const displayPrice = usd ? toUsd(pq?.price ?? quote?.price, asset.ticker) : (pq?.price ?? quote?.price)
-                    const display1d = adj1d(pq?.change_percent ?? quote?.change_percent, asset.ticker)
+                    const years = ANNUALIZE_YEARS[chartPeriod] ?? (chartPeriod === 'MAX' ? chartYears : null)
+                    const displayReturn = annualize && years
+                      ? annualizeReturn(chartPeriodReturn, years)
+                      : chartPeriodReturn
                     return (
-                      <tr key={asset.ticker} className="border-b bg-muted/30 font-semibold">
-                        <td className="py-1 font-mono">{asset.ticker}</td>
-                        <td className="py-1 max-w-[140px] truncate">{assetDisplayName ?? asset.name}</td>
-                        <td className="py-1 text-right tabular-nums">
-                          {formatPrice(displayPrice, usd ? 'USD' : (pq?.currency ?? quote?.currency ?? 'USD'))}
-                        </td>
-                        <td className={`py-1 text-right tabular-nums ${percentColor(display1d)}`}>
-                          {formatPercent(display1d)}
-                        </td>
-                        {peerMetrics.map((period) => {
-                          const raw = adjReturn(peerReturns[asset.ticker]?.[period], asset.ticker, period)
-                          const years = ANNUALIZE_YEARS[period] ?? (period === 'MAX' ? (peerMaxYears[asset.ticker] ?? null) : null)
-                          const v = annualize && years ? annualizeReturn(raw, years) : raw
-                          return (
-                            <td key={period} className={`py-1 text-right tabular-nums ${percentColor(v)}`}>
-                              {formatPercent(v)}
-                            </td>
-                          )
-                        })}
-                        <td className="py-1 w-5" />
-                      </tr>
+                      <>
+                        <span className={`text-lg font-semibold ${percentColor(displayReturn)}`}>
+                          {formatPercent(displayReturn)}
+                        </span>
+                        <span className="text-sm text-muted-foreground">
+                          {chartPeriod}{annualize && years ? ' ann' : ''}
+                        </span>
+                      </>
                     )
                   })()}
-                  {allPeers.length === 0 && (
-                    <tr>
-                      <td colSpan={4 + peerMetrics.length + 1} className="py-3 text-center text-xs text-muted-foreground">
-                        No peers. Use the search above to add them.
-                      </td>
-                    </tr>
+                </div>
+              )}
+
+              <div>
+                <div className="mb-2">
+                  <SegmentedControl
+                    aria-label="Chart period"
+                    size="sm"
+                    options={CHART_PERIODS.map((p) => ({ value: p, label: p }))}
+                    value={chartPeriod}
+                    onChange={(p) => setChartPeriod(p as ChartPeriod)}
+                  />
+                </div>
+                <div className="h-48">
+                  {loadingChart ? (
+                    <Skeleton className="h-full w-full" />
+                  ) : history.length > 0 ? (
+                    <ResponsiveContainer width="100%" height="100%">
+                      <AreaChart data={history} margin={{ top: 4, right: 4, left: 4, bottom: 4 }}>
+                        <defs>
+                          <linearGradient id="colorClose" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="5%" stopColor={areaColor} stopOpacity={0.3} />
+                            <stop offset="95%" stopColor={areaColor} stopOpacity={0} />
+                          </linearGradient>
+                        </defs>
+                        <CartesianGrid strokeDasharray="3 3" stroke={chartTheme.grid} />
+                        <XAxis
+                          dataKey="date"
+                          tick={{ fontSize: 10, fill: chartTheme.axis }}
+                          tickLine={false}
+                          axisLine={false}
+                          tickFormatter={(v: string) => v.slice(5)}
+                        />
+                        <YAxis
+                          tick={{ fontSize: 10, fill: chartTheme.axis }}
+                          tickLine={false}
+                          axisLine={false}
+                          tickFormatter={(v: number) => `$${v.toFixed(0)}`}
+                          domain={['auto', 'auto']}
+                        />
+                        <Tooltip
+                          contentStyle={chartTooltipStyle(chartTheme)}
+                          formatter={(v: number) => [formatPrice(v), 'Price']}
+                        />
+                        <Area
+                          type="monotone"
+                          dataKey="close"
+                          stroke={areaColor}
+                          strokeWidth={2}
+                          fill="url(#colorClose)"
+                          dot={false}
+                        />
+                      </AreaChart>
+                    </ResponsiveContainer>
+                  ) : (
+                    <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+                      No chart data available
+                    </div>
                   )}
-                  {allPeers.map((peer) => {
-                    const pq = peerQuotes[peer.ticker]
-                    const displayPrice = usd ? toUsd(pq?.price, peer.ticker) : pq?.price
-                    const display1d = adj1d(pq?.change_percent, peer.ticker)
-                    return (
-                      <tr key={peer.ticker} className="group border-b last:border-0">
-                        <td className="py-1 font-mono font-semibold">{peer.ticker}</td>
-                        <td className="py-1 text-muted-foreground max-w-[140px] truncate">
-                          {peerNames[peer.ticker] ?? peer.name}
-                        </td>
-                        <td className="py-1 text-right tabular-nums">
-                          {formatPrice(displayPrice, usd ? 'USD' : (pq?.currency ?? 'USD'))}
-                        </td>
-                        <td className={`py-1 text-right tabular-nums ${percentColor(display1d)}`}>
-                          {formatPercent(display1d)}
-                        </td>
-                        {peerMetrics.map((period) => {
-                          const raw = adjReturn(peerReturns[peer.ticker]?.[period], peer.ticker, period)
-                          const years = ANNUALIZE_YEARS[period] ?? (period === 'MAX' ? (peerMaxYears[peer.ticker] ?? null) : null)
-                          const v = annualize && years ? annualizeReturn(raw, years) : raw
-                          return (
-                            <td key={period} className={`py-1 text-right tabular-nums ${percentColor(v)}`}>
-                              {formatPercent(v)}
-                            </td>
-                          )
-                        })}
-                        <td className="py-1 text-right">
-                          <button
-                            onClick={() => handleRemovePeer(peer.ticker)}
-                            className="text-muted-foreground hover:text-destructive opacity-0 group-hover:opacity-100 transition-opacity"
-                          >
-                            <X className="h-3 w-3" />
-                          </button>
+                </div>
+              </div>
+
+              {quote && (
+                <FundamentalsPanel quote={quote} assetType={asset.type} benchmark={asset.benchmark} />
+              )}
+            </TabsContent>
+
+            {/* ── Calendar Years ────────────────────────────────────────── */}
+            <TabsContent value="calendar" className="space-y-4">
+              <p className="text-xs text-muted-foreground">
+                Retorno por año calendario (precio, moneda local).
+              </p>
+              <div className="h-56">
+                {calLoading ? (
+                  <Skeleton className="h-full w-full" />
+                ) : calYears.some((d) => d.return != null) ? (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={calYears} margin={{ top: 8, right: 4, left: 4, bottom: 4 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke={chartTheme.grid} vertical={false} />
+                      <XAxis
+                        dataKey="year"
+                        tick={{ fontSize: 10, fill: chartTheme.axis }}
+                        tickLine={false}
+                        axisLine={false}
+                      />
+                      <YAxis
+                        tick={{ fontSize: 10, fill: chartTheme.axis }}
+                        tickLine={false}
+                        axisLine={false}
+                        tickFormatter={(v: number) => `${v.toFixed(0)}%`}
+                      />
+                      <Tooltip
+                        contentStyle={chartTooltipStyle(chartTheme)}
+                        formatter={(v: number) => [formatPercent(v), 'Return']}
+                      />
+                      <Bar dataKey="return" radius={[3, 3, 0, 0]}>
+                        {calYears.map((d) => (
+                          <Cell key={d.year} fill={(d.return ?? 0) >= 0 ? chartTheme.gain : chartTheme.loss} />
+                        ))}
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+                    No calendar-year data available
+                  </div>
+                )}
+              </div>
+
+              {/* Fallback table */}
+              {calYears.length > 0 && (
+                <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
+                  {calYears.map((d) => (
+                    <div key={d.year} className="rounded-card border border-border bg-card p-2">
+                      <div className="text-[10px] font-mono uppercase tracking-wide text-muted-foreground">{d.year}</div>
+                      <div className={`text-sm font-mono font-semibold tabular-nums ${percentColor(d.return)}`}>
+                        {formatPercent(d.return)}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </TabsContent>
+
+            {/* ── Peers ─────────────────────────────────────────────────── */}
+            <TabsContent value="peers" className="space-y-4">
+              {/* Controls: period toggles + ann/usd + search */}
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="shrink-0 text-sm font-semibold">Peers</span>
+
+                <div className="flex flex-wrap gap-1">
+                  {PEER_PERIOD_OPTIONS.map((period) => (
+                    <button
+                      key={period}
+                      onClick={() => togglePeerMetric(period)}
+                      className={`focus-ring rounded-pill border px-2 py-0.5 text-xs font-medium transition-colors ${
+                        peerMetrics.includes(period)
+                          ? 'border-electric bg-electric text-ink-void'
+                          : 'border-border text-muted-foreground hover:border-foreground hover:text-foreground'
+                      }`}
+                    >
+                      {period}
+                    </button>
+                  ))}
+                </div>
+
+                <button
+                  onClick={() => setAnnualize((v) => !v)}
+                  title="Annualize returns for 3Y, 5Y, 10Y periods"
+                  className={`focus-ring rounded-pill border px-2 py-0.5 text-xs font-medium transition-colors ${
+                    annualize
+                      ? 'border-electric bg-electric text-ink-void'
+                      : 'border-border text-muted-foreground hover:border-foreground hover:text-foreground'
+                  }`}
+                >
+                  Ann.
+                </button>
+
+                <button
+                  onClick={() => setUsd((v) => !v)}
+                  title="Convert all values to USD using live FX rates"
+                  className={`focus-ring rounded-pill border px-2 py-0.5 text-xs font-medium transition-colors ${
+                    usd
+                      ? 'border-electric bg-electric text-ink-void'
+                      : 'border-border text-muted-foreground hover:border-foreground hover:text-foreground'
+                  }`}
+                >
+                  USD
+                </button>
+
+                <div className="relative z-[100] min-w-48 flex-1">
+                  <TickerSearch
+                    onAdd={handleAddCustomPeer}
+                    existingTickers={existingPeerTickers}
+                  />
+                </div>
+              </div>
+
+              {/* Comparison bar chart (asset vs peers) for one period */}
+              {peerMetrics.length > 0 && peerChartData.length > 0 && (
+                <div className="rounded-card border border-border bg-card p-3">
+                  <div className="mb-2 flex items-center justify-between gap-2">
+                    <span className="text-[10px] font-mono uppercase tracking-[0.12em] text-muted-foreground">
+                      Vs peers{usd ? ' · USD' : ''}
+                    </span>
+                    <SegmentedControl
+                      aria-label="Peer chart period"
+                      size="sm"
+                      options={peerMetrics.map((p) => ({ value: p, label: p }))}
+                      value={effectivePeerChartPeriod}
+                      onChange={(p) => setPeerChartPeriod(p as PeerPeriod)}
+                    />
+                  </div>
+                  <div className="h-44">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={peerChartData} margin={{ top: 4, right: 4, left: 4, bottom: 4 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke={chartTheme.grid} vertical={false} />
+                        <XAxis
+                          dataKey="ticker"
+                          tick={{ fontSize: 9, fill: chartTheme.axis }}
+                          tickLine={false}
+                          axisLine={false}
+                          interval={0}
+                          angle={-30}
+                          textAnchor="end"
+                          height={44}
+                        />
+                        <YAxis
+                          tick={{ fontSize: 10, fill: chartTheme.axis }}
+                          tickLine={false}
+                          axisLine={false}
+                          tickFormatter={(v: number) => `${v.toFixed(0)}%`}
+                        />
+                        <Tooltip
+                          contentStyle={chartTooltipStyle(chartTheme)}
+                          formatter={(v: number) => [formatPercent(v), effectivePeerChartPeriod]}
+                        />
+                        <Bar dataKey="value" radius={[3, 3, 0, 0]}>
+                          {peerChartData.map((d) => (
+                            <Cell
+                              key={d.ticker}
+                              fill={d.value >= 0 ? chartTheme.gain : chartTheme.loss}
+                              stroke={d.isAsset ? chartTheme.series[0] : undefined}
+                              strokeWidth={d.isAsset ? 2 : 0}
+                            />
+                          ))}
+                        </Bar>
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+              )}
+
+              {/* Peer table */}
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-border text-xs text-muted-foreground">
+                      <th className="pb-1 text-left font-medium">Ticker</th>
+                      <th className="pb-1 text-left font-medium">Name</th>
+                      <th className="pb-1 text-right font-medium">Price</th>
+                      <th className="pb-1 text-right font-medium">1D %</th>
+                      {peerMetrics.map((p) => (
+                        <th key={p} className="pb-1 text-right font-medium">
+                          {p} %{annualize && (ANNUALIZE_YEARS[p] || p === 'MAX') ? <span className="text-[10px] text-muted-foreground ml-0.5">ann</span> : null}
+                        </th>
+                      ))}
+                      <th className="pb-1 w-5" />
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {/* Pinned row — the asset being viewed, always first, not removable */}
+                    {(() => {
+                      const pq = peerQuotes[asset.ticker]
+                      const displayPrice = usd ? toUsd(pq?.price ?? quote?.price, asset.ticker) : (pq?.price ?? quote?.price)
+                      const display1d = adj1d(pq?.change_percent ?? quote?.change_percent, asset.ticker)
+                      return (
+                        <tr key={asset.ticker} className="border-b border-border bg-electric/5 font-semibold">
+                          <td className="py-1 font-mono">{asset.ticker}</td>
+                          <td className="py-1 max-w-[140px] truncate">{assetDisplayName ?? asset.name}</td>
+                          <td className="py-1 text-right tabular-nums">
+                            {formatPrice(displayPrice, usd ? 'USD' : (pq?.currency ?? quote?.currency ?? 'USD'))}
+                          </td>
+                          <td className={`py-1 text-right tabular-nums ${percentColor(display1d)}`}>
+                            {formatPercent(display1d)}
+                          </td>
+                          {peerMetrics.map((period) => {
+                            const raw = adjReturn(peerReturns[asset.ticker]?.[period], asset.ticker, period)
+                            const years = ANNUALIZE_YEARS[period] ?? (period === 'MAX' ? (peerMaxYears[asset.ticker] ?? null) : null)
+                            const v = annualize && years ? annualizeReturn(raw, years) : raw
+                            return (
+                              <td key={period} className={`py-1 text-right tabular-nums ${percentColor(v)}`}>
+                                {formatPercent(v)}
+                              </td>
+                            )
+                          })}
+                          <td className="py-1 w-5" />
+                        </tr>
+                      )
+                    })()}
+                    {allPeers.length === 0 && (
+                      <tr>
+                        <td colSpan={4 + peerMetrics.length + 1} className="py-3 text-center text-xs text-muted-foreground">
+                          No peers. Use the search above to add them.
                         </td>
                       </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
-            </div>
+                    )}
+                    {allPeers.map((peer) => {
+                      const pq = peerQuotes[peer.ticker]
+                      const displayPrice = usd ? toUsd(pq?.price, peer.ticker) : pq?.price
+                      const display1d = adj1d(pq?.change_percent, peer.ticker)
+                      return (
+                        <tr key={peer.ticker} className="group border-b border-border last:border-0">
+                          <td className="py-1 font-mono font-semibold">{peer.ticker}</td>
+                          <td className="py-1 text-muted-foreground max-w-[140px] truncate">
+                            {peerNames[peer.ticker] ?? peer.name}
+                          </td>
+                          <td className="py-1 text-right tabular-nums">
+                            {formatPrice(displayPrice, usd ? 'USD' : (pq?.currency ?? 'USD'))}
+                          </td>
+                          <td className={`py-1 text-right tabular-nums ${percentColor(display1d)}`}>
+                            {formatPercent(display1d)}
+                          </td>
+                          {peerMetrics.map((period) => {
+                            const raw = adjReturn(peerReturns[peer.ticker]?.[period], peer.ticker, period)
+                            const years = ANNUALIZE_YEARS[period] ?? (period === 'MAX' ? (peerMaxYears[peer.ticker] ?? null) : null)
+                            const v = annualize && years ? annualizeReturn(raw, years) : raw
+                            return (
+                              <td key={period} className={`py-1 text-right tabular-nums ${percentColor(v)}`}>
+                                {formatPercent(v)}
+                              </td>
+                            )
+                          })}
+                          <td className="py-1 text-right">
+                            <button
+                              onClick={() => handleRemovePeer(peer.ticker)}
+                              className="focus-ring text-muted-foreground hover:text-destructive opacity-0 group-hover:opacity-100 transition-opacity"
+                            >
+                              <X className="h-3 w-3" />
+                            </button>
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </TabsContent>
           </div>
-        </div>
+        </Tabs>
       </DialogContent>
     </Dialog>
   )

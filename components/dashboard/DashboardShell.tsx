@@ -49,12 +49,13 @@ export function DashboardShell({ user, children }: DashboardShellProps) {
 
       {/* Nav */}
       <nav className="flex-1 overflow-y-auto p-3 space-y-4">
-        <div>
+        <div data-tour="nav-watchlists">
           <p className="px-2 pb-1.5 text-[10px] font-mono uppercase tracking-[0.15em] text-muted-foreground">
             Navigation
           </p>
           <Link
             href="/"
+            data-tour="nav-overview"
             onClick={() => setSidebarOpen(false)}
             className="flex items-center gap-2 rounded-sm px-2 py-2 text-sm text-muted-foreground hover:bg-ink-elevated hover:text-foreground transition-colors min-h-[40px]"
           >
@@ -79,6 +80,7 @@ export function DashboardShell({ user, children }: DashboardShellProps) {
           </Link>
           <Link
             href="/vs-peers"
+            data-tour="nav-peers"
             onClick={() => setSidebarOpen(false)}
             className="flex items-center gap-2 rounded-sm px-2 py-2 text-sm text-muted-foreground hover:bg-ink-elevated hover:text-foreground transition-colors min-h-[40px]"
           >
@@ -87,6 +89,7 @@ export function DashboardShell({ user, children }: DashboardShellProps) {
           </Link>
           <Link
             href="/news"
+            data-tour="nav-news"
             onClick={() => setSidebarOpen(false)}
             className="flex items-center gap-2 rounded-sm px-2 py-2 text-sm text-muted-foreground hover:bg-ink-elevated hover:text-foreground transition-colors min-h-[40px]"
           >
@@ -138,6 +141,7 @@ export function DashboardShell({ user, children }: DashboardShellProps) {
       <header className="md:hidden flex h-12 shrink-0 items-center justify-between px-4 border-b border-border bg-ink-base z-10">
         <button
           onClick={() => setSidebarOpen(true)}
+          data-tour="mobile-menu"
           className="flex h-9 w-9 items-center justify-center rounded-sm text-muted-foreground hover:text-foreground hover:bg-ink-elevated transition-colors"
           aria-label="Open menu"
         >
@@ -180,7 +184,9 @@ export function DashboardShell({ user, children }: DashboardShellProps) {
 
         {/* Main content */}
         <main className="flex-1 overflow-y-auto min-w-0 flex flex-col">
-          <PriceMarquee />
+          <div data-tour="marquee">
+            <PriceMarquee />
+          </div>
           <div className="flex-1">
             {children}
           </div>

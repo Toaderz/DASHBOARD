@@ -65,6 +65,22 @@ const config: Config = {
         gain:    'hsl(var(--gain))',
         loss:    'hsl(var(--loss))',
         neutral: 'hsl(var(--neutral-text))',
+        brand: {
+          navy: 'hsl(var(--brand-navy))',
+          teal: 'hsl(var(--brand-teal))',
+        },
+        chart: {
+          1: 'hsl(var(--chart-1))',
+          2: 'hsl(var(--chart-2))',
+          3: 'hsl(var(--chart-3))',
+          4: 'hsl(var(--chart-4))',
+          5: 'hsl(var(--chart-5))',
+          6: 'hsl(var(--chart-6))',
+          7: 'hsl(var(--chart-7))',
+          8: 'hsl(var(--chart-8))',
+          grid: 'hsl(var(--chart-grid))',
+          axis: 'hsl(var(--chart-axis))',
+        },
         green: {
           flash: 'rgba(34,197,94,0.2)',
         },
@@ -76,6 +92,13 @@ const config: Config = {
         lg: 'var(--radius)',
         md: 'calc(var(--radius) - 2px)',
         sm: 'calc(var(--radius) - 4px)',
+        card: 'var(--radius-card)',
+        pill: 'var(--radius-pill)',
+      },
+      boxShadow: {
+        card: 'var(--shadow-card)',
+        pop:  'var(--shadow-pop)',
+        glow: 'var(--shadow-glow)',
       },
       keyframes: {
         'flash-green': {
@@ -94,12 +117,23 @@ const config: Config = {
           '0%':   { transform: 'translateX(-50%)' },
           '100%': { transform: 'translateX(0)' },
         },
+        'fade-in-up': {
+          '0%':   { opacity: '0', transform: 'translateY(8px)' },
+          '100%': { opacity: '1', transform: 'translateY(0)' },
+        },
+        'pulse-ring': {
+          '0%':   { boxShadow: '0 0 0 0 hsl(var(--electric) / 0.5)' },
+          '70%':  { boxShadow: '0 0 0 8px hsl(var(--electric) / 0)' },
+          '100%': { boxShadow: '0 0 0 0 hsl(var(--electric) / 0)' },
+        },
       },
       animation: {
         'flash-green':    'flash-green 1.5s ease-out forwards',
         'flash-red':      'flash-red 1.5s ease-out forwards',
         'marquee':        'marquee 60s linear infinite',
         'marquee-r':      'marquee-reverse 60s linear infinite',
+        'fade-in-up':     'fade-in-up 0.4s ease-out both',
+        'pulse-ring':     'pulse-ring 2s cubic-bezier(0.4,0,0.6,1) infinite',
       },
     },
   },

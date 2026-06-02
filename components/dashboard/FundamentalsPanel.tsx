@@ -1,23 +1,10 @@
 'use client'
 
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useRef, useCallback } from 'react'
 import { motion } from 'framer-motion'
-import { useMotionValue, useSpring } from 'framer-motion'
 import { Info } from 'lucide-react'
 import type { QuoteData, AssetType } from '@/types'
-
-// ─── Number Ticker ────────────────────────────────────────────────────────────
-// Animates from 0 to `target` using the abbreviated value (not the raw integer)
-function NumberTicker({ target, format }: { target: number; format: (v: number) => string }) {
-  const motionValue = useMotionValue(0)
-  const spring = useSpring(motionValue, { stiffness: 50, damping: 15 })
-  const [display, setDisplay] = useState(format(0))
-
-  useEffect(() => { motionValue.set(target) }, [target, motionValue])
-  useEffect(() => spring.on('change', (v) => setDisplay(format(v))), [spring, format])
-
-  return <span className="tabular-nums">{display}</span>
-}
+import { NumberTicker } from './NumberTicker'
 
 // ─── Metric Hint (fixed-position tooltip — immune to overflow-y-auto clipping) ─
 function MetricHint({ text }: { text: string }) {
@@ -95,8 +82,8 @@ function formatInceptionDate(iso: string): string {
 }
 
 // ─── Base card styles ─────────────────────────────────────────────────────────
-const BASE = 'rounded-lg border border-border bg-card p-3 flex flex-col gap-1'
-const GLOW = 'rounded-lg border border-border bg-card p-3 flex flex-col gap-1 cursor-default transition-all duration-300 hover:border-purple-500/40 hover:shadow-[0_0_20px_rgba(168,85,247,0.12)] hover:bg-purple-500/[0.03]'
+const BASE = 'rounded-card border border-border bg-card p-3 flex flex-col gap-1'
+const GLOW = 'rounded-card border border-border bg-card p-3 flex flex-col gap-1 cursor-default transition-all duration-300 hover:border-electric/40 hover:shadow-glow hover:bg-electric/[0.03]'
 const LABEL = 'text-[10px] font-mono uppercase tracking-[0.12em] text-muted-foreground flex items-center gap-1'
 const VALUE = 'text-lg font-bold tabular-nums leading-tight'
 const VALUE_SM = 'text-base font-semibold tabular-nums leading-tight'
@@ -116,7 +103,7 @@ function ProgressBar({ pct, index }: { pct: number; index: number }) {
   return (
     <div className="relative h-1.5 w-full rounded-full bg-muted/50 overflow-hidden">
       <motion.div
-        className="absolute inset-y-0 left-0 rounded-full bg-purple-500/70"
+        className="absolute inset-y-0 left-0 rounded-full bg-chart-2"
         initial={{ width: 0 }}
         animate={{ width: `${Math.min(pct, 100)}%` }}
         transition={{ duration: 0.55, delay: 0.3 + index * 0.05, ease: 'easeOut' }}
@@ -279,7 +266,7 @@ function FundPanel({ quote, benchmark }: { quote: QuoteData; benchmark?: string 
                 </span>
                 <span className={`${VALUE_SM} ${
                   m.sign
-                    ? (m.value! > 0 ? 'text-green-500' : m.value! < 0 ? 'text-red-500' : '')
+                    ? (m.value! > 0 ? 'text-gain' : m.value! < 0 ? 'text-loss' : '')
                     : ''
                 }`}>
                   {m.sign && m.value! > 0 ? '+' : ''}{m.value!.toFixed(2)}

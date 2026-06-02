@@ -121,14 +121,14 @@ export function WatchlistManager({
   }
 
   return (
-    <div className="flex flex-col gap-1">
+    <div className="flex flex-col gap-1" data-tour="watchlists">
       <div className="mb-1 flex items-center justify-between px-2">
         <span className="font-mono text-[10px] uppercase tracking-[0.15em] text-muted-foreground">
           Watchlists
         </span>
         <Dialog open={createOpen} onOpenChange={setCreateOpen}>
           <DialogTrigger asChild>
-            <Button variant="ghost-dim" size="sm" className="h-6 w-6 p-0">
+            <Button variant="ghost-dim" size="sm" className="h-6 w-6 p-0" data-tour="add-ticker">
               <Plus className="h-3.5 w-3.5" />
             </Button>
           </DialogTrigger>

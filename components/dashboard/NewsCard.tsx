@@ -3,6 +3,7 @@
 import { useState, type ComponentPropsWithoutRef } from 'react'
 import ReactMarkdown from 'react-markdown'
 import { ExternalLink, ChevronDown, ChevronUp } from 'lucide-react'
+import { Card } from '@/components/ui/card'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import type { MarketNews } from '@/types'
 
@@ -67,7 +68,7 @@ const markdownComponents = {
       referrerPolicy="no-referrer"
       // Si la imagen falla igual (token expirado/403), la ocultamos en vez de mostrar ícono roto.
       onError={(e) => { e.currentTarget.style.display = 'none' }}
-      className="w-full max-h-[55vh] object-contain rounded-lg my-5 bg-ink-base"
+      className="w-full max-h-[55vh] object-contain rounded-card my-5 bg-ink-base"
     />
   ),
 }
@@ -91,10 +92,10 @@ export function NewsCard({ news, userTickers }: Props) {
   const sb = news.score_breakdown
 
   return (
-    <div className="rounded-sm border border-border bg-ink-elevated flex flex-col overflow-hidden">
+    <Card className="flex flex-col overflow-hidden">
       {/* Header row */}
       <div className="flex items-start gap-2 p-4">
-        <span className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-mono ${signal.badge}`}>
+        <span className={`shrink-0 rounded-pill px-2 py-0.5 text-[11px] font-mono ${signal.badge}`}>
           {signal.emoji} {news.signal}
         </span>
         <span className={`shrink-0 text-[11px] font-mono font-semibold ${rating.color}`}>
@@ -113,14 +114,14 @@ export function NewsCard({ news, userTickers }: Props) {
         <p className="text-[11px] text-muted-foreground font-mono">
           {news.source_name}
           {news.published_at && ` · ${new Date(news.published_at).toLocaleDateString('es-MX', { day: 'numeric', month: 'short' })}`}
-          {' · '}Score: {news.score}/25
+          {' · '}Score: <span className="tabular-nums">{news.score}/25</span>
         </p>
       </div>
 
       {/* Portfolio relevance badge */}
       {isRelevant && (
         <div className="px-4 pb-3">
-          <span className="inline-flex items-center gap-1 rounded-sm bg-electric/10 px-2 py-0.5 text-[11px] text-electric font-mono">
+          <span className="inline-flex items-center gap-1 rounded-pill bg-electric/10 px-2 py-0.5 text-[11px] text-electric font-mono">
             🎯 Relevante para tu portafolio [{matchedTickers.join(', ')}]
           </span>
         </div>
@@ -214,6 +215,6 @@ export function NewsCard({ news, userTickers }: Props) {
           </DialogContent>
         </Dialog>
       )}
-    </div>
+    </Card>
   )
 }
