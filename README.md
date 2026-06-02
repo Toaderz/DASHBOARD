@@ -19,6 +19,8 @@ Dashboard financiero multiusuario SaaS para monitoreo de portafolios globales en
 
 ## Funcionalidades
 
+- **Overview** — dashboard agregado al entrar: KPIs de mejor/peor performer, cuántos activos "beating peers", snapshot de mercado en tiempo real y teaser del Market Brief; con enlaces "Ver todo" a cada sección
+- **Onboarding** — tour guiado automático la primera vez (spotlight interactivo paso a paso); se persiste en el perfil del usuario y no vuelve a aparecer
 - **Watchlists** por usuario con categorías y orden personalizable
 - **Precios en tiempo real** con flash verde/rojo al cambio (polling 5s)
 - **Marquee header** con índices y commodities globales (SPY, QQQ, BTC, GLD, etc.)
@@ -29,11 +31,11 @@ Dashboard financiero multiusuario SaaS para monitoreo de portafolios globales en
 - **Filtro inline** — busca por ticker o nombre dentro de la watchlist
 - **Ordenar por métrica** — click en cualquier cabecera; nulls siempre al fondo; respeta Ann. y USD
 - **Compartir watchlists** — por email; el destinatario ve la lista (solo lectura) con `de @usuario`; puede dejar de seguirla
-- **Modal de detalle** — gráfico histórico (Recharts) + panel de fundamentals animado + peers (editables y persistidos por usuario)
+- **Modal de detalle** — 3 tabs: Summary (gráfico histórico + fundamentals), Calendar Years (retornos por año calendario desde 2019), Peers (comparativa BarChart + tabla editable)
 - **Top 10 / Bottom 10** — vistas dedicadas de mejores y peores performers por período
-- **Beating Peers** — por cada activo de tus watchlists, en cuántas de 6 métricas (1D/1W/1M/6M/YTD/1Y) le gana a sus peers (gana un periodo si supera al ≥75% de ellos), con detalle de a cuántos y a cuáles. Retornos en USD. Peers auto-sugeridos (STATIC_PEERS exactos como override + selección dinámica con categoría Morningstar/global + sector/geo/tema), editables desde el modal de detalle y persistidos por usuario
+- **Beating Peers** — por cada activo de tus watchlists, en cuántas de 6 métricas (1D/1W/1M/6M/YTD/1Y) le gana a sus peers (gana un periodo si supera al ≥75% de ellos), con detalle de a cuántos y a cuáles. Retornos en USD. Peers auto-sugeridos deterministas (STATIC_PEERS exactos como override + scoring con categoría Morningstar/sector/geo), editables desde el modal y persistidos por usuario
 - **Market Brief (noticias)** — brief de mercado generado por IA dos veces por semana: resumen semanal (tema dominante, riesgo clave, qué vigilar) + tarjetas de noticias con señal (STRONG/MODERATE/WEAK), score 0–25, análisis y artículo completo legible. Foco geográfico EE.UU./México, sin redundancia temática, y badge 🎯 cuando la noticia toca un activo de tu watchlist
-- **Tema oscuro** por defecto con toggle dark/light
+- **Tema oscuro** por defecto con toggle dark/light; paleta de charts adaptativa (navy→teal→sky)
 
 ## Watchlists por defecto
 
@@ -71,7 +73,7 @@ CEREBRAS_API_KEY=            # fallback 2: Cerebras (free)
 
 ### 2. Base de datos
 
-Corre `supabase/schema.sql` completo en el SQL Editor de Supabase. Incluye DDL, RLS, triggers de seed y migraciones.
+Corre `supabase/schema.sql` completo en el SQL Editor de Supabase. Incluye DDL, RLS, triggers de seed y migraciones (columnas `source`/`peer_of` en `watchlist_assets`, curación en `user_asset_peers`, `country` en `price_cache`, `onboarding_seen` en `profiles`).
 
 ### 3. Desarrollo
 
@@ -105,27 +107,44 @@ app/api/cron/
 ### Hooks
 
 ```
-useRealtimePrices.ts      → polling 5s + flashStates (up/down 1.5s)
-usePerformanceMetrics.ts  → retornos históricos 1D→MAX
-useFxData.ts              → spot FX rates (1-min) + period returns (5-min)
-useWatchlistAssets.ts     → CRUD watchlists + sharing
-useTopPerformers.ts       → rankings top/bottom por período
-usePeerComparison.ts      → comparativa vs peers (dedup activos∪peers, USD, ganó X/6)
-usePeerSet.ts             → set de peers persistido por usuario (load + add/remove)
+useRealtimePrices.ts        → polling 5s + flashStates (up/down 1.5s)
+usePerformanceMetrics.ts    → retornos históricos 1D→MAX
+useFxData.ts                → spot FX rates (1-min) + period returns (5-min)
+useWatchlistAssets.ts       → CRUD watchlists + sharing (incluye source/peer_of)
+useTopPerformers.ts         → rankings top/bottom (solo source='user')
+usePeerComparison.ts        → Beating Peers: won/lost/insufficient, normalizado USD
+usePeerSet.ts               → add→pinned, remove→removed; STATIC_PEERS inalterables
+useCalendarYearReturns.ts   → retornos CY2019..actual (mode=calYear, staleTime 6h)
+useNewsBrief.ts             → brief vigente + market_news
 ```
 
 ### Componentes clave
 
 ```
-DashboardShell.tsx     → layout: sidebar, nav, PriceMarquee
-WatchlistTable.tsx     → TanStack Table: sort, filter, flash, modal
-AssetDetailModal.tsx   → gráfico Recharts + FundamentalsPanel + peers
-FundamentalsPanel.tsx  → bento grid con NumberTicker animado
-PriceMarquee.tsx       → ticker marquee header (tickers globales fijos)
-TopPerformers.tsx      → top 10 por período con FX
-BottomPerformers.tsx   → bottom 10 por período con FX
-PeerComparison.tsx     → vista Beating Peers (lista ordenada por métricas ganadas)
-PeerCard.tsx           → tarjeta por activo: ganó X/6 + filas por periodo expandibles
+OverviewDashboard.tsx  → dashboard agregado (KPIs, snapshot, leaderboards, brief)
+DashboardShell.tsx     → layout: sidebar, nav, PriceMarquee (data-tour attrs)
+WatchlistTable.tsx     → TanStack Table: sort, filter, flash, modal, toggle auto-peers
+AssetDetailModal.tsx   → Tabs: Summary (AreaChart) · Calendar Years · Peers
+FundamentalsPanel.tsx  → bento grid con NumberTicker animado (import externo)
+NumberTicker.tsx       → contador Framer Motion spring (extraído)
+SegmentedControl.tsx   → selector pill multi-opción
+PageHeader.tsx         → cabecera editorial reutilizable
+EmptyState.tsx         → estado vacío con CTA
+StatCard.tsx           → tarjeta de KPI con Tooltip
+PeerComparison.tsx     → lista ordenada por métricas ganadas
+PeerCard.tsx           → won/lost/insufficient + filas por periodo expandibles
+```
+
+### Sistema de diseño
+
+```
+lib/chart-theme.ts     → useChartTheme(): paleta reactiva al tema para Recharts
+lib/asset-style.ts     → typeBadgeClass()/typeLabel(): badges de tipo centralizados
+lib/market/benchmarks.ts → BENCHMARK_TICKERS/LABELS para marquee y Overview
+components/ui/card.tsx → Card, CardHeader, CardTitle, CardContent, CardFooter
+components/ui/tabs.tsx → Tabs in-house con teclado (sin @radix-ui/react-tabs)
+components/ui/tooltip.tsx → Tooltip sobre Radix Popover (sin nueva dep)
+components/onboarding/ → TourProvider + TourSpotlight (tour guiado)
 ```
 
 ### Pipeline de noticias (Market Brief)

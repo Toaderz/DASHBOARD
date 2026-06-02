@@ -58,6 +58,33 @@ function getAdminClient() {
 | `user_asset_peers` | Solo el propio usuario (`user_id = auth.uid()`, `for all`) — set de peers curado |
 | `returns_cache` | SELECT público, escritura solo vía service role |
 
+### Columnas de schema añadidas (migraciones)
+```sql
+-- watchlist_assets: distingue holdings del usuario de auto-peers del motor
+ALTER TABLE watchlist_assets ADD COLUMN source text NOT NULL DEFAULT 'user'
+  CHECK (source IN ('user','auto-peer'));
+ALTER TABLE watchlist_assets ADD COLUMN peer_of text;   -- ticker base; NULL si 'user'
+
+-- user_asset_peers: curación no destructiva
+ALTER TABLE user_asset_peers ADD COLUMN auto_peers text[] NOT NULL DEFAULT '{}';
+ALTER TABLE user_asset_peers ADD COLUMN removed    text[] NOT NULL DEFAULT '{}';
+ALTER TABLE user_asset_peers ADD COLUMN pinned     text[] NOT NULL DEFAULT '{}';
+ALTER TABLE user_asset_peers ADD COLUMN engine_version int NOT NULL DEFAULT 0;
+
+-- price_cache: país de acciones para scoring
+ALTER TABLE price_cache ADD COLUMN country text;
+
+-- profiles: estado de onboarding
+ALTER TABLE profiles ADD COLUMN onboarding_seen boolean NOT NULL DEFAULT false;
+```
+`peers` efectivo = `(auto_peers ∪ pinned) − removed`. Se recalcula y persiste en cada materialización.
+
+### Filtro `source='user'` — CRÍTICO
+Los siguientes consumidores DEBEN filtrar `source='user'` para que los auto-peers del motor NO contaminen resultados ni el pipeline de IA:
+- `hooks/useTopPerformers.ts` (`useAllWatchlistTickers`) — `.eq('source','user')`
+- `lib/ai/asset-enrichment.ts` y `lib/ai/news-pipeline.ts` — `.eq('source','user')`
+- RPC `get_top_tickers` en DB — incluye `WHERE source='user'`
+
 ### Flash animation de precios
 `useRealtimePrices` compara precio anterior con `useRef`, setea `'up'|'down'` en `flashStates`, se limpia a los 1.5s. Las clases CSS `animate-flash-green` y `animate-flash-red` están definidas en `tailwind.config.ts`.
 
@@ -77,14 +104,14 @@ function getAdminClient() {
 proxy.ts                           # Protección de rutas (Next.js 16) — NO es middleware.ts
 app/
   layout.tsx                       # Root layout — fuentes, ThemeProvider, QueryProvider
-  globals.css                      # Variables CSS (ink, electric, gain, loss), base styles
+  globals.css                      # Variables CSS (ink, electric, gain, loss, chart-1..8, brand, shadows, radii)
   manifest.ts                      # PWA manifest
   sw.ts                            # Service worker (Serwist)
   (auth)/
     login/page.tsx                 # Login + registro dual-mode
   (dashboard)/
-    layout.tsx                     # Server — verifica auth, renderiza DashboardShell
-    page.tsx                       # Redirect a primera watchlist del usuario
+    layout.tsx                     # Server — verifica auth + onboarding_seen, envuelve en TourProvider
+    page.tsx                       # Overview agregado (OverviewDashboard) — ya NO redirige a watchlist
     top10/page.tsx                 # Vista top 10 performers (wrapper de TopPerformers)
     bottom10/page.tsx              # Vista bottom 10 performers (wrapper de BottomPerformers)
     vs-peers/page.tsx              # Vista Beating Peers (wrapper de PeerComparison)
@@ -93,7 +120,7 @@ app/
   api/
     market/
       quote/route.ts               # Precios + fundamentals; cache en price_cache (TTL 60s / 24h)
-      history/route.ts             # Yahoo Finance v8 históricos + FX period returns
+      history/route.ts             # Yahoo Finance v8 históricos + FX period returns + mode=calYear (año calendario)
       returns/route.ts             # POST batch — retornos multi-periodo (1W/1M/6M/YTD/1Y) + caché returns_cache (TTL 6h)
       search/route.ts              # Búsqueda de tickers (Finnhub)
       export/route.ts              # Export de watchlist a CSV
@@ -107,41 +134,55 @@ app/
       find/route.ts                # GET ?email= — resuelve email → user_id (service role)
 components/
   providers.tsx                    # QueryClient + ThemeProvider (wrapper raíz)
+  onboarding/
+    TourProvider.tsx               # Context: running/stepIndex, start/next/prev/skip/finish; auto-start-once (onboarding_seen + localStorage)
+    TourSpotlight.tsx              # Overlay con cutout getBoundingClientRect + Card tooltip; Escape/resize/motion
   dashboard/
-    DashboardShell.tsx             # Layout principal: sidebar + nav + PriceMarquee (client)
+    DashboardShell.tsx             # Layout principal: sidebar + nav + PriceMarquee (data-tour attrs añadidos)
+    OverviewDashboard.tsx          # Dashboard agregado: KPIs, MarketSnapshot, mini-leaderboards, brief teaser
     WatchlistView.tsx              # Bridge server→client: recibe props del server, renderiza tabla
-    WatchlistTable.tsx             # TanStack Table: columnas, filtro inline, sort, modal
-    WatchlistManager.tsx           # CRUD watchlists + share dialog en sidebar
-    AssetDetailModal.tsx           # Modal: gráfico Recharts + fundamentals + peers (editables/persistidos vía usePeerSet)
-    FundamentalsPanel.tsx          # Panel premium bento: métricas animadas con NumberTicker
+    WatchlistTable.tsx             # TanStack Table: columnas, filtro inline, sort, modal, toggle auto-peers
+    WatchlistManager.tsx           # CRUD watchlists + share dialog en sidebar (data-tour attrs añadidos)
+    AssetDetailModal.tsx           # Modal con Tabs: Summary (AreaChart) · Calendar Years (BarChart) · Peers
+    FundamentalsPanel.tsx          # Panel premium bento: métricas animadas con NumberTicker (importado)
+    NumberTicker.tsx               # Contador animado Framer Motion (extraído de FundamentalsPanel)
+    SegmentedControl.tsx           # Selector pill multi-opción (rounded-pill, size sm/md)
+    PageHeader.tsx                 # Cabecera de página: título editorial + descripción + icon + actions slot
+    EmptyState.tsx                 # Estado vacío: icono, título, descripción, CTA, variante compact
+    StatCard.tsx                   # Tarjeta de KPI: label, value, delta, sub, icon, hint (Tooltip)
     PriceCell.tsx                  # Celda tabla con flash CSS verde/rojo
     AnimatedPrice.tsx              # Precio animado con Framer Motion (slide up/down)
-    PriceMarquee.tsx               # Ticker marquee header (SPY, QQQ, IWM, GLD, BTC, etc.)
+    PriceMarquee.tsx               # Ticker marquee header (tickers globales fijos de BENCHMARK_TICKERS)
     MetricsSelector.tsx            # Checkbox toggle columnas (persiste en JSONB watchlists)
-    TickerSearch.tsx               # Búsqueda con debounce 300ms
-    TopPerformers.tsx              # Vista top 10 performers por período
-    BottomPerformers.tsx           # Vista bottom 10 performers por período
-    PeerComparison.tsx             # Vista Beating Peers: lista de activos ordenada por métricas ganadas
-    PeerCard.tsx                   # Tarjeta por activo: "ganó X/6" + filas por periodo expandibles (a quién le gana)
-    NewsBlock.tsx                  # Brief de mercado: header + WeeklyBriefCard + grid de NewsCard
+    TickerSearch.tsx               # Búsqueda con debounce 300ms; usa typeBadgeClass/typeLabel de asset-style
+    TopPerformers.tsx              # Vista top 10 performers — PageHeader + SegmentedControl + Card
+    BottomPerformers.tsx           # Vista bottom 10 performers — PageHeader + SegmentedControl + Card
+    PeerComparison.tsx             # Vista Beating Peers: PageHeader + EmptyState + lista ordenada
+    PeerCard.tsx                   # Tarjeta por activo: won/lost/insufficient + filas por periodo expandibles
+    NewsBlock.tsx                  # Brief de mercado: PageHeader + WeeklyBriefCard + grid de NewsCard
     WeeklyBriefCard.tsx            # Resumen semanal: tema/riesgo, conteos de señal, qué vigilar
     NewsCard.tsx                   # Tarjeta de noticia: señal/rating, badge 🎯, análisis, artículo completo
     ThemeToggle.tsx                # Toggle dark/light mode
-  ui/                              # shadcn/ui: badge, button, checkbox, dialog, input, label, popover, skeleton
+  ui/
+    card.tsx                       # Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter
+    tabs.tsx                       # Tabs in-house (sin @radix-ui/react-tabs): teclado ArrowLeft/Right/Home/End
+    tooltip.tsx                    # Tooltip sobre Radix Popover (sin @radix-ui/react-tooltip); hover+focus
+                                   # shadcn/ui: badge, button, checkbox, dialog, input, label, popover, skeleton
 hooks/
-  useWatchlistAssets.ts            # useWatchlists + useWatchlistAssets + useWatchlistShares
+  useWatchlistAssets.ts            # useWatchlists + useWatchlistAssets (incluye source/peer_of) + useWatchlistShares
   useRealtimePrices.ts             # Polling 5s + flashStates (useRef para prev prices)
   usePerformanceMetrics.ts         # Cálculo retornos históricos (1D→MAX)
   useFxData.ts                     # FX spot rates (1-min) + period returns (5-min)
-  useTopPerformers.ts              # useAllWatchlistTickers + rankings top/bottom por período
-  usePeerComparison.ts             # Beating Peers: dedup activos∪peers + retornos USD + "ganó X/6" por activo
-  usePeerSet.ts                    # Set de peers persistido por usuario (load + add/remove; init vía /api/peers/init)
+  useTopPerformers.ts              # useAllWatchlistTickers (.eq source=user) + rankings top/bottom por período
+  usePeerComparison.ts             # Beating Peers: won/lost/insufficient gate settled; no-USD sin FX → null
+  usePeerSet.ts                    # add→pinned, remove→removed+borra fila; STATIC_PEERS nunca se recomputa
+  useCalendarYearReturns.ts        # Retornos por año calendario (CY2019..actual); mode=calYear, staleTime 6h
   useNewsBrief.ts                  # GET /api/news/current — brief vigente + market_news
 lib/
   ai/
     news-pipeline.ts               # Pipeline de noticias: searchNews→rankCandidates→selectTop7→extractContent→analyzeAndSynthesize→selectFinalArticles
     asset-enrichment.ts            # Relevancia determinista: enrichAssetProfiles (Fase A) + matchAffectedSymbols (Fase B)
-    article-clean.ts               # Limpieza determinista del full_text_md (quita nav/ads/social/bio/relacionados; corta en "Our Standards"/"Read Next")
+    article-clean.ts               # Limpieza determinista del full_text_md
     llm.ts                         # callLLM provider-agnostic (cadena Gemini→Groq→Cerebras) + extractJson robusto
     source-authority.ts            # Mapa dominio→autoridad (0..1) para pre-ranking determinista
   supabase/
@@ -149,17 +190,20 @@ lib/
     server.ts                      # Server Supabase client (cookies async)
     middleware.ts                  # updateSession — refresca tokens en cada request
   market/
-    finnhub.ts                     # Finnhub API client (search + quote fallback)
-    history.ts                     # Yahoo Finance v8 históricos + calculateReturn + calculateMultiReturns (1 serie 1Y → 5 periodos)
-    peer-taxonomy.ts               # STATIC_PEERS map + computeInitialPeers() + scoring con boost de categoría Morningstar
-    morningstar-categories.ts      # MS_GLOBAL_CATEGORY (MS→global) + MS→clasificación; compartido finnhub/peer-taxonomy
+    finnhub.ts                     # Finnhub API client (search + quote fallback + campo country para acciones)
+    history.ts                     # Yahoo Finance v8 históricos + calculateReturn + calculateMultiReturns
+    peer-taxonomy.ts               # STATIC_PEERS + computeInitialPeers() + scoring Morningstar + tie-breaker estable
+    morningstar-categories.ts      # MS_GLOBAL_CATEGORY + MS→clasificación; compartido finnhub/peer-taxonomy
+    benchmarks.ts                  # BENCHMARK_TICKERS + BENCHMARK_LABELS (marquee y Overview)
+  chart-theme.ts                   # useChartTheme() reactivo a resolvedTheme; CHART_SERIES (navy→teal), SEMANTIC, chartTooltipStyle
+  asset-style.ts                   # TYPE_BADGE (mapa por AssetType), typeBadgeClass(), typeLabel() — fuente única de badges
   utils/
     cn.ts                          # clsx + tailwind-merge
-    formatters.ts                  # formatCurrency, formatPercent, formatMarketCap, etc.
-types/index.ts                     # AssetType, MetricKey, Profile, Watchlist, WatchlistAsset,
-                                   # QuoteData, HistoricalDataPoint, WatchlistShare,
+    formatters.ts                  # formatCurrency, formatPercent, formatMarketCap; percentColor() → text-gain/text-loss
+types/index.ts                     # AssetType, MetricKey, Profile (+ onboarding_seen), Watchlist, WatchlistAsset (+ source/peer_of),
+                                   # QuoteData (+ country), HistoricalDataPoint, WatchlistShare,
                                    # FlashState, MetricDefinition, METRIC_DEFINITIONS
-supabase/schema.sql                # DDL completo + RLS + triggers + funciones seed
+supabase/schema.sql                # DDL completo + RLS + triggers + funciones seed + migraciones Fase 1-2
 scripts/
   diagnose.mjs                     # node scripts/diagnose.mjs <TICKER> — 3 capas de debug
   inspect-asset.mjs                # Inspección de metadata + peers de un activo
@@ -203,6 +247,18 @@ node scripts/check-llm.mjs           # Verifica que la cadena LLM responde (Gemi
 ```
 
 ## Notas de arquitectura
+
+### Sistema de diseño (Fase 3)
+- **Paleta de charts**: `CHART_SERIES` (8 tonos navy→teal→sky, `--chart-1..8`). Consumir siempre vía `useChartTheme()` (`lib/chart-theme.ts`) — resuelve CSS vars a hex/hsl concretos para Recharts; es reactivo a `resolvedTheme`. NUNCA hardcodear colores en charts.
+- **Semánticos**: `text-gain`/`text-loss` (no `text-green-500`/`text-red-500`). `percentColor()` en `formatters.ts` ya los emite.
+- **Badges de tipo de activo**: siempre vía `typeBadgeClass(type)` / `typeLabel(type)` de `lib/asset-style.ts`. ETF → teal de marca (no purple).
+- **Primitivos reutilizables**: `Card` (rounded-card + shadow-card), `Tabs` (in-house, sin nueva dep), `Tooltip` (sobre Radix Popover, sin nueva dep). Usar en toda vista nueva.
+- **`no purple` invariant**: `purple-*`/`a855f7`/`168,85,247` no deben existir en componentes (excepto badge editorial de riesgo Alta en `WeeklyBriefCard` que es rojo, no purple). Verificar con grep.
+- **AreaChart en AssetDetailModal**: stroke/gradients → `chartTheme.gain/loss`; grid/axes → `chartTheme.grid/axis`; tooltip → `chartTooltipStyle(chartTheme)`. Se actualiza automáticamente al cambiar tema.
+- **Tailwind tokens nuevos**: `rounded-card`, `rounded-pill`, `shadow-card`, `shadow-pop`, `shadow-glow`, `colors.brand.navy/teal`, `colors.chart.1..8`. Definidos en `tailwind.config.ts`.
+- **`.focus-ring`**: usar en todos los `<button>`/`<input>` crudos (no shadcn) para a11y.
+
+### Peers deterministas (Fase 1-2)
 - Caché de precios en Supabase `price_cache` (no en memoria) — serverless-safe
 - TTL precios: 60s. TTL fundamentals: 24h (`fundamentals_fetched_at` timestamptz)
 - `price_cache.currency` se puebla desde `meta.currency` de Yahoo Finance v8
@@ -212,14 +268,17 @@ node scripts/check-llm.mjs           # Verifica que la cadena LLM responde (Gemi
 - **Conversión USD**: `useFxData` obtiene spot rates vía `/api/market/quote` (pares como `GBPUSD=X`) y period returns vía `/api/market/history`. GBX (peniques) usa `GBPUSD=X ÷ 100`. Fórmula retornos: `(1 + local%) × (1 + fx_period%) − 1`
 - **Watchlists por defecto** (3): First Trust, Evolve Universe, Pershing Square — sembradas vía trigger `on_profile_created_seed_watchlists`. Backfill manual: `SELECT seed_<name>_watchlist(id) FROM profiles`
 - **CT funds tickers**: `0P0000NCAC` (Global Tech), `0P00000R12.L` (Japan), `0P00000R0U.L` (European), `0P0001CZXM.L` (Global Focus), `0P00000XBQ.L` (North American) — tickers internos Yahoo Finance para fondos sin cotización directa
-- **Peer taxonomy** (`lib/market/peer-taxonomy.ts`): mapa estático `STATIC_PEERS` curado para todos los activos de las 3 watchlists. `computeInitialPeers(selectedAsset, allAssets, { categories })` lo consulta primero (override exacto); si no hay entrada, cae al scoring algorítmico (`scorePeerSimilarity`) sobre el catálogo `TAXONOMY`. El scoring suma un **boost por categoría Morningstar** (misma `morningstarCategory` +25, misma `globalCategory` +12) cuando ambos lados la conocen; `classifyFromMetadata` usa la categoría Morningstar como señal primaria. El mapa `MS_CATEGORY_TO_CLASSIFICATION` (en `peer-taxonomy.ts`) traduce categoría→strategy/universe/etc. Las `categories` (ticker→{morningstar,global}) se inyectan desde `price_cache`
+- **Peer taxonomy** (`lib/market/peer-taxonomy.ts`): mapa estático `STATIC_PEERS` curado para todos los activos de las 3 watchlists. `computeInitialPeers(selectedAsset, allAssets, { categories })` lo consulta primero (override exacto); si no hay entrada, cae al scoring algorítmico (`scorePeerSimilarity`) sobre el catálogo `TAXONOMY`. El scoring suma un **boost por categoría Morningstar** (misma `morningstarCategory` +25, misma `globalCategory` +12) cuando ambos lados la conocen; `classifyFromMetadata` usa la categoría Morningstar como señal primaria. El mapa `MS_CATEGORY_TO_CLASSIFICATION` (en `peer-taxonomy.ts`) traduce categoría→strategy/universe/etc. Las `categories` (ticker→{morningstar,global}) se inyectan desde `price_cache`. Tie-breaker estable en sort final: `b.score - a.score || (a.ticker < b.ticker ? -1 : 1)` — mismo `price_cache` → mismo set siempre. Constantes `MIN_PEER_SCORE=60`, `MAX_AUTO_PEERS=8`. **NUNCA** recomputa ni sobreescribe entradas `STATIC_PEERS`.
 - **Filtro inline de watchlist**: input "Filter list…" en toolbar de `WatchlistTable` — filtra por ticker/nombre en tiempo real sin afectar precios ni modal
 - **Ordenar por métrica**: columnas numéricas tienen `sortingFn` personalizado que extrae el valor numérico respetando toggles USD/Ann. `numSort` envía nulls al fondo. Columnas `helper.display()` necesitan `sortingFn` explícito; CCY y actions tienen `enableSorting: false`
 - **Compartir watchlists**: `WatchlistManager` muestra Share2 (hover). Dialog resuelve email → `user_id` vía `/api/users/find`, inserta en `watchlist_shares`. El destinatario ve la lista con icono `Users` + subtexto `de @username`. Puede dejar de seguir (DELETE donde `shared_with_user_id = currentUserId`). PostgREST devuelve join de `profiles` como array — usar `share.profiles?.[0]?.email`
 - **Top/Bottom performers** (`useTopPerformers.ts`): `useAllWatchlistTickers` carga todos los tickers del usuario vía Supabase (join `watchlist_assets` + `assets_metadata`). Luego `/api/market/history` por período para calcular retornos y ordenar
-- **Beating Peers** (`/vs-peers`, `usePeerComparison.ts` + `PeerComparison`/`PeerCard`): por cada activo del usuario muestra en cuántas de **6 métricas** (1D/1W/1M/6M/YTD/1Y) le gana a sus peers. Un periodo se cuenta como **ganado si supera al ≥75%** de los peers con dato (`beaten/total ≥ 0.75`; empate NO cuenta como vencido). 1D viene de quotes en vivo; el resto de `/api/market/returns` (POST batch, caché `returns_cache` 6h, `calculateMultiReturns` = 1 serie 1Y → 5 periodos). Todo se normaliza a **USD** con `useFxData` (misma fórmula que Top performers). Se **deduplica la unión** activos∪peers (cada ticker se pide una sola vez). El set de peers por activo se materializa de forma **determinista** en `/api/peers/init` (categorías SIEMPRE desde `price_cache`, no del caller) y se persiste en `user_asset_peers`; el modal y la página comparten ese set (curación con `usePeerSet`). ⚠️ Checkpoint conocido: la ventana del retorno del activo (por-fecha) y la del FX period return (`range=` de Yahoo) pueden desfasar levemente en activos no-USD
-- **FundamentalsPanel**: panel bento premium con `NumberTicker` (Framer Motion spring) para animar métricas. Tooltips de información con posición `fixed` para evitar clipping en contenedores `overflow-y-auto`
-- **PriceMarquee**: marquee header con tickers globales fijos (SPY, QQQ, IWM, GLD, TLT, BND, DX-Y.NYB, CL=F, GC=F, BTC-USD) — polling independiente de las watchlists del usuario
+- **Beating Peers** (`/vs-peers`, `usePeerComparison.ts` + `PeerComparison`/`PeerCard`): por cada activo del usuario muestra en cuántas de **6 métricas** (1D/1W/1M/6M/YTD/1Y) le gana a sus peers. Un periodo se cuenta como **ganado si supera al ≥75%** de los peers con dato (`beaten/total ≥ 0.75`; empate NO cuenta como vencido). 1D viene de quotes en vivo; el resto de `/api/market/returns` (POST batch, caché `returns_cache` 6h, `calculateMultiReturns` = 1 serie 1Y → 5 periodos). Todo se normaliza a **USD** con `useFxData` (misma fórmula que Top performers). Se **deduplica la unión** activos∪peers (cada ticker se pide una sola vez). El set de peers por activo se materializa de forma **determinista** en `/api/peers/init` (categorías SIEMPRE desde `price_cache`, no del caller) y se persiste en `user_asset_peers`; el modal y la página comparten ese set (curación con `usePeerSet`). Estado por periodo: `'won'|'lost'|'insufficient'` — se evalúa solo cuando `loadingReturns===false` y todas las monedas requeridas están presentes/confirmadas-ausentes; activos no-USD sin FX → `null` (nunca compara retorno local como si fuera USD). `PeerCard` renderiza "—" para `insufficient`. ⚠️ Checkpoint conocido: la ventana del retorno del activo (por-fecha) y la del FX period return (`range=` de Yahoo) pueden desfasar levemente en activos no-USD
+- **FundamentalsPanel**: panel bento premium con `NumberTicker` (importado de `components/dashboard/NumberTicker.tsx`). Tooltips de información con posición `fixed` para evitar clipping en contenedores `overflow-y-auto`
+- **PriceMarquee**: marquee header con tickers de `BENCHMARK_TICKERS` (`lib/market/benchmarks.ts`) — polling independiente de las watchlists del usuario
+- **Overview** (`OverviewDashboard.tsx`): dashboard agregado en `/` (ya no redirige a watchlist). KPIs best/worst performer (`useTopPerformers`), contador "beating peers" (`usePeerComparison`), snapshot de mercado (`useRealtimePrices(BENCHMARK_TICKERS)`), teaser del Market Brief (`useNewsBrief`). Solo reutiliza hooks existentes — cero endpoints nuevos.
+- **AssetDetailModal — Tabs**: 3 tabs (Summary · Calendar Years · Peers). Calendar Years usa `useCalendarYearReturns` gateado: solo fetchea cuando `activeTab === 'calendar'` (pasa `null` en otras tabs, `enabled: !!ticker` previene la request). `activeTab` se resetea al cerrar el modal. Todos los hooks son incondicionales (Rules of Hooks).
+- **Onboarding**: `TourProvider` + `TourSpotlight` en `components/onboarding/`. `app/(dashboard)/layout.tsx` lee `profiles.onboarding_seen` y pasa la prop. Tour arranca automáticamente una sola vez (localStorage `evolve_onboarding_seen` como fallback). Al terminar/saltar persiste en Supabase via browser client (RLS permite UPDATE del propio perfil). Anchors `data-tour="..."` en `DashboardShell` y `WatchlistManager`.
 
 ### Sección de noticias (Market Brief)
 - **Pipeline** (`lib/ai/news-pipeline.ts`, orquestado en `app/api/cron/news-pipeline/route.ts`): `enrichAssetProfiles` → `searchNews` (Tavily) → `rankCandidates` (pre-ranking determinista) → `selectTop7` (selección LLM) → `extractContent` (Firecrawl) → `analyzeAndSynthesize` (análisis/scoring LLM) → `matchAffectedSymbols` (matching determinista) → `selectFinalArticles` → insert en `market_briefs` + `market_news`
