@@ -55,6 +55,8 @@ function getAdminClient() {
 | `watchlist_shares` | `owner_manage_shares` (dueño gestiona) + `recipient_view_shares` (destinatario puede SELECT) |
 | `assets_metadata` | SELECT público + INSERT para usuarios autenticados |
 | `price_cache` | SELECT público, escritura solo vía service role |
+| `user_asset_peers` | Solo el propio usuario (`user_id = auth.uid()`, `for all`) — set de peers curado |
+| `returns_cache` | SELECT público, escritura solo vía service role |
 
 ### Flash animation de precios
 `useRealtimePrices` compara precio anterior con `useRef`, setea `'up'|'down'` en `flashStates`, se limpia a los 1.5s. Las clases CSS `animate-flash-green` y `animate-flash-red` están definidas en `tailwind.config.ts`.
@@ -85,14 +87,18 @@ app/
     page.tsx                       # Redirect a primera watchlist del usuario
     top10/page.tsx                 # Vista top 10 performers (wrapper de TopPerformers)
     bottom10/page.tsx              # Vista bottom 10 performers (wrapper de BottomPerformers)
+    vs-peers/page.tsx              # Vista Beating Peers (wrapper de PeerComparison)
     news/page.tsx                  # Brief de mercado (wrapper de NewsBlock)
     watchlist/[id]/page.tsx        # Server — carga watchlist + assets por ID
   api/
     market/
       quote/route.ts               # Precios + fundamentals; cache en price_cache (TTL 60s / 24h)
       history/route.ts             # Yahoo Finance v8 históricos + FX period returns
+      returns/route.ts             # POST batch — retornos multi-periodo (1W/1M/6M/YTD/1Y) + caché returns_cache (TTL 6h)
       search/route.ts              # Búsqueda de tickers (Finnhub)
       export/route.ts              # Export de watchlist a CSV
+    peers/
+      init/route.ts                # POST — materializa (determinista) el set inicial de peers por usuario/activo
     news/
       current/route.ts             # GET — brief vigente (o último como stale) + market_news (auth)
     cron/
@@ -106,7 +112,7 @@ components/
     WatchlistView.tsx              # Bridge server→client: recibe props del server, renderiza tabla
     WatchlistTable.tsx             # TanStack Table: columnas, filtro inline, sort, modal
     WatchlistManager.tsx           # CRUD watchlists + share dialog en sidebar
-    AssetDetailModal.tsx           # Modal: gráfico Recharts + fundamentals + peers curados
+    AssetDetailModal.tsx           # Modal: gráfico Recharts + fundamentals + peers (editables/persistidos vía usePeerSet)
     FundamentalsPanel.tsx          # Panel premium bento: métricas animadas con NumberTicker
     PriceCell.tsx                  # Celda tabla con flash CSS verde/rojo
     AnimatedPrice.tsx              # Precio animado con Framer Motion (slide up/down)
@@ -115,6 +121,8 @@ components/
     TickerSearch.tsx               # Búsqueda con debounce 300ms
     TopPerformers.tsx              # Vista top 10 performers por período
     BottomPerformers.tsx           # Vista bottom 10 performers por período
+    PeerComparison.tsx             # Vista Beating Peers: lista de activos ordenada por métricas ganadas
+    PeerCard.tsx                   # Tarjeta por activo: "ganó X/6" + filas por periodo expandibles (a quién le gana)
     NewsBlock.tsx                  # Brief de mercado: header + WeeklyBriefCard + grid de NewsCard
     WeeklyBriefCard.tsx            # Resumen semanal: tema/riesgo, conteos de señal, qué vigilar
     NewsCard.tsx                   # Tarjeta de noticia: señal/rating, badge 🎯, análisis, artículo completo
@@ -126,6 +134,8 @@ hooks/
   usePerformanceMetrics.ts         # Cálculo retornos históricos (1D→MAX)
   useFxData.ts                     # FX spot rates (1-min) + period returns (5-min)
   useTopPerformers.ts              # useAllWatchlistTickers + rankings top/bottom por período
+  usePeerComparison.ts             # Beating Peers: dedup activos∪peers + retornos USD + "ganó X/6" por activo
+  usePeerSet.ts                    # Set de peers persistido por usuario (load + add/remove; init vía /api/peers/init)
   useNewsBrief.ts                  # GET /api/news/current — brief vigente + market_news
 lib/
   ai/
@@ -140,8 +150,9 @@ lib/
     middleware.ts                  # updateSession — refresca tokens en cada request
   market/
     finnhub.ts                     # Finnhub API client (search + quote fallback)
-    history.ts                     # Yahoo Finance v8 históricos con User-Agent header
-    peer-taxonomy.ts               # STATIC_PEERS map + computeInitialPeers()
+    history.ts                     # Yahoo Finance v8 históricos + calculateReturn + calculateMultiReturns (1 serie 1Y → 5 periodos)
+    peer-taxonomy.ts               # STATIC_PEERS map + computeInitialPeers() + scoring con boost de categoría Morningstar
+    morningstar-categories.ts      # MS_GLOBAL_CATEGORY (MS→global) + MS→clasificación; compartido finnhub/peer-taxonomy
   utils/
     cn.ts                          # clsx + tailwind-merge
     formatters.ts                  # formatCurrency, formatPercent, formatMarketCap, etc.
@@ -201,11 +212,12 @@ node scripts/check-llm.mjs           # Verifica que la cadena LLM responde (Gemi
 - **Conversión USD**: `useFxData` obtiene spot rates vía `/api/market/quote` (pares como `GBPUSD=X`) y period returns vía `/api/market/history`. GBX (peniques) usa `GBPUSD=X ÷ 100`. Fórmula retornos: `(1 + local%) × (1 + fx_period%) − 1`
 - **Watchlists por defecto** (3): First Trust, Evolve Universe, Pershing Square — sembradas vía trigger `on_profile_created_seed_watchlists`. Backfill manual: `SELECT seed_<name>_watchlist(id) FROM profiles`
 - **CT funds tickers**: `0P0000NCAC` (Global Tech), `0P00000R12.L` (Japan), `0P00000R0U.L` (European), `0P0001CZXM.L` (Global Focus), `0P00000XBQ.L` (North American) — tickers internos Yahoo Finance para fondos sin cotización directa
-- **Peer taxonomy** (`lib/market/peer-taxonomy.ts`): mapa estático `STATIC_PEERS` curado para todos los activos de las 3 watchlists. `computeInitialPeers()` lo consulta primero; si no hay entrada, cae al scoring algorítmico
+- **Peer taxonomy** (`lib/market/peer-taxonomy.ts`): mapa estático `STATIC_PEERS` curado para todos los activos de las 3 watchlists. `computeInitialPeers(selectedAsset, allAssets, { categories })` lo consulta primero (override exacto); si no hay entrada, cae al scoring algorítmico (`scorePeerSimilarity`) sobre el catálogo `TAXONOMY`. El scoring suma un **boost por categoría Morningstar** (misma `morningstarCategory` +25, misma `globalCategory` +12) cuando ambos lados la conocen; `classifyFromMetadata` usa la categoría Morningstar como señal primaria. El mapa `MS_CATEGORY_TO_CLASSIFICATION` (en `peer-taxonomy.ts`) traduce categoría→strategy/universe/etc. Las `categories` (ticker→{morningstar,global}) se inyectan desde `price_cache`
 - **Filtro inline de watchlist**: input "Filter list…" en toolbar de `WatchlistTable` — filtra por ticker/nombre en tiempo real sin afectar precios ni modal
 - **Ordenar por métrica**: columnas numéricas tienen `sortingFn` personalizado que extrae el valor numérico respetando toggles USD/Ann. `numSort` envía nulls al fondo. Columnas `helper.display()` necesitan `sortingFn` explícito; CCY y actions tienen `enableSorting: false`
 - **Compartir watchlists**: `WatchlistManager` muestra Share2 (hover). Dialog resuelve email → `user_id` vía `/api/users/find`, inserta en `watchlist_shares`. El destinatario ve la lista con icono `Users` + subtexto `de @username`. Puede dejar de seguir (DELETE donde `shared_with_user_id = currentUserId`). PostgREST devuelve join de `profiles` como array — usar `share.profiles?.[0]?.email`
 - **Top/Bottom performers** (`useTopPerformers.ts`): `useAllWatchlistTickers` carga todos los tickers del usuario vía Supabase (join `watchlist_assets` + `assets_metadata`). Luego `/api/market/history` por período para calcular retornos y ordenar
+- **Beating Peers** (`/vs-peers`, `usePeerComparison.ts` + `PeerComparison`/`PeerCard`): por cada activo del usuario muestra en cuántas de **6 métricas** (1D/1W/1M/6M/YTD/1Y) le gana a sus peers. Un periodo se cuenta como **ganado si supera al ≥75%** de los peers con dato (`beaten/total ≥ 0.75`; empate NO cuenta como vencido). 1D viene de quotes en vivo; el resto de `/api/market/returns` (POST batch, caché `returns_cache` 6h, `calculateMultiReturns` = 1 serie 1Y → 5 periodos). Todo se normaliza a **USD** con `useFxData` (misma fórmula que Top performers). Se **deduplica la unión** activos∪peers (cada ticker se pide una sola vez). El set de peers por activo se materializa de forma **determinista** en `/api/peers/init` (categorías SIEMPRE desde `price_cache`, no del caller) y se persiste en `user_asset_peers`; el modal y la página comparten ese set (curación con `usePeerSet`). ⚠️ Checkpoint conocido: la ventana del retorno del activo (por-fecha) y la del FX period return (`range=` de Yahoo) pueden desfasar levemente en activos no-USD
 - **FundamentalsPanel**: panel bento premium con `NumberTicker` (Framer Motion spring) para animar métricas. Tooltips de información con posición `fixed` para evitar clipping en contenedores `overflow-y-auto`
 - **PriceMarquee**: marquee header con tickers globales fijos (SPY, QQQ, IWM, GLD, TLT, BND, DX-Y.NYB, CL=F, GC=F, BTC-USD) — polling independiente de las watchlists del usuario
 

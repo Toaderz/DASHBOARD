@@ -29,8 +29,9 @@ Dashboard financiero multiusuario SaaS para monitoreo de portafolios globales en
 - **Filtro inline** — busca por ticker o nombre dentro de la watchlist
 - **Ordenar por métrica** — click en cualquier cabecera; nulls siempre al fondo; respeta Ann. y USD
 - **Compartir watchlists** — por email; el destinatario ve la lista (solo lectura) con `de @usuario`; puede dejar de seguirla
-- **Modal de detalle** — gráfico histórico (Recharts) + panel de fundamentals animado + peers curados
+- **Modal de detalle** — gráfico histórico (Recharts) + panel de fundamentals animado + peers (editables y persistidos por usuario)
 - **Top 10 / Bottom 10** — vistas dedicadas de mejores y peores performers por período
+- **Beating Peers** — por cada activo de tus watchlists, en cuántas de 6 métricas (1D/1W/1M/6M/YTD/1Y) le gana a sus peers (gana un periodo si supera al ≥75% de ellos), con detalle de a cuántos y a cuáles. Retornos en USD. Peers auto-sugeridos (STATIC_PEERS exactos como override + selección dinámica con categoría Morningstar/global + sector/geo/tema), editables desde el modal de detalle y persistidos por usuario
 - **Market Brief (noticias)** — brief de mercado generado por IA dos veces por semana: resumen semanal (tema dominante, riesgo clave, qué vigilar) + tarjetas de noticias con señal (STRONG/MODERATE/WEAK), score 0–25, análisis y artículo completo legible. Foco geográfico EE.UU./México, sin redundancia temática, y badge 🎯 cuando la noticia toca un activo de tu watchlist
 - **Tema oscuro** por defecto con toggle dark/light
 
@@ -88,8 +89,11 @@ npm run build  # TypeScript check + build
 app/api/market/
   quote/    → precios + fundamentals (cache 60s/24h en price_cache)
   history/  → retornos históricos + FX period returns
+  returns/  → POST batch: retornos multi-periodo (1W/1M/6M/YTD/1Y) con caché returns_cache (TTL 6h)
   search/   → búsqueda de tickers
   export/   → export CSV de watchlist
+app/api/peers/
+  init/     → POST: materializa (determinista) el set inicial de peers por usuario/activo
 app/api/users/
   find/     → resuelve email → user_id (service role, para compartir)
 app/api/news/
@@ -106,6 +110,8 @@ usePerformanceMetrics.ts  → retornos históricos 1D→MAX
 useFxData.ts              → spot FX rates (1-min) + period returns (5-min)
 useWatchlistAssets.ts     → CRUD watchlists + sharing
 useTopPerformers.ts       → rankings top/bottom por período
+usePeerComparison.ts      → comparativa vs peers (dedup activos∪peers, USD, ganó X/6)
+usePeerSet.ts             → set de peers persistido por usuario (load + add/remove)
 ```
 
 ### Componentes clave
@@ -118,6 +124,8 @@ FundamentalsPanel.tsx  → bento grid con NumberTicker animado
 PriceMarquee.tsx       → ticker marquee header (tickers globales fijos)
 TopPerformers.tsx      → top 10 por período con FX
 BottomPerformers.tsx   → bottom 10 por período con FX
+PeerComparison.tsx     → vista Beating Peers (lista ordenada por métricas ganadas)
+PeerCard.tsx           → tarjeta por activo: ganó X/6 + filas por periodo expandibles
 ```
 
 ### Pipeline de noticias (Market Brief)
