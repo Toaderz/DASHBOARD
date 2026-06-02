@@ -37,6 +37,7 @@ export interface Profile {
   avatar_url: string | null
   created_at: string
   is_team_evolve?: boolean
+  onboarding_seen?: boolean
 }
 
 // Perfil de relevancia estable por activo (Fase A del pipeline de noticias).
@@ -73,6 +74,11 @@ export interface Watchlist {
 
 export interface AssetWithCategory extends AssetMetadata {
   category: string | null
+  // Materialización de peers en la watchlist:
+  //   'user'      → holding agregado por el usuario
+  //   'auto-peer' → peer resuelto por el motor (badge/grupo, promovible/removible)
+  source?: 'user' | 'auto-peer'
+  peer_of?: string | null   // ticker base del que es peer (solo 'auto-peer')
 }
 
 export interface WatchlistAsset {
@@ -112,6 +118,7 @@ export interface QuoteData {
   nav?: number | null
   sector?: string | null
   industry?: string | null
+  country?: string | null
   fund_family?: string | null
   alpha?: number | null
   r_squared?: number | null

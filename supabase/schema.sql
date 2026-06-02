@@ -51,9 +51,13 @@ create table if not exists watchlist_assets (
   category     text,
   sort_order   integer,
   added_at     timestamptz default now(),
+  -- 'user' = holding agregado por el usuario; 'auto-peer' = peer materializado por el motor.
+  source       text not null default 'user' check (source in ('user','auto-peer')),
+  peer_of      text,  -- ticker base del que esta fila es peer (solo 'auto-peer'); NULL si 'user'
   primary key (id),
   constraint watchlist_assets_unique unique nulls not distinct (watchlist_id, asset_ticker, category)
 );
+create index if not exists idx_watchlist_assets_source on watchlist_assets (watchlist_id, source);
 
 -- 5. PRICE CACHE (shared across users, TTL enforced in app layer)
 create table if not exists price_cache (
@@ -75,6 +79,7 @@ create table if not exists price_cache (
   nav                    numeric,
   sector                 text,
   industry               text,
+  country                text,   -- país (assetProfile.country) — señal para scoring de peers de acciones
   fund_family            text,
   alpha                  numeric,
   r_squared              numeric,
@@ -93,8 +98,12 @@ create table if not exists price_cache (
 create table if not exists user_asset_peers (
   user_id      uuid not null references auth.users(id) on delete cascade,
   asset_ticker text not null,
-  peers        text[] not null default '{}',
+  peers        text[] not null default '{}',   -- efectivo = (auto_peers ∪ pinned) − removed
   initialized  boolean not null default false,
+  auto_peers   text[] not null default '{}',   -- último set computado por el motor (determinista)
+  removed      text[] not null default '{}',   -- peers removidos por el usuario (nunca se re-agregan)
+  pinned       text[] not null default '{}',   -- peers agregados/promovidos por el usuario (siempre se mantienen)
+  engine_version int not null default 0,       -- subir para forzar recálculo global del motor
   updated_at   timestamptz default now(),
   primary key (user_id, asset_ticker)
 );
@@ -790,4 +799,37 @@ create policy "authenticated_read_profiles" on profiles
 --   );
 --   ALTER TABLE returns_cache ENABLE ROW LEVEL SECURITY;
 --   CREATE POLICY "public read returns" ON returns_cache FOR SELECT USING (true);
+--
+-- Step 10 — Motor de peers determinista + materialización en watchlist + onboarding
+-- (run once per DB; idempotente). DEBE correrse ANTES de desplegar el código nuevo.
+--   -- 10a. watchlist_assets: distinguir holdings del usuario de peers automáticos.
+--   ALTER TABLE watchlist_assets ADD COLUMN IF NOT EXISTS source text NOT NULL DEFAULT 'user';
+--   ALTER TABLE watchlist_assets DROP CONSTRAINT IF EXISTS watchlist_assets_source_check;
+--   ALTER TABLE watchlist_assets ADD CONSTRAINT watchlist_assets_source_check CHECK (source IN ('user','auto-peer'));
+--   ALTER TABLE watchlist_assets ADD COLUMN IF NOT EXISTS peer_of text;
+--   CREATE INDEX IF NOT EXISTS idx_watchlist_assets_source ON watchlist_assets (watchlist_id, source);
+--
+--   -- 10b. user_asset_peers: procedencia para curación no destructiva y determinista.
+--   ALTER TABLE user_asset_peers ADD COLUMN IF NOT EXISTS auto_peers text[] NOT NULL DEFAULT '{}';
+--   ALTER TABLE user_asset_peers ADD COLUMN IF NOT EXISTS removed    text[] NOT NULL DEFAULT '{}';
+--   ALTER TABLE user_asset_peers ADD COLUMN IF NOT EXISTS pinned     text[] NOT NULL DEFAULT '{}';
+--   ALTER TABLE user_asset_peers ADD COLUMN IF NOT EXISTS engine_version int NOT NULL DEFAULT 0;
+--
+--   -- 10c. price_cache: país para scoring de acciones (single source of truth de fundamentals).
+--   ALTER TABLE price_cache ADD COLUMN IF NOT EXISTS country text;
+--
+--   -- 10d. profiles: flag de onboarding (tour visto). RLS de update propio ya existe.
+--   ALTER TABLE profiles ADD COLUMN IF NOT EXISTS onboarding_seen boolean NOT NULL DEFAULT false;
+--
+--   -- 10e. (Opcional pero recomendado) Si la RPC get_top_tickers existe, redefínela para
+--   --      contar SOLO holdings del usuario (excluir auto-peers). El fallback en código ya filtra.
+--   CREATE OR REPLACE FUNCTION get_top_tickers()
+--   RETURNS TABLE(ticker text) LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public AS $$
+--     SELECT asset_ticker AS ticker
+--     FROM watchlist_assets
+--     WHERE source = 'user'
+--     GROUP BY asset_ticker
+--     ORDER BY count(*) DESC
+--     LIMIT 50;
+--   $$;
 -- ============================================================

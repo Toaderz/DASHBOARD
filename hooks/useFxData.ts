@@ -50,6 +50,7 @@ export function useFxData(
 ): {
   fxRates: Record<string, FxSpotRate>
   fxPeriodReturns: Record<string, Partial<Record<MetricKey, number | null>>>
+  loading: boolean
 } {
   const nonUsd = [...new Set(currencies.filter((c) => c !== 'USD'))]
   const fxTickers = [...new Set(nonUsd.map((c) => FX_TICKER[c]).filter(Boolean))]
@@ -57,7 +58,7 @@ export function useFxData(
   const cyPeriods = activePeriods.filter((p) => p in CY_YEAR)
   const returnPeriods = activePeriods.filter((p) => p !== '1D' && !(p in CY_YEAR))
 
-  const { data: spotQuotes } = useQuery<Record<string, QuoteData>>({
+  const { data: spotQuotes, isLoading: spotLoading } = useQuery<Record<string, QuoteData>>({
     queryKey: ['fxSpot', fxTickers.sort().join(',')],
     queryFn: async () => {
       const res = await fetch(`/api/market/quote?tickers=${fxTickers.join(',')}`)
@@ -69,7 +70,7 @@ export function useFxData(
     refetchInterval: 60_000,
   })
 
-  const { data: periodData } = useQuery<Record<string, Partial<Record<MetricKey, number | null>>>>({
+  const { data: periodData, isLoading: periodLoading } = useQuery<Record<string, Partial<Record<MetricKey, number | null>>>>({
     queryKey: ['fxPeriodReturns', nonUsd.sort().join(','), returnPeriods.join(','), cyPeriods.join(',')],
     queryFn: async () => {
       const result: Record<string, Partial<Record<MetricKey, number | null>>> = {}
@@ -115,5 +116,8 @@ export function useFxData(
     fxRates[currency] = { rate: quote.price / divisor, change1d: quote.change_percent }
   }
 
-  return { fxRates, fxPeriodReturns: periodData ?? {} }
+  // "loading" = primera carga en curso de cualquiera de las queries habilitadas (no en refetch de fondo).
+  const loading = spotLoading || periodLoading
+
+  return { fxRates, fxPeriodReturns: periodData ?? {}, loading }
 }

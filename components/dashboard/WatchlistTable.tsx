@@ -52,6 +52,8 @@ export function WatchlistTable({
   const [annualize, setAnnualize] = useState(false)
   const [usd, setUsd] = useState(false)
   const [filterQuery, setFilterQuery] = useState('')
+  const [showAutoPeers, setShowAutoPeers] = useState(true)
+  const hasAutoPeers = useMemo(() => assets.some((a) => a.source === 'auto-peer'), [assets])
 
   // Years for annualizable periods (>1Y with fixed duration)
   const ANNUALIZE_YEARS: Partial<Record<string, number>> = { '3Y': 3, '5Y': 5, '10Y': 10 }
@@ -183,7 +185,17 @@ export function WatchlistTable({
         helper.accessor('ticker', {
           header: 'Ticker',
           cell: ({ row }) => (
-            <span className="font-mono text-xs font-bold tracking-wider text-electric">{row.original.ticker}</span>
+            <span className="flex items-center gap-1.5">
+              <span className="font-mono text-xs font-bold tracking-wider text-electric">{row.original.ticker}</span>
+              {row.original.source === 'auto-peer' && (
+                <span
+                  title={`Peer auto-resuelto${row.original.peer_of ? ` de ${row.original.peer_of}` : ''}`}
+                  className="font-mono text-[9px] uppercase tracking-wider text-muted-foreground border border-border rounded px-1 py-0.5 leading-none"
+                >
+                  peer
+                </span>
+              )}
+            </span>
           ),
         }),
         helper.accessor('name', {
@@ -455,11 +467,10 @@ export function WatchlistTable({
 
   const filteredAssets = useMemo(() => {
     const q = filterQuery.trim().toLowerCase()
-    if (!q) return assets
-    return assets.filter(
-      (a) => a.ticker.toLowerCase().includes(q) || a.name.toLowerCase().includes(q)
-    )
-  }, [assets, filterQuery])
+    let list = showAutoPeers ? assets : assets.filter((a) => a.source !== 'auto-peer')
+    if (q) list = list.filter((a) => a.ticker.toLowerCase().includes(q) || a.name.toLowerCase().includes(q))
+    return list
+  }, [assets, filterQuery, showAutoPeers])
 
   const table = useReactTable({
     data: filteredAssets,
@@ -540,6 +551,19 @@ export function WatchlistTable({
           >
             USD
           </button>
+          {hasAutoPeers && (
+            <button
+              onClick={() => setShowAutoPeers((v) => !v)}
+              title="Mostrar u ocultar los peers resueltos automáticamente (agrupados bajo cada activo)"
+              className={`rounded-sm border px-2 py-1 font-mono text-xs tracking-wider uppercase transition-colors ${
+                showAutoPeers
+                  ? 'bg-electric text-ink-void border-electric'
+                  : 'border-border text-muted-foreground hover:border-electric/50 hover:text-foreground'
+              }`}
+            >
+              Peers
+            </button>
+          )}
           <MetricsSelector selected={activeMetrics} onChange={handleMetricsChange} />
         </div>
       </div>

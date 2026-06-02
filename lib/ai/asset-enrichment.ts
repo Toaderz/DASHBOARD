@@ -85,7 +85,8 @@ interface EnrichedProfile extends RelevanceProfile {
 export async function enrichAssetProfiles(supabase: SupabaseClient): Promise<void> {
   try {
     // Unión de todos los tickers presentes en cualquier watchlist (multi-tenant).
-    const { data: waRows } = await supabase.from('watchlist_assets').select('asset_ticker')
+    // source='user': excluye peers auto-materializados (no son holdings que el usuario eligió).
+    const { data: waRows } = await supabase.from('watchlist_assets').select('asset_ticker').eq('source', 'user')
     const tickers = [...new Set((waRows ?? []).map((r) => r.asset_ticker as string))]
     if (!tickers.length) return
 
@@ -198,7 +199,7 @@ export interface UniverseAsset {
 // Carga el universo (unión de todos los activos en cualquier watchlist) con su perfil.
 // Excluye índices: se tratan como contexto macro general, no generan badge de ticker.
 export async function loadUniverseAssets(supabase: SupabaseClient): Promise<UniverseAsset[]> {
-  const { data: waRows } = await supabase.from('watchlist_assets').select('asset_ticker')
+  const { data: waRows } = await supabase.from('watchlist_assets').select('asset_ticker').eq('source', 'user')
   const tickers = [...new Set((waRows ?? []).map((r) => r.asset_ticker as string))]
   if (!tickers.length) return []
   const { data } = await supabase

@@ -33,10 +33,13 @@ export function useAllWatchlistTickers() {
   useEffect(() => {
     const supabase = createClient()
     async function load() {
-      // Two queries to avoid FK-join uncertainty
+      // Two queries to avoid FK-join uncertainty.
+      // source='user': excluye los peers auto-materializados (NO son holdings del usuario),
+      // para que Top/Bottom Performers y Beating Peers (que usa este hook) no los cuenten.
       const { data: waData } = await supabase
         .from('watchlist_assets')
         .select('asset_ticker, watchlists!inner(name)')
+        .eq('source', 'user')
 
       if (!waData) { setLoading(false); return }
 

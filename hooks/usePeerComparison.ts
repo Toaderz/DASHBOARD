@@ -12,17 +12,22 @@ export const PEER_CMP_PERIODS: MetricKey[] = ['1D', '1W', '1M', '6M', 'YTD', '1Y
 const RETURN_PERIODS: MetricKey[] = ['1W', '1M', '6M', 'YTD', '1Y']
 // A period is "won" when the asset beats at least this share of its peers.
 const WIN_THRESHOLD = 0.75
+// Mínimo de peers con dato comparable para declarar ganado/perdido (evita veredictos con muy poca data).
+const MIN_EVALUABLE = 1
 
 interface MultiReturns {
   returns: Partial<Record<MetricKey, number | null>>
   years: Partial<Record<MetricKey, number | null>>
 }
 
+export type PeriodState = 'won' | 'lost' | 'insufficient'
+
 export interface PeriodResult {
   beaten: string[]      // peer tickers strictly beaten this period
   evaluated: string[]   // peer tickers with valid data this period (beaten ⊆ evaluated)
   total: number         // = evaluated.length
-  won: boolean          // beaten/total >= 0.75
+  won: boolean          // state === 'won'
+  state: PeriodState    // 'insufficient' hasta que los datos se asienten (evita parpadeo)
   assetReturn: number | null
 }
 
@@ -69,8 +74,8 @@ export function usePeerComparison() {
     return [...set]
   }, [tickers, peerSets])
 
-  // 3. Live quotes (1D + currency) for the union.
-  const { prices } = useRealtimePrices(unionTickers)
+  // 3. Live quotes (1D + currency) for the union. `pricesLoading` = primera carga (no refetch de fondo).
+  const { prices, isLoading: pricesLoading } = useRealtimePrices(unionTickers)
 
   // 4. Multi-period returns for the union (server-side cached).
   const [returnsData, setReturnsData] = useState<Record<string, MultiReturns>>({})
@@ -101,7 +106,12 @@ export function usePeerComparison() {
     }
     return [...set]
   }, [unionTickers, prices])
-  const { fxRates, fxPeriodReturns } = useFxData(currencies, RETURN_PERIODS)
+  const { fxRates, fxPeriodReturns, loading: fxLoading } = useFxData(currencies, RETURN_PERIODS)
+
+  // "Settled": todas las cargas iniciales terminaron. Hasta entonces NO calculamos won/lost
+  // (los datos llegan async/parciales y harían parpadear el conteo). Los refetch de fondo
+  // posteriores reflejan movimientos reales del mercado (comportamiento deseado, no parpadeo).
+  const settled = !loadingTickers && !loadingPeers && !loadingReturns && !pricesLoading && !fxLoading
 
   // 6. Compute comparison per asset (everything normalized to USD).
   const results = useMemo<AssetComparison[]>(() => {
@@ -116,7 +126,8 @@ export function usePeerComparison() {
       const fx = period === '1D'
         ? (fxRates[currency]?.change1d ?? null)
         : (fxPeriodReturns[currency]?.[period] ?? null)
-      if (fx == null) return local // no FX data → fall back to local (flagged in plan)
+      // Sin FX → NO comparable (null). Nunca comparamos un retorno local como si fuera USD.
+      if (fx == null) return null
       return ((1 + local / 100) * (1 + fx / 100) - 1) * 100
     }
 
@@ -129,22 +140,27 @@ export function usePeerComparison() {
       let evaluatedPeriods = 0
 
       for (const period of PEER_CMP_PERIODS) {
-        const assetReturn = getUsdReturn(t.ticker, period)
+        const assetReturn = settled ? getUsdReturn(t.ticker, period) : null
         const beaten: string[] = []
         const evaluated: string[] = []
-        if (assetReturn != null) {
+        if (settled && assetReturn != null) {
           for (const peer of peers) {
             const pr = getUsdReturn(peer, period)
-            if (pr == null) continue
+            if (pr == null) continue // peer sin dato comparable (incl. no-USD sin FX) → fuera
             evaluated.push(peer)
             if (assetReturn > pr) beaten.push(peer) // strict; ties don't count
           }
         }
         const total = evaluated.length
-        const won = total > 0 && beaten.length / total >= WIN_THRESHOLD
-        if (total > 0) evaluatedPeriods++
+        // Estado determinista: 'insufficient' hasta asentar o sin datos suficientes; si no, won/lost.
+        let state: PeriodResult['state'] = 'insufficient'
+        if (settled && assetReturn != null && total >= MIN_EVALUABLE) {
+          state = beaten.length / total >= WIN_THRESHOLD ? 'won' : 'lost'
+        }
+        const won = state === 'won'
+        if (state !== 'insufficient') evaluatedPeriods++
         if (won) metricsWon++
-        byPeriod[period] = { beaten, evaluated, total, won, assetReturn }
+        byPeriod[period] = { beaten, evaluated, total, won, state, assetReturn }
       }
 
       return {
@@ -161,11 +177,12 @@ export function usePeerComparison() {
 
     // Rank by metrics won, then by total periods evaluated (more data = more confident).
     return out.sort((a, b) => b.metricsWon - a.metricsWon || b.evaluatedPeriods - a.evaluatedPeriods || a.ticker.localeCompare(b.ticker))
-  }, [tickers, peerSets, returnsData, prices, fxRates, fxPeriodReturns])
+  }, [tickers, peerSets, returnsData, prices, fxRates, fxPeriodReturns, settled])
 
   return {
     results,
-    loading: loadingTickers || loadingPeers || loadingReturns,
+    // loading hasta que todo se asienta → la UI muestra skeleton en vez de un conteo que parpadea.
+    loading: !settled,
     isEmpty: !loadingTickers && tickers.length === 0,
   }
 }

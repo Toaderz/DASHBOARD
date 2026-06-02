@@ -103,16 +103,18 @@ export function useWatchlistAssets(watchlistId: string) {
     setLoading(true)
     const { data } = await supabase
       .from('watchlist_assets')
-      .select('asset_ticker, category, sort_order, assets_metadata(*)')
+      .select('asset_ticker, category, sort_order, source, peer_of, assets_metadata(*)')
       .eq('watchlist_id', watchlistId)
       .order('sort_order', { ascending: true, nullsFirst: false })
       .order('added_at', { ascending: true })
 
-    const mapped = (data ?? []).map((row: { asset_ticker: string; category: string | null; sort_order: number | null; assets_metadata: AssetMetadata | AssetMetadata[] | null }) => {
+    const mapped = (data ?? []).map((row: { asset_ticker: string; category: string | null; sort_order: number | null; source: string | null; peer_of: string | null; assets_metadata: AssetMetadata | AssetMetadata[] | null }) => {
       const meta = Array.isArray(row.assets_metadata) ? row.assets_metadata[0] : row.assets_metadata
       return {
         ...(meta ?? { ticker: row.asset_ticker, name: row.asset_ticker, type: 'stock' as const, sector: null, region: null, industry: null, benchmark: null, manager: null }),
         category: row.category ?? null,
+        source: (row.source ?? 'user') as 'user' | 'auto-peer',
+        peer_of: row.peer_of ?? null,
       }
     })
 
@@ -135,13 +137,23 @@ export function useWatchlistAssets(watchlistId: string) {
   }
 
   const removeAsset = async (ticker: string) => {
+    // Borra el holding del usuario y, si tenía peers auto-materializados, también esos.
     const { error } = await supabase
       .from('watchlist_assets')
       .delete()
       .eq('watchlist_id', watchlistId)
       .eq('asset_ticker', ticker)
+      .eq('source', 'user')
 
-    if (!error) setAssets((prev) => prev.filter((a) => a.ticker !== ticker))
+    if (!error) {
+      await supabase
+        .from('watchlist_assets')
+        .delete()
+        .eq('watchlist_id', watchlistId)
+        .eq('peer_of', ticker)
+        .eq('source', 'auto-peer')
+      setAssets((prev) => prev.filter((a) => a.ticker !== ticker && a.peer_of !== ticker))
+    }
     return { error }
   }
 

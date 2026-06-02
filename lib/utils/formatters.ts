@@ -59,7 +59,7 @@ export function formatExpenseRatio(value: number | undefined | null): string {
 
 export function percentColor(value: number | undefined | null): string {
   if (value == null) return 'text-muted-foreground'
-  if (value > 0) return 'text-green-500'
-  if (value < 0) return 'text-red-500'
+  if (value > 0) return 'text-gain'
+  if (value < 0) return 'text-loss'
   return 'text-muted-foreground'
 }

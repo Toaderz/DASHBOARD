@@ -45,14 +45,39 @@ export interface AssetClassification {
   // Morningstar signals (when known) — used as a high-confidence dynamic signal.
   morningstarCategory?: string | null
   globalCategory?: string | null
+  // Holdings-based + fundamental signals, congelados desde price_cache al materializar.
+  // Habilitan el scoring determinista estilo-Morningstar (ETF/fondo) y la proximidad de acciones.
+  sectorWeights?: Record<string, number> | null  // sector → peso (0..1)
+  holdings?: string[] | null                      // símbolos top, MAYÚSCULAS + ordenados
+  expenseRatio?: number | null                    // decimal (0.007 = 0.7%)
+  aum?: number | null
+  country?: string | null
+  marketCap?: number | null
 }
 
-// Known category hints (Morningstar + global) keyed by ticker, fed from price_cache.
+// Señales por ticker alimentadas desde price_cache (única fuente estable). Congeladas al materializar.
+export interface PeerSignals {
+  morningstar?: string | null
+  global?: string | null
+  sectorWeights?: Record<string, number> | null
+  holdings?: string[] | null
+  expenseRatio?: number | null
+  aum?: number | null
+  country?: string | null
+  marketCap?: number | null
+}
+export type PeerSignalsMap = Record<string, PeerSignals>
+
+// Alias retrocompatible (solo hints Morningstar) — algunas firmas antiguas lo usan.
 export type CategoryHints = Record<string, { morningstar?: string | null; global?: string | null }>
 
 export interface PeerOptions {
-  categories?: CategoryHints
+  signals?: PeerSignalsMap
 }
+
+// Gate de candidatos y tope de peers (deterministas, nombrados para claridad).
+export const MIN_PEER_SCORE = 60
+export const MAX_AUTO_PEERS = 8
 
 const STRATEGY_ADJACENCY: Partial<Record<Strategy, Strategy[]>> = {
   // ETF strategies
@@ -641,16 +666,23 @@ function classifyFromCategory(
   }
 }
 
-// Attaches known category hints to a classification (without mutating the original).
-function withCategoryHints(
+// Adjunta señales conocidas (Morningstar + holdings + fundamentals) a una clasificación,
+// sin mutar el original. Las señales vienen congeladas desde price_cache al materializar.
+function withSignals(
   cls: AssetClassification,
-  hint: { morningstar?: string | null; global?: string | null } | undefined
+  sig: PeerSignals | undefined
 ): AssetClassification {
-  if (!hint || (hint.morningstar == null && hint.global == null)) return cls
+  if (!sig) return cls
   return {
     ...cls,
-    morningstarCategory: cls.morningstarCategory ?? hint.morningstar ?? null,
-    globalCategory: cls.globalCategory ?? hint.global ?? null,
+    morningstarCategory: cls.morningstarCategory ?? sig.morningstar ?? null,
+    globalCategory: cls.globalCategory ?? sig.global ?? null,
+    sectorWeights: sig.sectorWeights ?? cls.sectorWeights ?? null,
+    holdings: sig.holdings ?? cls.holdings ?? null,
+    expenseRatio: sig.expenseRatio ?? cls.expenseRatio ?? null,
+    aum: sig.aum ?? cls.aum ?? null,
+    country: sig.country ?? cls.country ?? null,
+    marketCap: sig.marketCap ?? cls.marketCap ?? null,
   }
 }
 
@@ -659,10 +691,10 @@ function withCategoryHints(
 // Returns null for stocks without sector data (not enough signal).
 function classifyFromMetadata(
   asset: AssetMetadata,
-  hint?: { morningstar?: string | null; global?: string | null }
+  sig?: PeerSignals
 ): AssetClassification | null {
   // Morningstar category is the highest-confidence dynamic signal when available.
-  const fromCategory = classifyFromCategory(hint?.morningstar, hint?.global)
+  const fromCategory = classifyFromCategory(sig?.morningstar, sig?.global)
   if (fromCategory) return fromCategory
 
   const type = asset.type
@@ -802,7 +834,55 @@ export function scorePeerSimilarity(a: AssetClassification, b: AssetClassificati
     score += 12
   }
 
-  return Math.min(score, 100)
+  // 8. Holdings-based overlap (ETF/fondo, estilo Morningstar) — solo si AMBOS tienen el dato.
+  //    Todas son funciones puras y acotadas de señales congeladas (no introducen drift).
+  // 8a. Overlap de sectores (0..20): Σ min(w_a, w_b) (similitud Manhattan, acotada 0..1).
+  if (a.sectorWeights && b.sectorWeights) {
+    let inter = 0
+    for (const [sector, wa] of Object.entries(a.sectorWeights)) {
+      const wb = b.sectorWeights[sector]
+      if (wb != null) inter += Math.min(wa, wb)
+    }
+    score += Math.round(20 * Math.min(1, inter))
+  }
+  // 8b. Jaccard de top holdings (0..15): |A∩B| / |A∪B| sobre símbolos (≥3 cada lado).
+  if (a.holdings && b.holdings && a.holdings.length >= 3 && b.holdings.length >= 3) {
+    const setB = new Set(b.holdings)
+    let common = 0
+    for (const h of a.holdings) if (setB.has(h)) common++
+    const union = new Set([...a.holdings, ...b.holdings]).size
+    if (union > 0) score += Math.round(15 * (common / union))
+  }
+  // 8c. Proximidad de expense ratio (0..3): decimales, buckets fijos.
+  if (a.expenseRatio != null && b.expenseRatio != null) {
+    const diff = Math.abs(a.expenseRatio - b.expenseRatio)
+    if (diff <= 0.0010) score += 3
+    else if (diff <= 0.0025) score += 1
+  }
+  // 8d. Banda de AUM (0..2): mismo bucket log10 fijo (sin ranking relativo → determinista).
+  if (a.aum != null && b.aum != null) {
+    const aumBand = (v: number) => (v < 1e8 ? 0 : v < 1e9 ? 1 : v < 1e10 ? 2 : v < 1e11 ? 3 : 4)
+    const d = Math.abs(aumBand(a.aum) - aumBand(b.aum))
+    if (d === 0) score += 2
+    else if (d === 1) score += 1
+  }
+
+  // 9. Proximidad de acciones — sector/industria ya viven en strategy; añade país + banda de cap.
+  // 9a. Mismo país (+10): distingue "banco de EE.UU." de "banco europeo".
+  if (a.country && b.country && a.country.trim().toLowerCase() === b.country.trim().toLowerCase()) {
+    score += 10
+  }
+  // 9b. Banda de market cap (0..8): mismo bucket log10 fijo (mega/large/mid/small/micro).
+  if (a.marketCap != null && b.marketCap != null) {
+    const capBand = (v: number) => (v < 3e8 ? 0 : v < 2e9 ? 1 : v < 1e10 ? 2 : v < 2e11 ? 3 : 4)
+    const d = Math.abs(capBand(a.marketCap) - capBand(b.marketCap))
+    if (d === 0) score += 8
+    else if (d === 1) score += 4
+  }
+
+  // Tope alto: las señales extra mejoran el ranking entre candidatos que ya pasan el gate
+  // (MIN_PEER_SCORE); no satura en casos reales. Beta NO puntúa (ruidosa) — se deja como señal.
+  return Math.min(score, 200)
 }
 
 export function computeInitialPeers(
@@ -812,7 +892,7 @@ export function computeInitialPeers(
 ): AssetMetadata[] {
   const assetMap = new Map<string, AssetMetadata>(allAssets.map((a) => [a.ticker.toUpperCase(), a]))
   const upperTicker = selectedAsset.ticker.toUpperCase()
-  const categories = options?.categories
+  const signals = options?.signals
 
   // Use curated static peers when available (FT ETFs) — exact, no dynamic logic.
   const staticPeerTickers = STATIC_PEERS[upperTicker]
@@ -830,25 +910,28 @@ export function computeInitialPeers(
     })
   }
 
-  // Fallback: algorithmic peer computation from taxonomy. Category hints from
-  // price_cache make the selected asset's classification more precise and let
-  // matching candidates earn a same-category boost.
-  const baseSelectedClass = classifyAsset(selectedAsset.ticker) ?? classifyFromMetadata(selectedAsset, categories?.[upperTicker])
+  // Fallback: algorithmic peer computation from taxonomy. Signals from price_cache
+  // (Morningstar category + holdings + fundamentals, frozen at materialization) make the
+  // selected asset's classification more precise and let matching candidates earn boosts.
+  const baseSelectedClass = classifyAsset(selectedAsset.ticker) ?? classifyFromMetadata(selectedAsset, signals?.[upperTicker])
   if (!baseSelectedClass) return []
-  const selectedClass = withCategoryHints(baseSelectedClass, categories?.[upperTicker])
+  const selectedClass = withSignals(baseSelectedClass, signals?.[upperTicker])
 
-  // Score every ticker in the taxonomy — candidates come from taxonomy, not from allAssets
+  // Score every ticker in the taxonomy — candidates come from taxonomy, not from allAssets.
+  // Determinismo: el universo (TAXONOMY) tiene orden fijo y TODA selección termina en el sort
+  // total `score desc, ticker asc` → el orden de inserción de TAXONOMY no afecta el OUTPUT.
   const scored = Object.entries(TAXONOMY)
     .filter(([ticker]) => ticker.toUpperCase() !== selectedAsset.ticker.toUpperCase())
     .map(([ticker, candidateClass]) => ({
       ticker,
       candidateClass,
-      score: scorePeerSimilarity(selectedClass, withCategoryHints(candidateClass, categories?.[ticker.toUpperCase()])),
+      score: scorePeerSimilarity(selectedClass, withSignals(candidateClass, signals?.[ticker.toUpperCase()])),
     }))
-    .filter(({ score }) => score >= 60)
-    .sort((a, b) => b.score - a.score)
+    .filter(({ score }) => score >= MIN_PEER_SCORE)
+    .sort((a, b) => b.score - a.score || (a.ticker < b.ticker ? -1 : a.ticker > b.ticker ? 1 : 0))
 
-  // Deduplicate by manager — keep highest-scoring per manager
+  // Deduplicate by manager — keep highest-scoring per manager. `scored` ya está en orden
+  // determinista (score desc, ticker asc), así que el ganador por manager es estable.
   const seenManagers = new Set<string>()
   const result: AssetMetadata[] = []
 
@@ -876,7 +959,7 @@ export function computeInitialPeers(
       }
     )
 
-    if (result.length >= 8) break
+    if (result.length >= MAX_AUTO_PEERS) break
   }
 
   return result

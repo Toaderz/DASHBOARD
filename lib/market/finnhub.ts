@@ -60,6 +60,7 @@ interface Fundamentals {
   nav: number | null
   sector: string | null
   industry: string | null
+  country: string | null
   fund_family: string | null
   alpha: number | null
   r_squared: number | null
@@ -86,6 +87,7 @@ const EMPTY_FUNDAMENTALS: Fundamentals = {
   nav: null,
   sector: null,
   industry: null,
+  country: null,
   fund_family: null,
   alpha: null,
   r_squared: null,
@@ -111,7 +113,8 @@ interface YSummary {
     totalAssets?: number; beta?: number; beta3Year?: number
     profitMargins?: number; fundFamily?: string
   } | null
-  summaryProfile?: { sector?: string; industry?: string } | null
+  summaryProfile?: { sector?: string; industry?: string; country?: string } | null
+  assetProfile?: { sector?: string; industry?: string; country?: string } | null
   fundProfile?: {
     family?: string
     categoryName?: string | null
@@ -141,6 +144,7 @@ export async function fetchFundamentals(ticker: string): Promise<Fundamentals> {
           'summaryDetail',
           'defaultKeyStatistics',
           'summaryProfile',
+          'assetProfile',
           'fundProfile',
           'topHoldings',
           'fundPerformance',
@@ -215,8 +219,9 @@ export async function fetchFundamentals(ticker: string): Promise<Fundamentals> {
       dividend_yield:       pct(data.summaryDetail?.dividendYield),
       beta:                 data.defaultKeyStatistics?.beta ?? null,
       profit_margins:       pct(data.defaultKeyStatistics?.profitMargins),
-      sector:               data.summaryProfile?.sector ?? null,
-      industry:             data.summaryProfile?.industry ?? null,
+      sector:               data.summaryProfile?.sector ?? data.assetProfile?.sector ?? null,
+      industry:             data.summaryProfile?.industry ?? data.assetProfile?.industry ?? null,
+      country:              data.assetProfile?.country ?? data.summaryProfile?.country ?? null,
       morningstar_category: eqCategory,
       global_category:      toGlobalCategory(eqCategory),
     }

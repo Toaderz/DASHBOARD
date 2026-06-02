@@ -83,11 +83,13 @@ const isFirecrawlKeyExhausted = (e: unknown) =>
 export async function getTopTickers(supabase: SupabaseClient): Promise<string[]> {
   const { data, error } = await supabase.rpc('get_top_tickers')
 
-  // Fallback: manual query if RPC not defined
+  // Fallback: manual query if RPC not defined.
+  // source='user': excluye peers auto-materializados (no son holdings elegidos por el usuario).
   if (error) {
     const { data: rows } = await supabase
       .from('watchlist_assets')
       .select('asset_ticker')
+      .eq('source', 'user')
     if (!rows) return []
     const freq = new Map<string, number>()
     for (const row of rows) {

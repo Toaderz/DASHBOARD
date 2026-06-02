@@ -32,6 +32,7 @@ function rowToQuote(row: Record<string, unknown>) {
     nav: row.nav ?? null,
     sector: row.sector ?? null,
     industry: row.industry ?? null,
+    country: row.country ?? null,
     fund_family: row.fund_family ?? null,
     alpha: row.alpha ?? null,
     r_squared: row.r_squared ?? null,
