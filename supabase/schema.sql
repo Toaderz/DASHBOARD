@@ -86,6 +86,29 @@ create table if not exists price_cache (
   fundamentals_fetched_at timestamptz
 );
 
+-- 6. USER ASSET PEERS (per-user curated peer set per asset)
+-- One row per (user, asset). `initialized` distinguishes "not yet seeded"
+-- from "user removed them all". CRUD via browser client (RLS); the initial
+-- set is materialized canonically server-side via /api/peers/init.
+create table if not exists user_asset_peers (
+  user_id      uuid not null references auth.users(id) on delete cascade,
+  asset_ticker text not null,
+  peers        text[] not null default '{}',
+  initialized  boolean not null default false,
+  updated_at   timestamptz default now(),
+  primary key (user_id, asset_ticker)
+);
+
+-- 7. RETURNS CACHE (shared across users; multi-period total returns)
+-- Separate from price_cache (which caches live quotes). TTL enforced in app
+-- layer (~6h). Writes only via service role; 1D returns come from live quotes.
+create table if not exists returns_cache (
+  ticker      text primary key,
+  returns     jsonb,  -- { "1W":x, "1M":x, "6M":x, "YTD":x, "1Y":x }
+  years       jsonb,  -- { "1Y":1.0, ... }
+  fetched_at  timestamptz default now()
+);
+
 -- ============================================================
 -- ROW LEVEL SECURITY
 -- ============================================================
@@ -95,6 +118,8 @@ alter table watchlists enable row level security;
 alter table watchlist_assets enable row level security;
 alter table assets_metadata enable row level security;
 alter table price_cache enable row level security;
+alter table user_asset_peers enable row level security;
+alter table returns_cache enable row level security;
 
 -- profiles: users can only read/write their own profile
 create policy "own profile select" on profiles
@@ -135,6 +160,15 @@ create policy "auth users insert assets" on assets_metadata
 
 -- price_cache: public read, writes only via service role
 create policy "public read cache" on price_cache
+  for select using (true);
+
+-- user_asset_peers: users can only access their own curated peer sets
+create policy "own asset peers" on user_asset_peers
+  for all using (auth.uid() = user_id)
+  with check (auth.uid() = user_id);
+
+-- returns_cache: public read, writes only via service role
+create policy "public read returns" on returns_cache
   for select using (true);
 
 -- ============================================================
@@ -733,4 +767,27 @@ create policy "authenticated_read_profiles" on profiles
 --   ALTER TABLE market_news ADD COLUMN IF NOT EXISTS affected_symbols jsonb DEFAULT '[]'::jsonb;
 --   ALTER TABLE market_news ADD COLUMN IF NOT EXISTS relevance_source text;
 --   ALTER TABLE market_news ADD COLUMN IF NOT EXISTS source_authority numeric;
+--
+-- Step 9 — Beating Peers feature (run once per DB):
+--   -- Per-user curated peer set per asset (materialized server-side via /api/peers/init).
+--   CREATE TABLE IF NOT EXISTS user_asset_peers (
+--     user_id      uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+--     asset_ticker text NOT NULL,
+--     peers        text[] NOT NULL DEFAULT '{}',
+--     initialized  boolean NOT NULL DEFAULT false,
+--     updated_at   timestamptz DEFAULT now(),
+--     PRIMARY KEY (user_id, asset_ticker)
+--   );
+--   ALTER TABLE user_asset_peers ENABLE ROW LEVEL SECURITY;
+--   CREATE POLICY "own asset peers" ON user_asset_peers
+--     FOR ALL USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
+--   -- Shared multi-period total-returns cache (writes via service role).
+--   CREATE TABLE IF NOT EXISTS returns_cache (
+--     ticker     text PRIMARY KEY,
+--     returns    jsonb,
+--     years      jsonb,
+--     fetched_at timestamptz DEFAULT now()
+--   );
+--   ALTER TABLE returns_cache ENABLE ROW LEVEL SECURITY;
+--   CREATE POLICY "public read returns" ON returns_cache FOR SELECT USING (true);
 -- ============================================================

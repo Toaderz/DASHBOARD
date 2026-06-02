@@ -6,11 +6,12 @@ const yf = new YahooFinanceLib({
   validation: { logErrors: false, logOptionsErrors: false, allowAdditionalProps: true },
 })
 
-export type PeriodKey = '1W' | '1M' | '1Y' | '3Y' | '5Y' | 'YTD' | '10Y' | 'MAX'
+export type PeriodKey = '1W' | '1M' | '6M' | '1Y' | '3Y' | '5Y' | 'YTD' | '10Y' | 'MAX'
 
 const YAHOO_RANGE_MAP: Record<PeriodKey, string> = {
   '1W': '5d',
   '1M': '1mo',
+  '6M': '6mo',
   '1Y': '1y',
   '3Y': '3y',
   '5Y': '5y',
@@ -22,6 +23,7 @@ const YAHOO_RANGE_MAP: Record<PeriodKey, string> = {
 const YAHOO_INTERVAL_MAP: Record<PeriodKey, string> = {
   '1W': '1d',
   '1M': '1d',
+  '6M': '1d',
   '1Y': '1d',
   '3Y': '1d',
   '5Y': '1d',
@@ -169,4 +171,87 @@ export async function calculateReturn(
   const years = (endMs - startMs) / (365.25 * 24 * 60 * 60 * 1000)
 
   return { value, years }
+}
+
+// Periods computed from a single ~1Y daily series (1D comes from live quotes).
+export const MULTI_RETURN_PERIODS = ['1W', '1M', '6M', 'YTD', '1Y'] as const
+export type MultiReturnPeriod = typeof MULTI_RETURN_PERIODS[number]
+
+export interface MultiReturns {
+  returns: Record<MultiReturnPeriod, number | null>
+  years: Record<MultiReturnPeriod, number | null>
+}
+
+const EMPTY_MULTI: MultiReturns = {
+  returns: { '1W': null, '1M': null, '6M': null, YTD: null, '1Y': null },
+  years: { '1W': null, '1M': null, '6M': null, YTD: null, '1Y': null },
+}
+
+// Return value (%) and years between the close nearest `targetMs` and the last close.
+function returnFrom(
+  history: HistoricalDataPoint[],
+  parsed: number[],
+  endClose: number,
+  endMs: number,
+  targetMs: number
+): { value: number | null; years: number | null } {
+  // Find the earliest point on/after the target date; fall back to the first point
+  // only when the series itself starts after the target (period not fully covered).
+  let idx = -1
+  for (let i = 0; i < parsed.length; i++) {
+    if (parsed[i] >= targetMs) { idx = i; break }
+  }
+  if (idx === -1) return { value: null, years: null }
+  // If the very first datapoint is already after the target, the window isn't
+  // fully covered (e.g. a fund younger than the period) → not enough history.
+  if (idx === 0 && parsed[0] > targetMs) {
+    // Only treat as covered when the gap is small (≤7 days of missing leading data).
+    if (parsed[0] - targetMs > 7 * 24 * 60 * 60 * 1000) return { value: null, years: null }
+  }
+  const baseClose = history[idx].close
+  if (!baseClose || baseClose === 0) return { value: null, years: null }
+  const value = ((endClose - baseClose) / baseClose) * 100
+  const years = (endMs - parsed[idx]) / (365.25 * 24 * 60 * 60 * 1000)
+  return { value, years }
+}
+
+/**
+ * Computes 1W / 1M / 6M / YTD / 1Y total returns from a single 1Y daily series.
+ * One Yahoo request per ticker instead of five. Null-safe: any period without
+ * enough history resolves to null and never throws.
+ */
+export async function calculateMultiReturns(ticker: string): Promise<MultiReturns> {
+  let history: HistoricalDataPoint[]
+  try {
+    history = await fetchHistoricalData(ticker, '1Y')
+  } catch {
+    return EMPTY_MULTI
+  }
+  if (!history || history.length < 2) return EMPTY_MULTI
+
+  const parsed = history.map((h) => new Date(h.date).getTime())
+  const endClose = history[history.length - 1].close
+  const endMs = parsed[parsed.length - 1]
+  if (!endClose || endClose === 0) return EMPTY_MULTI
+
+  const DAY = 24 * 60 * 60 * 1000
+  const endDate = new Date(endMs)
+  const ytdMs = Date.UTC(endDate.getUTCFullYear(), 0, 1)
+
+  const targets: Record<MultiReturnPeriod, number> = {
+    '1W': endMs - 7 * DAY,
+    '1M': endMs - 30 * DAY,
+    '6M': endMs - 182 * DAY,
+    YTD: ytdMs,
+    '1Y': parsed[0], // first point of the 1Y window
+  }
+
+  const returns = {} as Record<MultiReturnPeriod, number | null>
+  const years = {} as Record<MultiReturnPeriod, number | null>
+  for (const p of MULTI_RETURN_PERIODS) {
+    const { value, years: y } = returnFrom(history, parsed, endClose, endMs, targets[p])
+    returns[p] = value
+    years[p] = y
+  }
+  return { returns, years }
 }

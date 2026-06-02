@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { fetchHistoricalData, calculateReturn, fetchCalendarYearReturn, type PeriodKey } from '@/lib/market/history'
 
-const VALID_PERIODS: PeriodKey[] = ['1W', '1M', '1Y', '3Y', '5Y', 'YTD', '10Y', 'MAX']
+const VALID_PERIODS: PeriodKey[] = ['1W', '1M', '6M', '1Y', '3Y', '5Y', 'YTD', '10Y', 'MAX']
 
 export async function GET(request: NextRequest) {
   const { searchParams } = request.nextUrl

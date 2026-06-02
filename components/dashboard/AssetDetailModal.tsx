@@ -23,6 +23,7 @@ import { TickerSearch } from './TickerSearch'
 import { FundamentalsPanel } from './FundamentalsPanel'
 import { formatPrice, formatPercent, percentColor, annualizeReturn } from '@/lib/utils/formatters'
 import { useFxData } from '@/hooks/useFxData'
+import { usePeerSet } from '@/hooks/usePeerSet'
 import type { AssetMetadata, HistoricalDataPoint, QuoteData, AssetType, MetricKey } from '@/types'
 
 const PEER_PERIOD_OPTIONS = ['1W', '1M', 'YTD', '1Y', '3Y', '5Y', '10Y', 'MAX'] as const
@@ -69,15 +70,9 @@ export function AssetDetailModal({
 
   const [peerMetrics, setPeerMetrics] = useState<PeerPeriod[]>(['1M', 'YTD', '1Y'])
 
-  const [customPeers, setCustomPeers] = useState<AssetMetadata[]>([])
-  const [removedInitialTickers, setRemovedInitialTickers] = useState<Set<string>>(new Set())
-
-  const allPeers = useMemo(() => {
-    const seen = new Set(initialPeers.map((p) => p.ticker))
-    seen.add(asset?.ticker ?? '')
-    const filtered = initialPeers.filter((p) => !removedInitialTickers.has(p.ticker))
-    return [...filtered, ...customPeers.filter((p) => !seen.has(p.ticker))]
-  }, [initialPeers, customPeers, asset, removedInitialTickers])
+  // Persisted, per-user curated peer set (shared with the Beating-Peers page).
+  // `initialPeers` is only a name/type hydration seed — the source of truth is the DB.
+  const { peers: allPeers, addPeer, removePeer } = usePeerSet(open ? (asset?.ticker ?? null) : null, initialPeers)
 
   const [peerQuotes, setPeerQuotes] = useState<Record<string, QuoteData>>({})
   const [peerReturns, setPeerReturns] = useState<Record<string, ReturnMap>>({})
@@ -85,11 +80,9 @@ export function AssetDetailModal({
   const [peerNames, setPeerNames] = useState<Record<string, string>>({})
   const [assetDisplayName, setAssetDisplayName] = useState<string | null>(null)
 
-  // Reset on close
+  // Reset on close (peer curation is NOT reset — it lives in the DB now)
   useEffect(() => {
     if (!open) {
-      setCustomPeers([])
-      setRemovedInitialTickers(new Set())
       setPeerQuotes({})
       setPeerReturns({})
       setPeerMaxYears({})
@@ -251,20 +244,14 @@ export function AssetDetailModal({
 
   const handleAddCustomPeer = useCallback(
     async (ticker: string, name: string, type: AssetType) => {
-      setCustomPeers((prev) => {
-        if (prev.some((p) => p.ticker === ticker)) return prev
-        return [
-          ...prev,
-          { ticker, name, type, sector: null, region: null, industry: null, benchmark: null, manager: null },
-        ]
-      })
+      addPeer(ticker, name, type)
     },
-    []
+    [addPeer]
   )
 
   const handleRemovePeer = useCallback((ticker: string) => {
-    setCustomPeers((prev) => prev.filter((p) => p.ticker !== ticker))
-  }, [])
+    removePeer(ticker)
+  }, [removePeer])
 
   const togglePeerMetric = (period: PeerPeriod) => {
     setPeerMetrics((prev) =>
@@ -276,7 +263,6 @@ export function AssetDetailModal({
 
   const isPositive = (chartPeriodReturn ?? quote?.change_percent ?? 0) >= 0
   const existingPeerTickers = allPeers.map((p) => p.ticker)
-  const customPeerTickers = new Set(customPeers.map((p) => p.ticker))
 
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
@@ -509,7 +495,6 @@ export function AssetDetailModal({
                   )}
                   {allPeers.map((peer) => {
                     const pq = peerQuotes[peer.ticker]
-                    const isCustom = customPeerTickers.has(peer.ticker)
                     const displayPrice = usd ? toUsd(pq?.price, peer.ticker) : pq?.price
                     const display1d = adj1d(pq?.change_percent, peer.ticker)
                     return (
@@ -536,11 +521,7 @@ export function AssetDetailModal({
                         })}
                         <td className="py-1 text-right">
                           <button
-                            onClick={() =>
-                              isCustom
-                                ? handleRemovePeer(peer.ticker)
-                                : setRemovedInitialTickers((prev) => new Set([...prev, peer.ticker]))
-                            }
+                            onClick={() => handleRemovePeer(peer.ticker)}
                             className="text-muted-foreground hover:text-destructive opacity-0 group-hover:opacity-100 transition-opacity"
                           >
                             <X className="h-3 w-3" />

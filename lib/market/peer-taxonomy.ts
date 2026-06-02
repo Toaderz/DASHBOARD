@@ -42,6 +42,16 @@ export interface AssetClassification {
   isIndexFund?: boolean
   concentration?: 'concentrated' | 'diversified'
   classificationConfidence: number
+  // Morningstar signals (when known) — used as a high-confidence dynamic signal.
+  morningstarCategory?: string | null
+  globalCategory?: string | null
+}
+
+// Known category hints (Morningstar + global) keyed by ticker, fed from price_cache.
+export type CategoryHints = Record<string, { morningstar?: string | null; global?: string | null }>
+
+export interface PeerOptions {
+  categories?: CategoryHints
 }
 
 const STRATEGY_ADJACENCY: Partial<Record<Strategy, Strategy[]>> = {
@@ -570,9 +580,91 @@ export function classifyAsset(ticker: string): AssetClassification | null {
   return TAXONOMY[upper] ?? TAXONOMY[`${upper}-USD`] ?? null
 }
 
+// Morningstar US Category → classification dimensions. Used as a high-confidence
+// dynamic signal: two assets sharing a Morningstar category derive the SAME
+// strategy/universe, so they align in scorePeerSimilarity (plus the category boost).
+// The mapping only needs internal consistency for grouping, not perfect taxonomy.
+const MS_CATEGORY_TO_CLASSIFICATION: Record<string, Partial<AssetClassification>> = {
+  'Large Blend':                { strategy: 'blend-large', universe: 'us-large', portfolioRole: 'core' },
+  'Large Growth':               { strategy: 'growth', universe: 'us-large', portfolioRole: 'growth-satellite', factorTilts: ['growth'] },
+  'Large Value':                { strategy: 'value', universe: 'us-large', portfolioRole: 'core', factorTilts: ['value'] },
+  'Mid-Cap Blend':              { strategy: 'blend-large', universe: 'us-mid', portfolioRole: 'core' },
+  'Mid-Cap Growth':             { strategy: 'growth', universe: 'us-mid', portfolioRole: 'growth-satellite', factorTilts: ['growth'] },
+  'Mid-Cap Value':              { strategy: 'value', universe: 'us-mid', portfolioRole: 'core', factorTilts: ['value'] },
+  'Small Blend':                { strategy: 'blend-small', universe: 'us-small', portfolioRole: 'growth-satellite' },
+  'Small Growth':               { strategy: 'blend-small', universe: 'us-small', portfolioRole: 'growth-satellite', factorTilts: ['growth'] },
+  'Small Value':                { strategy: 'blend-small', universe: 'us-small', portfolioRole: 'core', factorTilts: ['value'] },
+  'Foreign Large Blend':        { strategy: 'intl-developed', universe: 'intl-developed', portfolioRole: 'international' },
+  'Foreign Large Growth':       { strategy: 'intl-developed', universe: 'intl-developed', portfolioRole: 'international', factorTilts: ['growth'] },
+  'Foreign Large Value':        { strategy: 'intl-developed', universe: 'intl-developed', portfolioRole: 'international', factorTilts: ['value'] },
+  'Foreign Small/Mid Blend':    { strategy: 'intl-developed', universe: 'intl-developed', portfolioRole: 'international' },
+  'World Large-Stock Blend':    { strategy: 'intl-developed', universe: 'global', portfolioRole: 'international' },
+  'World Large-Stock Growth':   { strategy: 'intl-developed', universe: 'global', portfolioRole: 'international', factorTilts: ['growth'] },
+  'Diversified Emerging Mkts':  { strategy: 'emerging', universe: 'emerging', portfolioRole: 'international' },
+  'China Region':               { strategy: 'emerging', universe: 'emerging', portfolioRole: 'international' },
+  'Japan Stock':                { strategy: 'intl-developed', universe: 'intl-developed', portfolioRole: 'international' },
+  'Europe Stock':               { strategy: 'intl-developed', universe: 'intl-developed', portfolioRole: 'international' },
+  'India Equity':               { strategy: 'emerging', universe: 'emerging', portfolioRole: 'international' },
+  'Technology':                 { strategy: 'sector-tech', universe: 'sector-specific', portfolioRole: 'growth-satellite', behaviorProfile: 'momentum-heavy' },
+  'Technology Sector Equity':   { strategy: 'sector-tech', universe: 'sector-specific', portfolioRole: 'growth-satellite', behaviorProfile: 'momentum-heavy' },
+  'Health':                     { strategy: 'sector-health', universe: 'sector-specific', portfolioRole: 'defensive', behaviorProfile: 'defensive' },
+  'Healthcare':                 { strategy: 'sector-health', universe: 'sector-specific', portfolioRole: 'defensive', behaviorProfile: 'defensive' },
+  'Real Estate':                { strategy: 'real-estate', universe: 'sector-specific', portfolioRole: 'inflation-hedge', behaviorProfile: 'rate-sensitive' },
+  'Utilities':                  { strategy: 'sector-util', universe: 'sector-specific', portfolioRole: 'defensive', behaviorProfile: 'rate-sensitive' },
+  'Natural Resources':          { strategy: 'commodity', universe: 'global', portfolioRole: 'inflation-hedge', behaviorProfile: 'commodity-linked' },
+  'Infrastructure':             { strategy: 'sector-util', universe: 'sector-specific', portfolioRole: 'defensive', behaviorProfile: 'rate-sensitive' },
+  'Energy Limited Partnership': { strategy: 'sector-energy', universe: 'sector-specific', portfolioRole: 'speculative', behaviorProfile: 'commodity-linked' },
+  'Financial':                  { strategy: 'sector-fin', universe: 'sector-specific', portfolioRole: 'core', behaviorProfile: 'cyclical' },
+  'Industrials':                { strategy: 'blend-large', universe: 'us-large', portfolioRole: 'core', behaviorProfile: 'cyclical' },
+  'Communication':              { strategy: 'biz-platform', universe: 'us-large', portfolioRole: 'growth-satellite', behaviorProfile: 'momentum-heavy' },
+  'Consumer Cyclical':          { strategy: 'blend-large', universe: 'us-large', portfolioRole: 'core', behaviorProfile: 'cyclical' },
+  'Equity Income':              { strategy: 'high-yield', universe: 'us-large', portfolioRole: 'income', behaviorProfile: 'income-stable' },
+}
+
+// Builds a classification from a Morningstar category string (high confidence).
+function classifyFromCategory(
+  msCategory: string | null | undefined,
+  globalCategory: string | null | undefined
+): AssetClassification | null {
+  if (!msCategory) return null
+  const base = MS_CATEGORY_TO_CLASSIFICATION[msCategory]
+  if (!base || !base.strategy || !base.universe || !base.portfolioRole) return null
+  return {
+    strategy: base.strategy,
+    universe: base.universe,
+    portfolioRole: base.portfolioRole,
+    behaviorProfile: base.behaviorProfile,
+    factorTilts: base.factorTilts,
+    classificationConfidence: 70,
+    morningstarCategory: msCategory,
+    globalCategory: globalCategory ?? null,
+  }
+}
+
+// Attaches known category hints to a classification (without mutating the original).
+function withCategoryHints(
+  cls: AssetClassification,
+  hint: { morningstar?: string | null; global?: string | null } | undefined
+): AssetClassification {
+  if (!hint || (hint.morningstar == null && hint.global == null)) return cls
+  return {
+    ...cls,
+    morningstarCategory: cls.morningstarCategory ?? hint.morningstar ?? null,
+    globalCategory: cls.globalCategory ?? hint.global ?? null,
+  }
+}
+
 // Infers classification from DB metadata fields when ticker is not in the static taxonomy.
+// Category hints (Morningstar) are the primary signal when present.
 // Returns null for stocks without sector data (not enough signal).
-function classifyFromMetadata(asset: AssetMetadata): AssetClassification | null {
+function classifyFromMetadata(
+  asset: AssetMetadata,
+  hint?: { morningstar?: string | null; global?: string | null }
+): AssetClassification | null {
+  // Morningstar category is the highest-confidence dynamic signal when available.
+  const fromCategory = classifyFromCategory(hint?.morningstar, hint?.global)
+  if (fromCategory) return fromCategory
+
   const type = asset.type
   const sector = (asset.sector ?? '').toLowerCase()
   const industry = (asset.industry ?? '').toLowerCase()
@@ -702,17 +794,27 @@ export function scorePeerSimilarity(a: AssetClassification, b: AssetClassificati
     score += 5
   }
 
+  // 7. Morningstar category boost (only when both sides know it). Same exact
+  // category is the strongest dynamic signal; same global category is weaker.
+  if (a.morningstarCategory && b.morningstarCategory && a.morningstarCategory === b.morningstarCategory) {
+    score += 25
+  } else if (a.globalCategory && b.globalCategory && a.globalCategory === b.globalCategory) {
+    score += 12
+  }
+
   return Math.min(score, 100)
 }
 
 export function computeInitialPeers(
   selectedAsset: AssetMetadata,
-  allAssets: AssetMetadata[]
+  allAssets: AssetMetadata[],
+  options?: PeerOptions
 ): AssetMetadata[] {
   const assetMap = new Map<string, AssetMetadata>(allAssets.map((a) => [a.ticker.toUpperCase(), a]))
   const upperTicker = selectedAsset.ticker.toUpperCase()
+  const categories = options?.categories
 
-  // Use curated static peers when available (FT ETFs)
+  // Use curated static peers when available (FT ETFs) — exact, no dynamic logic.
   const staticPeerTickers = STATIC_PEERS[upperTicker]
   if (staticPeerTickers) {
     return staticPeerTickers.map((t) => {
@@ -728,9 +830,12 @@ export function computeInitialPeers(
     })
   }
 
-  // Fallback: algorithmic peer computation from taxonomy
-  const selectedClass = classifyAsset(selectedAsset.ticker) ?? classifyFromMetadata(selectedAsset)
-  if (!selectedClass) return []
+  // Fallback: algorithmic peer computation from taxonomy. Category hints from
+  // price_cache make the selected asset's classification more precise and let
+  // matching candidates earn a same-category boost.
+  const baseSelectedClass = classifyAsset(selectedAsset.ticker) ?? classifyFromMetadata(selectedAsset, categories?.[upperTicker])
+  if (!baseSelectedClass) return []
+  const selectedClass = withCategoryHints(baseSelectedClass, categories?.[upperTicker])
 
   // Score every ticker in the taxonomy — candidates come from taxonomy, not from allAssets
   const scored = Object.entries(TAXONOMY)
@@ -738,7 +843,7 @@ export function computeInitialPeers(
     .map(([ticker, candidateClass]) => ({
       ticker,
       candidateClass,
-      score: scorePeerSimilarity(selectedClass, candidateClass),
+      score: scorePeerSimilarity(selectedClass, withCategoryHints(candidateClass, categories?.[ticker.toUpperCase()])),
     }))
     .filter(({ score }) => score >= 60)
     .sort((a, b) => b.score - a.score)
