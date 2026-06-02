@@ -1,6 +1,7 @@
 import type { QuoteData, SearchResult, AssetType, SectorWeight, Holding } from '@/types'
 // yahoo-finance2 handles Yahoo Finance auth (crumb/cookies) automatically
 import YahooFinanceLib from 'yahoo-finance2'
+import { toGlobalCategory } from './morningstar-categories'
 
 const yf = new YahooFinanceLib({
   suppressNotices: ['yahooSurvey'],
@@ -9,48 +10,6 @@ const yf = new YahooFinanceLib({
 
 const YAHOO_BASE = 'https://query1.finance.yahoo.com'
 
-// ─── Morningstar US Category → Global Category mapping ────────────────────────
-const MS_GLOBAL_CATEGORY: Record<string, string> = {
-  'Large Blend':                'US Large-Cap Blend Equity',
-  'Large Growth':               'US Large-Cap Growth Equity',
-  'Large Value':                'US Large-Cap Value Equity',
-  'Mid-Cap Blend':              'US Mid-Cap Blend Equity',
-  'Mid-Cap Growth':             'US Mid-Cap Growth Equity',
-  'Mid-Cap Value':              'US Mid-Cap Value Equity',
-  'Small Blend':                'US Small-Cap Blend Equity',
-  'Small Growth':               'US Small-Cap Growth Equity',
-  'Small Value':                'US Small-Cap Value Equity',
-  'Foreign Large Blend':        'Global Large-Cap Blend Equity',
-  'Foreign Large Growth':       'Global Large-Cap Growth Equity',
-  'Foreign Large Value':        'Global Large-Cap Value Equity',
-  'Foreign Small/Mid Blend':    'Global Small/Mid-Cap Blend Equity',
-  'World Large-Stock Blend':    'Global Large-Cap Blend Equity',
-  'World Large-Stock Growth':   'Global Large-Cap Growth Equity',
-  'Diversified Emerging Mkts':  'Global Emerging Markets Equity',
-  'China Region':               'Greater China Equity',
-  'Japan Stock':                'Japan Large-Cap Equity',
-  'Europe Stock':               'Europe Large-Cap Blend Equity',
-  'India Equity':               'India Equity',
-  'Technology':                 'Technology Equity',
-  'Technology Sector Equity':   'Technology Equity',
-  'Health':                     'Healthcare Equity',
-  'Healthcare':                 'Healthcare Equity',
-  'Real Estate':                'Real Estate Equity',
-  'Utilities':                  'Utilities Equity',
-  'Natural Resources':          'Natural Resources Equity',
-  'Infrastructure':             'Infrastructure Equity',
-  'Energy Limited Partnership': 'Energy Equity',
-  'Financial':                  'Financial Services Equity',
-  'Industrials':                'Industrials Equity',
-  'Communication':              'Communication Services Equity',
-  'Consumer Cyclical':          'Consumer Goods & Services Equity',
-  'Equity Income':              'Global Equity Income',
-}
-
-function toGlobalCategory(msCategory: string | null | undefined): string | null {
-  if (!msCategory) return null
-  return MS_GLOBAL_CATEGORY[msCategory] ?? msCategory
-}
 const UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
 
