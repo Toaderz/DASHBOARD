@@ -11,9 +11,9 @@ const config: Config = {
   theme: {
     extend: {
       fontFamily: {
-        editorial: ['var(--font-editorial)', 'Georgia', 'serif'],
-        ui:        ['var(--font-ui)', 'Inter', 'sans-serif'],
-        mono:      ['var(--font-mono)', 'Menlo', 'monospace'],
+        editorial: ['var(--font-ui)', 'system-ui', 'sans-serif'],
+        ui:        ['var(--font-ui)', 'system-ui', 'sans-serif'],
+        mono:      ['var(--font-mono)', 'ui-monospace', 'monospace'],
       },
       colors: {
         background: 'hsl(var(--background))',
@@ -64,6 +64,7 @@ const config: Config = {
         },
         gain:    'hsl(var(--gain))',
         loss:    'hsl(var(--loss))',
+        warn:    'hsl(var(--warn))',
         neutral: 'hsl(var(--neutral-text))',
         brand: {
           navy: 'hsl(var(--brand-navy))',
@@ -82,31 +83,35 @@ const config: Config = {
           axis: 'hsl(var(--chart-axis))',
         },
         green: {
-          flash: 'rgba(34,197,94,0.2)',
+          flash: 'hsl(var(--gain) / 0.16)',
         },
         red: {
-          flash: 'rgba(239,68,68,0.2)',
+          flash: 'hsl(var(--loss) / 0.16)',
         },
       },
       borderRadius: {
-        lg: 'var(--radius)',
-        md: 'calc(var(--radius) - 2px)',
-        sm: 'calc(var(--radius) - 4px)',
+        xl:   'var(--radius-lg)',
+        lg:   'var(--radius)',
+        md:   'calc(var(--radius) - 2px)',
+        sm:   'calc(var(--radius) - 4px)',
         card: 'var(--radius-card)',
         pill: 'var(--radius-pill)',
       },
       boxShadow: {
+        xs:   'var(--shadow-xs)',
+        sm:   'var(--shadow-sm)',
         card: 'var(--shadow-card)',
+        md:   'var(--shadow-md)',
         pop:  'var(--shadow-pop)',
         glow: 'var(--shadow-glow)',
       },
       keyframes: {
         'flash-green': {
-          '0%':   { backgroundColor: 'rgba(34,197,94,0.3)' },
+          '0%':   { backgroundColor: 'hsl(var(--gain) / 0.16)' },
           '100%': { backgroundColor: 'transparent' },
         },
         'flash-red': {
-          '0%':   { backgroundColor: 'rgba(239,68,68,0.3)' },
+          '0%':   { backgroundColor: 'hsl(var(--loss) / 0.16)' },
           '100%': { backgroundColor: 'transparent' },
         },
         marquee: {

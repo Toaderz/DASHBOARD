@@ -1,9 +1,8 @@
 import type { Metadata, Viewport } from 'next'
-import { Fraunces, JetBrains_Mono, Plus_Jakarta_Sans } from 'next/font/google'
+import { JetBrains_Mono, Plus_Jakarta_Sans } from 'next/font/google'
 import { Providers } from '@/components/providers'
 import './globals.css'
 
-const fraunces = Fraunces({ subsets: ['latin'], variable: '--font-editorial', display: 'swap' })
 const jetbrains = JetBrains_Mono({ subsets: ['latin'], variable: '--font-mono', display: 'swap' })
 const jakarta = Plus_Jakarta_Sans({ subsets: ['latin'], variable: '--font-ui', display: 'swap' })
 
@@ -28,7 +27,7 @@ export const metadata: Metadata = {
 }
 
 export const viewport: Viewport = {
-  themeColor: '#09090b',
+  themeColor: '#FCFCFD',
   width: 'device-width',
   initialScale: 1,
   minimumScale: 1,
@@ -36,7 +35,7 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" suppressHydrationWarning className={[fraunces.variable, jetbrains.variable, jakarta.variable].join(' ')}>
+    <html lang="en" suppressHydrationWarning className={[jetbrains.variable, jakarta.variable].join(' ')}>
       <body className="font-ui">
         <Providers>{children}</Providers>
       </body>

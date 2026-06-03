@@ -4,133 +4,153 @@
 
 @layer base {
   :root {
-    /* Ink surface system — dark-first */
-    --ink-void:     220 20% 3%;
-    --ink-dark:     220 18% 5%;
-    --ink-base:     220 15% 7%;
-    --ink-surface:  220 13% 10%;
-    --ink-elevated: 220 11% 13%;
-    --ink-overlay:  220 9%  17%;
+    /* ── DARK THEME (next-themes class="dark") — v2 soft deep slate ── */
+    --ink-void:     222 18% 7%;
+    --ink-dark:     222 16% 11%;
+    --ink-base:     222 16% 11%;
+    --ink-surface:  222 15% 13%;
+    --ink-elevated: 222 13% 17%;
+    --ink-overlay:  222 15% 15%;
 
-    /* Electric blue — logo-aligned */
-    --electric:        217 91% 60%;
-    --electric-dim:    217 80% 45%;
-    --electric-bright: 217 95% 68%;
+    /* Accent — ocean blue (brand navy→teal) */
+    --electric:        205 88% 56%;
+    --electric-dim:    205 90% 48%;
+    --electric-bright: 205 90% 64%;
 
-    /* Semantic financial colors */
-    --gain:         142 71% 45%;
-    --loss:           0 84% 60%;
-    --neutral-text: 215 16% 55%;
+    /* Semantic financial */
+    --gain:         152 58% 50%;
+    --loss:           5 78% 64%;
+    --warn:          38 92% 58%;
+    --neutral-text: 220 10% 56%;
 
-    /* shadcn bridge — mapped to ink system */
-    --background:             220 18% 5%;
-    --foreground:             210 40% 96%;
-    --card:                   220 13% 10%;
-    --card-foreground:        210 40% 96%;
-    --popover:                220 11% 13%;
-    --popover-foreground:     210 40% 96%;
-    --primary:                217 91% 60%;
-    --primary-foreground:     220 20% 5%;
-    --secondary:              220 11% 13%;
-    --secondary-foreground:   210 30% 80%;
-    --muted:                  220 13% 10%;
-    --muted-foreground:       215 16% 55%;
-    --accent:                 220 11% 13%;
-    --accent-foreground:      210 40% 96%;
-    --destructive:            0 84% 60%;
-    --destructive-foreground: 210 40% 96%;
-    --border:                 220 15% 14%;
-    --input:                  220 15% 14%;
-    --ring:                   217 91% 60%;
-    --radius:                 0.25rem;
+    /* shadcn bridge — v2 dark */
+    --background:             222 18% 9%;
+    --foreground:             220 22% 92%;
+    --card:                   222 15% 13%;
+    --card-foreground:        220 22% 92%;
+    --popover:                222 15% 15%;
+    --popover-foreground:     220 22% 92%;
+    --primary:                205 88% 56%;
+    --primary-foreground:     222 40% 8%;
+    --secondary:              222 13% 18%;
+    --secondary-foreground:   220 20% 88%;
+    --muted:                  222 18% 8%;
+    --muted-foreground:       220 12% 62%;
+    --accent:                 222 13% 17%;
+    --accent-foreground:      220 22% 92%;
+    --destructive:            5 78% 64%;
+    --destructive-foreground: 0 0% 100%;
+    --border:                 222 12% 20%;
+    --input:                  222 11% 27%;
+    --ring:                   205 88% 58%;
+    --radius:                 0.5rem;
   }
 
   .light {
-    /* Blue-tinted ink surfaces — gives a formal financial terminal feel */
-    --ink-void:     214 30% 74%;
-    --ink-dark:     214 28% 80%;
-    --ink-base:     214 30% 86%;   /* sidebar — subtle slate-blue tint */
-    --ink-surface:  214 20% 95%;
-    --ink-elevated: 0 0% 100%;
+    /* ── LIGHT THEME — v2 calm, cool off-white ── */
+    --ink-void:     240 24% 99%;
+    --ink-dark:     240 20% 98%;
+    --ink-base:     240 20% 98%;
+    --ink-surface:  0 0% 100%;
+    --ink-elevated: 240 18% 96%;
     --ink-overlay:  0 0% 100%;
 
-    /* shadcn bridge */
-    --background:             214 22% 94%;   /* content — cool blue-white */
-    --foreground:             220 35% 8%;
-    --card:                   0 0% 100%;     /* cards — pure white, lift off bg */
-    --card-foreground:        220 35% 8%;
+    /* shadcn bridge — v2 light */
+    --background:             240 24% 99%;
+    --foreground:             222 28% 13%;
+    --card:                   0 0% 100%;
+    --card-foreground:        222 28% 13%;
     --popover:                0 0% 100%;
-    --popover-foreground:     220 35% 8%;
-    --primary:                217 91% 50%;
+    --popover-foreground:     222 28% 13%;
+    --primary:                205 84% 41%;
     --primary-foreground:     0 0% 100%;
-    --secondary:              214 25% 86%;
-    --secondary-foreground:   220 30% 20%;
-    --muted:                  214 22% 88%;
-    --muted-foreground:       215 22% 40%;
-    --accent:                 214 25% 86%;
-    --accent-foreground:      220 35% 8%;
-    --destructive:            0 84% 58%;
+    --secondary:              240 16% 96%;
+    --secondary-foreground:   222 28% 18%;
+    --muted:                  240 16% 96%;
+    --muted-foreground:       220 10% 44%;
+    --accent:                 240 16% 96%;
+    --accent-foreground:      222 28% 13%;
+    --destructive:            5 66% 54%;
     --destructive-foreground: 0 0% 100%;
-    --border:                 214 22% 62%;   /* clearly visible blue-gray borders */
-    --input:                  214 22% 76%;
-    --ring:                   217 91% 50%;
+    --border:                 240 10% 91%;
+    --input:                  240 9% 85%;
+    --ring:                   205 84% 45%;
+
+    /* Semantic overrides — darker for contrast on white */
+    --electric:        205 84% 41%;
+    --electric-dim:    205 88% 35%;
+    --electric-bright: 205 84% 47%;
+    --gain:            152 54% 38%;
+    --loss:              5 66% 54%;
+    --warn:             38 88% 46%;
+    --neutral-text:    220 10% 50%;
   }
 }
 
-/* ── Design system extension (additive — does not touch --gain/--loss/--radius) ── */
 @layer base {
   :root {
     /* Brand anchors */
-    --brand-navy: 204 60% 26%;   /* #1B4B6C */
-    --brand-teal: 199 72% 30%;   /* #156082 */
+    --brand-navy: 204 60% 26%;
+    --brand-teal: 199 72% 30%;
 
-    /* Chart series — navy → petróleo → teal → sky (8 hues) */
-    --chart-1: 204 60% 26%;   /* #1B4B6C */
-    --chart-2: 199 72% 30%;   /* #156082 */
-    --chart-3: 199 56% 41%;   /* #2E7DA1 */
-    --chart-4: 196 51% 50%;   /* #3E9DBF */
-    --chart-5: 194 58% 59%;   /* #5BB8D4 */
-    --chart-6: 204 71% 20%;   /* #0F3A57 */
-    --chart-7: 207 41% 64%;   /* #7FA8C9 */
-    --chart-8: 195 54% 78%;   /* #A9D6E5 */
+    /* Chart series — v2 dark: navy → petrol → teal → sky */
+    --chart-1: 205 70% 44%;
+    --chart-2: 199 66% 50%;
+    --chart-3: 196 58% 58%;
+    --chart-4: 192 56% 66%;
+    --chart-5: 190 54% 74%;
+    --chart-6: 207 60% 38%;
+    --chart-7: 208 40% 64%;
+    --chart-8: 192 48% 80%;
 
-    --chart-grid:           220 15% 18%;
-    --chart-axis:           215 16% 45%;
-    --chart-tooltip-bg:     220 11% 13%;
-    --chart-tooltip-border: 220 15% 20%;
+    --chart-grid:           222 12% 20%;
+    --chart-axis:           220 10% 50%;
+    --chart-tooltip-bg:     222 15% 15%;
+    --chart-tooltip-border: 222 12% 24%;
 
-    /* Elevation aliases → ink surfaces (use as hsl(var(--elevation-N))) */
+    /* Elevation aliases */
     --elevation-0: var(--ink-base);
     --elevation-1: var(--ink-surface);
     --elevation-2: var(--ink-elevated);
     --elevation-3: var(--ink-overlay);
 
-    /* Radii (independent of global --radius) */
-    --radius-card: 0.5rem;
+    /* Radii — v2 softened */
+    --radius-card: 0.75rem;
+    --radius-lg:   1rem;
     --radius-pill: 9999px;
 
-    /* Shadows */
-    --shadow-sm:   0 1px 2px 0 hsl(220 40% 2% / 0.40);
-    --shadow-card: 0 1px 3px 0 hsl(220 40% 2% / 0.50), 0 1px 2px -1px hsl(220 40% 2% / 0.50);
-    --shadow-pop:  0 10px 30px -10px hsl(220 40% 2% / 0.60);
-    --shadow-glow: 0 0 20px hsl(var(--electric) / 0.15);
+    /* Shadows — v2 dark: soft, layered */
+    --shadow-xs:   0 1px 2px hsl(222 50% 2% / 0.30);
+    --shadow-sm:   0 1px 2px hsl(222 50% 2% / 0.40), 0 1px 3px hsl(222 50% 2% / 0.30);
+    --shadow-card: 0 1px 2px hsl(222 50% 2% / 0.30), 0 2px 8px -2px hsl(222 50% 2% / 0.40);
+    --shadow-md:   0 2px 6px hsl(222 50% 2% / 0.40), 0 10px 24px -6px hsl(222 50% 2% / 0.50);
+    --shadow-pop:  0 10px 24px -8px hsl(222 50% 2% / 0.55), 0 24px 48px -16px hsl(222 50% 2% / 0.65);
+    --shadow-glow: 0 0 0 4px hsl(var(--electric) / 0.18);
   }
 
   .light {
-    /* Chart series — darken the palest hues for contrast on white */
-    --chart-5: 194 58% 48%;
-    --chart-7: 207 41% 50%;
-    --chart-8: 195 54% 55%;
+    /* Chart series — v2 light: richer for contrast on white */
+    --chart-1: 205 78% 34%;
+    --chart-2: 199 72% 38%;
+    --chart-3: 196 60% 47%;
+    --chart-4: 193 58% 56%;
+    --chart-5: 190 55% 66%;
+    --chart-6: 207 64% 26%;
+    --chart-7: 208 38% 60%;
+    --chart-8: 192 50% 74%;
 
-    --chart-grid:           214 22% 80%;
-    --chart-axis:           215 22% 45%;
+    --chart-grid:           240 12% 92%;
+    --chart-axis:           220 9% 60%;
     --chart-tooltip-bg:     0 0% 100%;
-    --chart-tooltip-border: 214 22% 62%;
+    --chart-tooltip-border: 240 10% 88%;
 
-    --shadow-sm:   0 1px 2px 0 hsl(214 30% 40% / 0.10);
-    --shadow-card: 0 1px 3px 0 hsl(214 30% 40% / 0.12), 0 1px 2px -1px hsl(214 30% 40% / 0.10);
-    --shadow-pop:  0 10px 30px -10px hsl(214 30% 30% / 0.25);
-    --shadow-glow: 0 0 20px hsl(var(--electric) / 0.20);
+    /* Shadows — v2 light: minimal, barely visible */
+    --shadow-xs:   0 1px 2px hsl(222 30% 16% / 0.04);
+    --shadow-sm:   0 1px 2px hsl(222 30% 16% / 0.05), 0 1px 3px hsl(222 30% 16% / 0.04);
+    --shadow-card: 0 1px 2px hsl(222 30% 16% / 0.04), 0 2px 6px -1px hsl(222 30% 16% / 0.06);
+    --shadow-md:   0 2px 4px hsl(222 30% 16% / 0.05), 0 8px 20px -6px hsl(222 30% 16% / 0.10);
+    --shadow-pop:  0 8px 16px -6px hsl(222 30% 16% / 0.10), 0 20px 40px -12px hsl(222 30% 16% / 0.16);
+    --shadow-glow: 0 0 0 4px hsl(var(--electric) / 0.12);
   }
 }
 
@@ -140,25 +160,28 @@
   }
   body {
     @apply bg-background text-foreground;
-    font-family: var(--font-ui), 'Inter', sans-serif;
+    font-family: var(--font-ui), system-ui, sans-serif;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
   }
 
-  /* Terminal-style scrollbars */
+  /* Scrollbars — v2: subtle, neutral, not terminal-style */
   ::-webkit-scrollbar {
-    width: 4px;
-    height: 4px;
+    width: 10px;
+    height: 10px;
   }
   ::-webkit-scrollbar-track {
-    background: hsl(var(--ink-dark));
+    background: transparent;
   }
   ::-webkit-scrollbar-thumb {
-    background: hsl(220 15% 20%);
-    border-radius: 2px;
+    background: hsl(var(--foreground) / 0.14);
+    border-radius: 8px;
+    border: 3px solid transparent;
+    background-clip: padding-box;
   }
   ::-webkit-scrollbar-thumb:hover {
-    background: hsl(220 15% 28%);
+    background: hsl(var(--foreground) / 0.24);
+    background-clip: padding-box;
   }
 }
 
@@ -168,12 +191,22 @@
     animation-play-state: paused;
   }
 
-  /* Typography utilities */
+  /* Typography — editorial now maps to the same UI sans (no separate serif) */
   .font-editorial {
-    font-family: var(--font-editorial), Georgia, serif;
+    font-family: var(--font-ui), system-ui, sans-serif;
   }
   .font-data {
     font-family: var(--font-mono), 'Menlo', monospace;
+  }
+
+  /* Eyebrow label — 11px, sans, uppercase, +0.06em tracking */
+  .eyebrow {
+    font-family: var(--font-ui), system-ui, sans-serif;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: hsl(var(--muted-foreground));
   }
 
   /* Tabular numbers for financial data */
