@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useMemo } from 'react'
+import { createClient } from '@/lib/supabase/client'
 import { useAllWatchlistTickers } from './useTopPerformers'
 import { useRealtimePrices } from './useRealtimePrices'
 import { useFxData } from './useFxData'
@@ -29,6 +30,7 @@ export interface PeriodResult {
   won: boolean          // state === 'won'
   state: PeriodState    // 'insufficient' hasta que los datos se asienten (evita parpadeo)
   assetReturn: number | null
+  peerReturns: Record<string, number | null>  // ticker peer → retorno USD ese período (null = sin dato)
 }
 
 export interface AssetComparison {
@@ -36,6 +38,7 @@ export interface AssetComparison {
   name: string
   watchlistNames: string[]
   peers: string[]
+  peerNames: Record<string, string>  // ticker peer → nombre (cae al ticker si no hay metadata)
   hasPeers: boolean
   metricsWon: number
   evaluatedPeriods: number
@@ -108,6 +111,26 @@ export function usePeerComparison() {
   }, [unionTickers, prices])
   const { fxRates, fxPeriodReturns, loading: fxLoading } = useFxData(currencies, RETURN_PERIODS)
 
+  // Nombres de los tickers de la unión (activo + peers). Cosmético para el panel expandido del
+  // PeerCard: NO bloquea `settled` (el panel funciona con tickers mientras cargan los nombres).
+  const [names, setNames] = useState<Record<string, string>>({})
+  useEffect(() => {
+    if (unionTickers.length === 0) { setNames({}); return }
+    let cancelled = false
+    const supabase = createClient()
+    supabase
+      .from('assets_metadata')
+      .select('ticker, name')
+      .in('ticker', unionTickers)
+      .then(({ data }) => {
+        if (cancelled || !data) return
+        const map: Record<string, string> = {}
+        for (const m of data as Array<{ ticker: string; name: string }>) map[m.ticker] = m.name
+        setNames(map)
+      })
+    return () => { cancelled = true }
+  }, [unionTickers])
+
   // "Settled": todas las cargas iniciales terminaron. Hasta entonces NO calculamos won/lost
   // (los datos llegan async/parciales y harían parpadear el conteo). Los refetch de fondo
   // posteriores reflejan movimientos reales del mercado (comportamiento deseado, no parpadeo).
@@ -143,9 +166,13 @@ export function usePeerComparison() {
         const assetReturn = settled ? getUsdReturn(t.ticker, period) : null
         const beaten: string[] = []
         const evaluated: string[] = []
+        // Retorno USD por peer ese período (null = sin dato). Solo para visualización en el panel
+        // expandido — NO afecta la decisión won/lost (que se toma sobre `evaluated`).
+        const peerReturns: Record<string, number | null> = {}
         if (settled && assetReturn != null) {
           for (const peer of peers) {
             const pr = getUsdReturn(peer, period)
+            peerReturns[peer] = pr // registra TODOS los peers (incl. sin dato → null)
             if (pr == null) continue // peer sin dato comparable (incl. no-USD sin FX) → fuera
             evaluated.push(peer)
             if (assetReturn > pr) beaten.push(peer) // strict; ties don't count
@@ -161,7 +188,7 @@ export function usePeerComparison() {
         if (state !== 'insufficient') evaluatedPeriods++
         if (won) metricsWon++
         // `assigned` = total de peers asignados (constante entre períodos) → denominador estable en la UI.
-        byPeriod[period] = { beaten, evaluated, assigned: peers.length, won, state, assetReturn }
+        byPeriod[period] = { beaten, evaluated, assigned: peers.length, won, state, assetReturn, peerReturns }
       }
 
       return {
@@ -169,6 +196,9 @@ export function usePeerComparison() {
         name: t.name,
         watchlistNames: t.watchlistNames,
         peers,
+        peerNames: Object.fromEntries(
+          peers.map((p) => [p, names[p] ?? names[p.toUpperCase()] ?? p])
+        ),
         hasPeers: peers.length > 0,
         metricsWon,
         evaluatedPeriods,
@@ -178,7 +208,7 @@ export function usePeerComparison() {
 
     // Rank by metrics won, then by total periods evaluated (more data = more confident).
     return out.sort((a, b) => b.metricsWon - a.metricsWon || b.evaluatedPeriods - a.evaluatedPeriods || a.ticker.localeCompare(b.ticker))
-  }, [tickers, peerSets, returnsData, prices, fxRates, fxPeriodReturns, settled])
+  }, [tickers, peerSets, returnsData, prices, fxRates, fxPeriodReturns, settled, names])
 
   return {
     results,
