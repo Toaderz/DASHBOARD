@@ -63,7 +63,7 @@ export function WatchlistTable({
   const activeMetrics = watchlist.selected_metrics as MetricKey[]
   const { returns, maxYears } = usePerformanceMetrics(tickers, prices, activeMetrics)
 
-  const RETURN_PERIODS_SET = new Set(['1W', '1M', 'YTD', '1Y', '3Y', '5Y', '10Y', 'MAX', 'CY2025', 'CY2024', 'CY2023', 'CY2022', 'CY2021', 'CY2020', 'CY2019'])
+  const RETURN_PERIODS_SET = new Set(['1W', '1M', '6M', 'YTD', '1Y', '3Y', '5Y', '10Y', 'MAX', 'CY2025', 'CY2024', 'CY2023', 'CY2022', 'CY2021', 'CY2020', 'CY2019'])
   const activePeriods = useMemo(
     () => activeMetrics.filter((m): m is MetricKey => RETURN_PERIODS_SET.has(m)),
     [activeMetrics]
@@ -155,6 +155,7 @@ export function WatchlistTable({
     switch (period) {
       case '1W':  return new Date(y, m, d - 7).toISOString().split('T')[0]
       case '1M':  return new Date(y, m - 1, d).toISOString().split('T')[0]
+      case '6M':  return new Date(y, m - 6, d).toISOString().split('T')[0]
       case 'YTD': return `${y}-01-01`
       case '1Y':  return new Date(y - 1, m, d).toISOString().split('T')[0]
       case '3Y':  return new Date(y - 3, m, d).toISOString().split('T')[0]
@@ -243,7 +244,7 @@ export function WatchlistTable({
             return <span className={percentColor(v)}>{formatPercent(v)}</span>
           },
         }),
-        ...(['1W', '1M', 'YTD', '1Y', '3Y', '5Y', '10Y', 'MAX', 'CY2025', 'CY2024', 'CY2023', 'CY2022', 'CY2021', 'CY2020', 'CY2019'] as MetricKey[]).map((period) =>
+        ...(['1W', '1M', '6M', 'YTD', '1Y', '3Y', '5Y', '10Y', 'MAX', 'CY2025', 'CY2024', 'CY2023', 'CY2022', 'CY2021', 'CY2020', 'CY2019'] as MetricKey[]).map((period) =>
           helper.accessor((row) => returns[row.ticker]?.[period] ?? null, {
             id: period,
             header: () => {

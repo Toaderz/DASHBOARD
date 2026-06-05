@@ -25,7 +25,7 @@ export type PeriodState = 'won' | 'lost' | 'insufficient'
 export interface PeriodResult {
   beaten: string[]      // peer tickers strictly beaten this period
   evaluated: string[]   // peer tickers with valid data this period (beaten ⊆ evaluated)
-  total: number         // = evaluated.length
+  assigned: number      // total peers asignados al activo (constante entre períodos)
   won: boolean          // state === 'won'
   state: PeriodState    // 'insufficient' hasta que los datos se asienten (evita parpadeo)
   assetReturn: number | null
@@ -151,16 +151,17 @@ export function usePeerComparison() {
             if (assetReturn > pr) beaten.push(peer) // strict; ties don't count
           }
         }
-        const total = evaluated.length
+        // Win se decide SOLO sobre peers con dato (evaluated); los sin dato no perjudican.
         // Estado determinista: 'insufficient' hasta asentar o sin datos suficientes; si no, won/lost.
         let state: PeriodResult['state'] = 'insufficient'
-        if (settled && assetReturn != null && total >= MIN_EVALUABLE) {
-          state = beaten.length / total >= WIN_THRESHOLD ? 'won' : 'lost'
+        if (settled && assetReturn != null && evaluated.length >= MIN_EVALUABLE) {
+          state = beaten.length / evaluated.length >= WIN_THRESHOLD ? 'won' : 'lost'
         }
         const won = state === 'won'
         if (state !== 'insufficient') evaluatedPeriods++
         if (won) metricsWon++
-        byPeriod[period] = { beaten, evaluated, total, won, state, assetReturn }
+        // `assigned` = total de peers asignados (constante entre períodos) → denominador estable en la UI.
+        byPeriod[period] = { beaten, evaluated, assigned: peers.length, won, state, assetReturn }
       }
 
       return {

@@ -26,6 +26,12 @@ interface RawEntry extends TickerInfo {
 
 export const TOP_PERIODS: MetricKey[] = ['1D', '1W', '1M', 'YTD', '1Y', '3Y', '5Y', '10Y', 'MAX']
 
+// Años NOMINALES fijos por período para anualizar (CAGR). Usar la duración real del histórico
+// por activo rompe la monotonía del ranking (dos activos del mismo período con histórico de
+// distinta longitud → exponentes distintos). Con un `years` idéntico para todos, el orden con
+// Ann. = orden sin Ann. MAX no tiene período nominal → conserva años por-activo (inherente).
+const NOMINAL_YEARS: Partial<Record<MetricKey, number>> = { '1Y': 1, '3Y': 3, '5Y': 5, '10Y': 10 }
+
 export function useAllWatchlistTickers() {
   const [tickers, setTickers] = useState<TickerInfo[]>([])
   const [loading, setLoading] = useState(true)
@@ -175,9 +181,11 @@ export function useTopPerformers(
         ? ((1 + entry.localReturn / 100) * (1 + fxReturn / 100) - 1) * 100
         : entry.localReturn
 
+      // years nominal fijo por período (MAX usa años reales por-activo: no tiene período nominal).
+      const annYears = activePeriod === 'MAX' ? entry.years : (NOMINAL_YEARS[activePeriod] ?? null)
       let displayReturn = usdReturn
-      if (doAnnualize && entry.years != null && entry.years >= 1) {
-        displayReturn = (Math.pow(1 + usdReturn / 100, 1 / entry.years) - 1) * 100
+      if (doAnnualize && annYears != null && annYears >= 1) {
+        displayReturn = (Math.pow(1 + usdReturn / 100, 1 / annYears) - 1) * 100
       }
 
       return { ...entry, returnValue: displayReturn }
@@ -209,9 +217,11 @@ export function useTopPerformers(
         ? ((1 + entry.localReturn / 100) * (1 + fxReturn / 100) - 1) * 100
         : entry.localReturn
 
+      // years nominal fijo por período (MAX usa años reales por-activo: no tiene período nominal).
+      const annYears = activePeriod === 'MAX' ? entry.years : (NOMINAL_YEARS[activePeriod] ?? null)
       let displayReturn = usdReturn
-      if (doAnnualize && entry.years != null && entry.years >= 1) {
-        displayReturn = (Math.pow(1 + usdReturn / 100, 1 / entry.years) - 1) * 100
+      if (doAnnualize && annYears != null && annYears >= 1) {
+        displayReturn = (Math.pow(1 + usdReturn / 100, 1 / annYears) - 1) * 100
       }
 
       return { ...entry, returnValue: displayReturn }

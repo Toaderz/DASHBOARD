@@ -59,7 +59,7 @@ export function PeerCard({ asset }: { asset: AssetComparison }) {
       <div className="border-t border-border">
         {PEER_CMP_PERIODS.map((period) => {
           const r = asset.byPeriod[period]
-          const hasData = r.total > 0
+          const hasData = r.evaluated.length > 0
           const isOpen = expanded === period
           const notBeaten = r.evaluated.filter((p) => !r.beaten.includes(p))
           return (
@@ -88,7 +88,7 @@ export function PeerCard({ asset }: { asset: AssetComparison }) {
                         r.won ? 'text-gain' : 'text-muted-foreground'
                       )}
                     >
-                      ganó a {r.beaten.length}/{r.total}
+                      ganó a {r.beaten.length}/{r.assigned}
                     </span>
                   ) : (
                     <span className="font-mono text-xs text-muted-foreground">—</span>

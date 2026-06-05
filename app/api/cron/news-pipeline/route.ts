@@ -66,21 +66,48 @@ export async function POST(req: Request) {
 
   const supabaseAdmin = getAdminClient()
 
-  // Anti-double-execution guard
+  const nowIso = new Date().toISOString()
+  // Un run que excede maxDuration deja la fila en 'generating' para siempre y bloquea
+  // todos los crons futuros. Tratamos como abandonado cualquier 'generating' de hace >15 min.
+  const fifteenMinAgo = new Date(Date.now() - 15 * 60_000).toISOString()
+
+  console.log(`[news-cron] handler invoked at ${nowIso}`)
+
+  // Auto-recuperación: marca 'failed' los 'generating' abandonados para que dejen de bloquear.
+  const { data: recovered } = await supabaseAdmin
+    .from('market_briefs')
+    .update({ status: 'failed', metadata: { error: 'abandoned: stuck in generating >15min' } })
+    .eq('status', 'generating')
+    .lt('created_at', fifteenMinAgo)
+    .select('id')
+  if (recovered && recovered.length > 0) {
+    console.log(`[news-cron] recovered ${recovered.length} abandoned 'generating' brief(s): ${recovered.map((r) => r.id).join(', ')}`)
+  }
+
+  // Anti-double-execution guard: bloquea solo si hay un 'generating' RECIENTE (<15 min)
+  // o un 'ready' aún vigente (valid_until en el futuro).
   const { data: existing } = await supabaseAdmin
     .from('market_briefs')
-    .select('id, status, valid_until')
-    .or(`status.eq.generating,and(status.eq.ready,valid_until.gt.${new Date().toISOString()})`)
+    .select('id, status, valid_until, created_at')
+    .or(`and(status.eq.generating,created_at.gt.${fifteenMinAgo}),and(status.eq.ready,valid_until.gt.${nowIso})`)
     .limit(1)
 
   if (existing && existing.length > 0) {
-    return NextResponse.json({ skipped: true, reason: 'Brief already generating or still valid' })
+    const e = existing[0]
+    const reason = e.status === 'generating'
+      ? `Brief already generating (id=${e.id}, created_at=${e.created_at})`
+      : `Brief still valid (id=${e.id}, valid_until=${e.valid_until})`
+    console.log(`[news-cron] SKIP — ${reason}`)
+    return NextResponse.json({ skipped: true, reason })
   }
+
+  console.log('[news-cron] guard clear — proceeding to generate new brief')
 
   const now = new Date()
   const periodStart = new Date(now)
   periodStart.setUTCDate(now.getUTCDate() - 7)
   const validUntil = computeValidUntil()
+  console.log(`[news-cron] new brief valid_until=${validUntil.toISOString()}`)
 
   const { data: brief, error: insertError } = await supabaseAdmin
     .from('market_briefs')
@@ -193,8 +220,10 @@ export async function POST(req: Request) {
       })
       .eq('id', brief.id)
 
+    console.log(`[news-cron] SUCCESS — brief ${brief.id} ready (${finalArticles.length} articles)`)
     return NextResponse.json({ success: true, briefId: brief.id })
   } catch (error) {
+    console.error(`[news-cron] FAILED — brief ${brief.id}:`, error)
     await supabaseAdmin
       .from('market_briefs')
       .update({ status: 'failed', metadata: { error: String(error) } })

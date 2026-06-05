@@ -1,17 +1,41 @@
 'use client'
 
-import { Loader2, Swords } from 'lucide-react'
+import { useMemo, useState } from 'react'
+import { Loader2, Search, Swords, X } from 'lucide-react'
 import { usePeerComparison } from '@/hooks/usePeerComparison'
 import { PageHeader } from './PageHeader'
 import { EmptyState } from './EmptyState'
 import { Card, CardContent } from '@/components/ui/card'
 import { PeerCard } from './PeerCard'
+import { SegmentedControl } from './SegmentedControl'
+
+// Filtro de relevancia: activo "ganador" si supera >50% de los 6 períodos (≥4/6 por defecto).
+type MinWon = '3' | '4' | '5' | '6'
+const MIN_WON_OPTIONS: { value: MinWon; label: string }[] = [
+  { value: '3', label: '≥ 3/6' },
+  { value: '4', label: '≥ 4/6' },
+  { value: '5', label: '≥ 5/6' },
+  { value: '6', label: '6/6' },
+]
 
 export function PeerComparison() {
   const { results, loading, isEmpty } = usePeerComparison()
+  const [minWon, setMinWon] = useState<MinWon>('4')
+  const [filterQuery, setFilterQuery] = useState('')
 
-  const withPeers = results.filter((r) => r.hasPeers)
-  const withoutPeers = results.filter((r) => !r.hasPeers)
+  const withPeers = useMemo(() => results.filter((r) => r.hasPeers), [results])
+  const withoutPeers = useMemo(() => results.filter((r) => !r.hasPeers), [results])
+
+  // Filtros combinados (AND): mínimo de períodos ganados + búsqueda por ticker/nombre.
+  const visible = useMemo(() => {
+    const threshold = parseInt(minWon, 10)
+    const q = filterQuery.trim().toLowerCase()
+    return withPeers.filter((r) => {
+      if (r.metricsWon < threshold) return false
+      if (q && !r.ticker.toLowerCase().includes(q) && !r.name.toLowerCase().includes(q)) return false
+      return true
+    })
+  }, [withPeers, minWon, filterQuery])
 
   return (
     <div className="p-6 max-w-2xl space-y-6">
@@ -40,11 +64,53 @@ export function PeerComparison() {
         />
       ) : (
         <div className="space-y-4">
-          <div className="space-y-2">
-            {withPeers.map((asset) => (
-              <PeerCard key={asset.ticker} asset={asset} />
-            ))}
+          {/* Toolbar: filtro de períodos ganados + buscador */}
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <span className="font-mono text-[11px] uppercase tracking-wide text-muted-foreground">Ganan al menos</span>
+              <SegmentedControl
+                size="sm"
+                aria-label="Mínimo de períodos ganados"
+                options={MIN_WON_OPTIONS}
+                value={minWon}
+                onChange={setMinWon}
+              />
+            </div>
+            <div className="relative w-full sm:w-56">
+              <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+              <input
+                type="text"
+                placeholder="Filtrar…"
+                value={filterQuery}
+                onChange={(e) => setFilterQuery(e.target.value)}
+                className="w-full rounded-sm border border-border bg-transparent pl-7 pr-7 py-1.5 text-xs font-ui placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+              />
+              {filterQuery && (
+                <button
+                  onClick={() => setFilterQuery('')}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                  aria-label="Limpiar filtro"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              )}
+            </div>
           </div>
+
+          {visible.length === 0 ? (
+            <EmptyState
+              icon={Swords}
+              title="Ningún activo cumple el filtro"
+              description="Ajusta el mínimo de períodos ganados o la búsqueda para ver más activos."
+              compact
+            />
+          ) : (
+            <div className="space-y-2">
+              {visible.map((asset) => (
+                <PeerCard key={asset.ticker} asset={asset} />
+              ))}
+            </div>
+          )}
 
           {withoutPeers.length > 0 && (
             <Card className="bg-card/40">

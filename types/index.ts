@@ -184,6 +184,7 @@ export const METRIC_DEFINITIONS: MetricDefinition[] = [
   { key: '1D', label: '1D %', description: '1 Day Return', format: 'percent' },
   { key: '1W', label: '1W %', description: '1 Week Return', format: 'percent' },
   { key: '1M', label: '1M %', description: '1 Month Return', format: 'percent' },
+  { key: '6M', label: '6M %', description: '6 Month Return', format: 'percent' },
   { key: 'YTD', label: 'YTD %', description: 'Year to Date Return', format: 'percent' },
   { key: '1Y', label: '1Y %', description: '1 Year Return', format: 'percent' },
   { key: '3Y', label: '3Y %', description: '3 Year Return', format: 'percent' },

@@ -6,7 +6,7 @@ import type { MetricKey } from '@/types'
 
 type ReturnMap = Partial<Record<MetricKey, number | null>>
 
-const RETURN_PERIODS: MetricKey[] = ['1W', '1M', 'YTD', '1Y', '3Y', '5Y', '10Y', 'MAX']
+const RETURN_PERIODS: MetricKey[] = ['1W', '1M', '6M', 'YTD', '1Y', '3Y', '5Y', '10Y', 'MAX']
 const CY_KEYS: MetricKey[] = ['CY2025', 'CY2024', 'CY2023', 'CY2022', 'CY2021', 'CY2020', 'CY2019']
 const CY_YEAR: Record<string, number> = {
   CY2025: 2025, CY2024: 2024, CY2023: 2023, CY2022: 2022, CY2021: 2021, CY2020: 2020, CY2019: 2019,
