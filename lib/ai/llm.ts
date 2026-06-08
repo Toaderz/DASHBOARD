@@ -91,8 +91,8 @@ function buildProvider(name: string, role: LLMRole): ResolvedProvider | null {
       if (!apiKey) return null
       const base = process.env.GEMINI_API_URL ?? 'https://generativelanguage.googleapis.com/v1beta/openai'
       const model = role === 'analysis'
-        ? (process.env.GEMINI_ANALYSIS_MODEL ?? 'gemini-2.5-flash')
-        : (process.env.GEMINI_SELECTION_MODEL ?? 'gemini-2.5-flash-lite')
+        ? (process.env.GEMINI_ANALYSIS_MODEL || 'gemini-2.5-flash')
+        : (process.env.GEMINI_SELECTION_MODEL || 'gemini-2.5-flash-lite')
       // Desactiva el thinking: todo el presupuesto de tokens va al JSON (evita truncamiento).
       const reasoning = process.env.GEMINI_REASONING_EFFORT ?? 'none'
       return {
@@ -108,8 +108,8 @@ function buildProvider(name: string, role: LLMRole): ResolvedProvider | null {
       if (!base) return null
       const apiKey = process.env.OLLAMA_API_KEY
       const model = role === 'analysis'
-        ? (process.env.NEWS_ANALYSIS_MODEL ?? 'openai/gpt-oss-120b')
-        : (process.env.OLLAMA_MODEL ?? 'llama-3.3-70b-versatile')
+        ? (process.env.NEWS_ANALYSIS_MODEL || 'llama-3.3-70b-versatile')
+        : (process.env.OLLAMA_MODEL || 'llama-3.3-70b-versatile')
       // Groq/Ollama exponen las completions bajo /v1/chat/completions.
       return { name, endpoint: `${base.replace(/\/$/, '')}/v1/chat/completions`, apiKey, model }
     }
