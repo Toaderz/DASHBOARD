@@ -51,6 +51,27 @@ interface YahooChartResult {
   }
 }
 
+// Parses one Yahoo v8 chart response into points; returns [] on any structural gap.
+function parseChart(data: YahooChartResult): HistoricalDataPoint[] {
+  const result = data.chart?.result?.[0]
+  if (!result) return []
+
+  const { timestamp, indicators } = result
+  const quotes = indicators.quote[0]
+  const adjClose = indicators.adjclose?.[0]?.adjclose
+
+  return timestamp.map((ts, i) => ({
+    date: new Date(ts * 1000).toISOString().split('T')[0],
+    close: adjClose?.[i] ?? quotes.close[i] ?? 0,
+    open: quotes.open[i],
+    high: quotes.high[i],
+    low: quotes.low[i],
+    volume: quotes.volume[i],
+  })).filter((d) => d.close > 0)
+}
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
+
 export async function fetchHistoricalData(
   ticker: string,
   period: PeriodKey
@@ -60,33 +81,44 @@ export async function fetchHistoricalData(
 
   const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?range=${range}&interval=${interval}&includePrePost=false`
 
-  try {
-    const res = await fetch(url, {
-      headers: { 'User-Agent': 'Mozilla/5.0' },
-      next: { revalidate: 3600 },
-    })
+  // Resilience: Yahoo intermittently returns 429/5xx or an empty body under concurrent load
+  // (the Beating-Peers batch fires dozens of tickers at once). A single failed attempt used to
+  // become a permanent "— sin dato" because failures aren't cached. Retry transient failures with
+  // a short backoff so the peer path is as reliable as the watchlist's per-period fetches.
+  // Successful responses (the common case) hit `next.revalidate` and never retry → zero overhead.
+  const MAX_ATTEMPTS = 3
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    try {
+      const res = await fetch(url, {
+        headers: { 'User-Agent': 'Mozilla/5.0' },
+        next: { revalidate: 3600 },
+      })
 
-    if (!res.ok) return []
+      if (!res.ok) {
+        // 4xx other than rate-limit won't fix itself; only retry 429/5xx.
+        if ((res.status === 429 || res.status >= 500) && attempt < MAX_ATTEMPTS) {
+          await sleep(250 * attempt)
+          continue
+        }
+        return []
+      }
 
-    const data = (await res.json()) as YahooChartResult
-    const result = data.chart?.result?.[0]
-    if (!result) return []
-
-    const { timestamp, indicators } = result
-    const quotes = indicators.quote[0]
-    const adjClose = indicators.adjclose?.[0]?.adjclose
-
-    return timestamp.map((ts, i) => ({
-      date: new Date(ts * 1000).toISOString().split('T')[0],
-      close: adjClose?.[i] ?? quotes.close[i] ?? 0,
-      open: quotes.open[i],
-      high: quotes.high[i],
-      low: quotes.low[i],
-      volume: quotes.volume[i],
-    })).filter((d) => d.close > 0)
-  } catch {
-    return []
+      const data = (await res.json()) as YahooChartResult
+      const points = parseChart(data)
+      if (points.length === 0 && attempt < MAX_ATTEMPTS) {
+        await sleep(250 * attempt)
+        continue
+      }
+      return points
+    } catch {
+      if (attempt < MAX_ATTEMPTS) {
+        await sleep(250 * attempt)
+        continue
+      }
+      return []
+    }
   }
+  return []
 }
 
 async function fetchCalendarYearReturnFromPrice(

@@ -85,7 +85,21 @@ export async function POST(request: NextRequest) {
       return { ticker, data }
     })
 
-    for (const { ticker, data } of fetched) out[ticker] = data
+    // Stale-fallback: a fresh fetch that comes back unhealthy (transient Yahoo failure) must NOT
+    // blank a ticker that was previously good. If a healthy cached row exists (even past its TTL),
+    // serve that last-good value instead of nulls. Only a ticker with NO prior good data shows the
+    // degraded result. This is what makes the peer section as resilient as the watchlist: once a
+    // ticker has been fetched successfully, a later hiccup degrades to last-good, never to "sin dato".
+    for (const { ticker, data } of fetched) {
+      if (isHealthy(data.returns)) {
+        out[ticker] = data
+      } else {
+        const stale = cacheByTicker.get(ticker)
+        out[ticker] = stale && isHealthy(stale.returns)
+          ? { returns: stale.returns, years: stale.years }
+          : data
+      }
+    }
 
     // Only cache healthy bundles (1Y anchor present). A degraded/all-null result (total Yahoo
     // outage) is still returned to the client but NOT cached, so the next request retries instead
