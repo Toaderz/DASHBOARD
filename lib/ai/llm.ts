@@ -108,7 +108,7 @@ function buildProvider(name: string, role: LLMRole): ResolvedProvider | null {
       if (!base) return null
       const apiKey = process.env.OLLAMA_API_KEY
       const model = role === 'analysis'
-        ? (process.env.NEWS_ANALYSIS_MODEL || 'llama-3.3-70b-versatile')
+        ? (process.env.NEWS_ANALYSIS_MODEL || 'openai/gpt-oss-120b')
         : (process.env.OLLAMA_MODEL || 'llama-3.3-70b-versatile')
       // Groq/Ollama exponen las completions bajo /v1/chat/completions.
       return { name, endpoint: `${base.replace(/\/$/, '')}/v1/chat/completions`, apiKey, model }
