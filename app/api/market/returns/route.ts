@@ -63,9 +63,15 @@ export async function POST(request: NextRequest) {
     cacheByTicker.set(row.ticker, row)
   }
 
+  // A healthy full series always produces the 1Y anchor; a null 1Y means the cached bundle was
+  // written from a degraded fetch (legacy poisoned row). Treat those as stale so they self-heal
+  // instead of serving "— sin dato" for up to 6h.
+  const isHealthy = (r: MultiReturns['returns'] | null | undefined): boolean =>
+    !!r && r['1Y'] != null
+
   for (const ticker of tickers) {
     const row = cacheByTicker.get(ticker)
-    if (row && row.returns && now - new Date(row.fetched_at).getTime() < RETURNS_TTL_MS) {
+    if (row && isHealthy(row.returns) && now - new Date(row.fetched_at).getTime() < RETURNS_TTL_MS) {
       out[ticker] = { returns: row.returns, years: row.years }
     } else {
       staleOrMissing.push(ticker)
@@ -79,20 +85,27 @@ export async function POST(request: NextRequest) {
       return { ticker, data }
     })
 
-    const upsertRows = fetched.map(({ ticker, data }) => ({
-      ticker,
-      returns: data.returns,
-      years: data.years,
-      fetched_at: new Date(now).toISOString(),
-    }))
-
     for (const { ticker, data } of fetched) out[ticker] = data
 
+    // Only cache healthy bundles (1Y anchor present). A degraded/all-null result (total Yahoo
+    // outage) is still returned to the client but NOT cached, so the next request retries instead
+    // of pinning stale nulls for 6h.
+    const upsertRows = fetched
+      .filter(({ data }) => isHealthy(data.returns))
+      .map(({ ticker, data }) => ({
+        ticker,
+        returns: data.returns,
+        years: data.years,
+        fetched_at: new Date(now).toISOString(),
+      }))
+
     // Best-effort cache write; failure must not break the response.
-    try {
-      await supabaseAdmin.from('returns_cache').upsert(upsertRows, { onConflict: 'ticker' })
-    } catch {
-      /* ignore cache write errors */
+    if (upsertRows.length > 0) {
+      try {
+        await supabaseAdmin.from('returns_cache').upsert(upsertRows, { onConflict: 'ticker' })
+      } catch {
+        /* ignore cache write errors */
+      }
     }
   }
 

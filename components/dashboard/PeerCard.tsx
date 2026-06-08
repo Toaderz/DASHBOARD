@@ -10,7 +10,8 @@ import { PEER_CMP_PERIODS, type AssetComparison, type PeriodResult } from '@/hoo
 import { METRIC_DEFINITIONS } from '@/types'
 
 const TOTAL_PERIODS = PEER_CMP_PERIODS.length
-const BAR_WIDTH_PX = 56 // ancho máximo de la mini-barra de contexto
+const BAR_TRACK_PX = 56 // ancho total de la barra divergente (28px por lado desde el eje central)
+const BAR_HALF_PX = BAR_TRACK_PX / 2
 
 function periodLabel(period: string): string {
   return METRIC_DEFINITIONS.find((m) => m.key === period)?.label?.replace(' %', '') ?? period
@@ -41,16 +42,20 @@ function buildRows(asset: AssetComparison, r: PeriodResult): ReturnRow[] {
   return [assetRow, ...peerRows]
 }
 
-function ReturnRowItem({ row, assetReturn, min, max }: { row: ReturnRow; assetReturn: number | null; min: number; max: number }) {
+function ReturnRowItem({ row, assetReturn, maxAbsDelta }: { row: ReturnRow; assetReturn: number | null; maxAbsDelta: number }) {
   const noData = row.ret == null
   // Icono ✓/✗: comparación 1-a-1 activo↔peer (estricta; empate no cuenta). OJO: es distinta del
   // veredicto del período (r.state === 'won', umbral beaten/evaluated ≥ 0.75) — un período puede
   // estar 'lost' aunque el activo gane a algún peer individual. No recalcular el estado aquí.
   const assetBeatsPeer = !row.isAsset && !noData && assetReturn != null && assetReturn > (row.ret as number)
+  // Delta del texto "pp vs tú" (activo − peer): positivo = el activo va por delante.
   const delta = !row.isAsset && !noData && assetReturn != null ? assetReturn - (row.ret as number) : null
-  const range = max - min || 1
-  const barWidth = noData ? 0 : Math.max(4, Math.round(((((row.ret as number) - min) / range) * BAR_WIDTH_PX)))
-  const barColor = row.isAsset ? 'bg-brand-teal' : assetBeatsPeer ? 'bg-chart-1' : 'bg-muted'
+  // Barra divergente centrada en el retorno del activo (eje = delta 0). barDelta = peer − activo:
+  // negativo → el activo ganó (barra a la IZQUIERDA, teal favorable); positivo → el peer ganó
+  // (barra a la DERECHA, loss desfavorable). Longitud ∝ |barDelta| escalada al máx del grupo, 4px mín.
+  const barDelta = !row.isAsset && !noData && assetReturn != null ? (row.ret as number) - assetReturn : null
+  const barWidth = barDelta != null ? Math.max(4, Math.round((Math.abs(barDelta) / maxAbsDelta) * BAR_HALF_PX)) : 0
+  const peerWon = barDelta != null && barDelta > 0
 
   return (
     <div
@@ -77,9 +82,26 @@ function ReturnRowItem({ row, assetReturn, min, max }: { row: ReturnRow; assetRe
         {row.isAsset ? 'Tu activo' : row.name}
       </span>
 
-      {/* Mini-barra de contexto */}
-      <span className="w-[56px] shrink-0">
-        {!noData && <span className={cn('block h-1.5 rounded-full', barColor)} style={{ width: `${barWidth}px` }} />}
+      {/* Barra divergente: eje central = retorno del activo. Izq (teal) = activo ganó; der (loss) = peer ganó */}
+      <span className="relative block h-1.5 w-[56px] shrink-0">
+        {/* Eje central (solo en filas con dato; las sin dato quedan neutras sin eje) */}
+        {(row.isAsset || !noData) && (
+          <span className="absolute left-1/2 top-0 h-full w-px bg-border" />
+        )}
+        {row.isAsset ? (
+          // Activo: pip centrado en el eje (referencia delta 0), sin barra divergente.
+          <span className="absolute left-1/2 top-0 h-full w-1 -translate-x-1/2 rounded-full bg-brand-teal" />
+        ) : (
+          barDelta != null && (
+            <span
+              className={cn(
+                'absolute top-0 h-full rounded-full',
+                peerWon ? 'left-1/2 bg-loss' : 'right-1/2 bg-brand-teal'
+              )}
+              style={{ width: `${barWidth}px` }}
+            />
+          )
+        )}
       </span>
 
       {/* Retorno */}
@@ -186,9 +208,15 @@ export function PeerCard({ asset }: { asset: AssetComparison }) {
               <AnimatePresence initial={false}>
                 {isOpen && hasData && (() => {
                   const rows = buildRows(asset, r)
-                  const vals = rows.map((row) => row.ret).filter((v): v is number => v != null)
-                  const min = Math.min(...vals)
-                  const max = Math.max(...vals)
+                  // Escala de la barra divergente: máx |peer − activo| del grupo (0 → guarda 1 para no dividir por 0).
+                  const maxAbsDelta = r.assetReturn == null
+                    ? 1
+                    : Math.max(
+                        1,
+                        ...rows
+                          .filter((row) => !row.isAsset && row.ret != null)
+                          .map((row) => Math.abs((row.ret as number) - (r.assetReturn as number)))
+                      )
                   return (
                     <motion.div
                       initial={{ height: 0, opacity: 0 }}
@@ -199,7 +227,7 @@ export function PeerCard({ asset }: { asset: AssetComparison }) {
                     >
                       <div className="space-y-0.5 px-3 pb-2 pl-12">
                         {rows.map((row) => (
-                          <ReturnRowItem key={row.ticker} row={row} assetReturn={r.assetReturn} min={min} max={max} />
+                          <ReturnRowItem key={row.ticker} row={row} assetReturn={r.assetReturn} maxAbsDelta={maxAbsDelta} />
                         ))}
                       </div>
                     </motion.div>

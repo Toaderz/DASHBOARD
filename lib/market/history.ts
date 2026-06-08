@@ -253,5 +253,30 @@ export async function calculateMultiReturns(ticker: string): Promise<MultiReturn
     returns[p] = value
     years[p] = y
   }
+
+  // Self-healing fallback: deriving every period from a single 1Y series is efficient but fragile —
+  // a short/degraded Yahoo response (or a window `returnFrom` can't cleanly cover) yields a null for
+  // a period that genuinely has data. The watchlist never hits this because it fetches a dedicated
+  // range per period. So for any null period, retry it via the SAME robust per-range path the
+  // watchlist uses (`calculateReturn`), guaranteeing PeerCard parity with WatchlistTable. Fires only
+  // for the rare null periods; each failure is swallowed so the period stays null (never throws).
+  const missing = MULTI_RETURN_PERIODS.filter((p) => returns[p] == null)
+  if (missing.length > 0) {
+    await Promise.all(
+      missing.map(async (p) => {
+        try {
+          // MultiReturnPeriod strings are a subset of PeriodKey, so the cast is sound.
+          const { value, years: y } = await calculateReturn(ticker, p as PeriodKey, 0)
+          if (value != null) {
+            returns[p] = value
+            years[p] = y
+          }
+        } catch {
+          /* leave this period null — preserves the null-safe contract */
+        }
+      })
+    )
+  }
+
   return { returns, years }
 }
