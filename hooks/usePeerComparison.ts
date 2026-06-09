@@ -47,6 +47,19 @@ export interface AssetComparison {
   byPeriod: Record<MetricKey, PeriodResult>
 }
 
+// Yahoo instrumentType (de quotes en vivo) → AssetType. Fallback cuando assets_metadata aún
+// no tiene el peer (p.ej. peers de activos STATIC que no se materializan en watchlist).
+function instrumentToType(t: string | null | undefined): AssetType | null {
+  switch ((t ?? '').toUpperCase()) {
+    case 'ETF': return 'etf'
+    case 'MUTUALFUND': return 'fund'
+    case 'INDEX': return 'index'
+    case 'CRYPTOCURRENCY': return 'crypto'
+    case 'EQUITY': return 'stock'
+    default: return null
+  }
+}
+
 export function usePeerComparison() {
   const { tickers, loading: loadingTickers } = useAllWatchlistTickers()
 
@@ -146,6 +159,15 @@ export function usePeerComparison() {
 
   // 6. Compute comparison per asset (everything normalized to USD).
   const results = useMemo<AssetComparison[]>(() => {
+    // Nombre/tipo de un peer: assets_metadata primero, luego quote en vivo, luego ticker.
+    const peerName = (p: string): string => {
+      const fromMeta = names[p] ?? names[p.toUpperCase()]
+      if (fromMeta && fromMeta !== p) return fromMeta
+      return prices[p.toUpperCase()]?.name || fromMeta || p
+    }
+    const peerType = (p: string): AssetType | null =>
+      types[p] ?? types[p.toUpperCase()] ?? instrumentToType(prices[p.toUpperCase()]?.instrument_type)
+
     const getUsdReturn = (ticker: string, period: MetricKey): number | null => {
       const key = ticker.toUpperCase()
       const local = period === '1D'
@@ -199,18 +221,20 @@ export function usePeerComparison() {
         byPeriod[period] = { beaten, evaluated, assigned: peers.length, won, state, assetReturn, peerReturns }
       }
 
+      // Nombre/tipo del propio activo: assets_metadata primero, luego quote en vivo como fallback.
+      const assetName = t.name && t.name !== t.ticker
+        ? t.name
+        : (prices[t.ticker.toUpperCase()]?.name || t.name)
+      const assetType = t.type ?? instrumentToType(prices[t.ticker.toUpperCase()]?.instrument_type)
+
       return {
         ticker: t.ticker,
-        name: t.name,
-        type: t.type,
+        name: assetName,
+        type: assetType,
         watchlistNames: t.watchlistNames,
         peers,
-        peerNames: Object.fromEntries(
-          peers.map((p) => [p, names[p] ?? names[p.toUpperCase()] ?? p])
-        ),
-        peerTypes: Object.fromEntries(
-          peers.map((p) => [p, types[p] ?? types[p.toUpperCase()] ?? null])
-        ),
+        peerNames: Object.fromEntries(peers.map((p) => [p, peerName(p)])),
+        peerTypes: Object.fromEntries(peers.map((p) => [p, peerType(p)])),
         hasPeers: peers.length > 0,
         metricsWon,
         evaluatedPeriods,

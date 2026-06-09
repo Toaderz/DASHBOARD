@@ -25,17 +25,17 @@ interface ReturnRow {
   isAsset: boolean
 }
 
-// Fondos y ETFs se identifican por nombre: ocultan el ticker (ISIN críptico en fondos, o ticker
-// que se duplicaría con la columna de nombre en ETFs). Acciones conservan ticker + nombre.
-const identifyByName = (type: AssetType | null): boolean => type === 'fund' || type === 'etf'
+// Solo los fondos ocultan su ticker (ISIN críptico) y se identifican por nombre. ETFs y acciones
+// conservan ticker + nombre (ahora con nombre real gracias al backfill desde Yahoo).
+const hidesTicker = (type: AssetType | null): boolean => type === 'fund'
 
 // Construye las filas ordenadas (activo primero, peers por retorno desc, sin-dato al fondo).
 function buildRows(asset: AssetComparison, r: PeriodResult): ReturnRow[] {
-  const assetRow: ReturnRow = { ticker: asset.ticker, name: asset.name, hideTicker: identifyByName(asset.type), ret: r.assetReturn, isAsset: true }
+  const assetRow: ReturnRow = { ticker: asset.ticker, name: asset.name, hideTicker: hidesTicker(asset.type), ret: r.assetReturn, isAsset: true }
   const peerRows: ReturnRow[] = asset.peers.map((p) => ({
     ticker: p,
     name: asset.peerNames[p] ?? p,
-    hideTicker: identifyByName(asset.peerTypes[p]),
+    hideTicker: hidesTicker(asset.peerTypes[p]),
     ret: r.peerReturns[p] ?? null,
     isAsset: false,
   }))

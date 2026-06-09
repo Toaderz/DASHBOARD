@@ -105,6 +105,8 @@ export interface QuoteData {
   ticker: string
   price: number
   change_percent: number
+  name?: string | null            // longName/shortName de Yahoo (para backfill de nombres de peers)
+  instrument_type?: string | null // instrumentType de Yahoo (EQUITY/ETF/MUTUALFUND/INDEX/…)
   volume?: number | null
   high_52w?: number | null
   low_52w?: number | null

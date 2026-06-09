@@ -7,6 +7,17 @@ const CACHE_TTL_MS = 60_000
 // Re-fetch fundamentals if they've never been fetched or are older than 24 h
 const FUNDAMENTALS_TTL_MS = 24 * 60 * 60_000
 
+// Yahoo instrumentType → AssetType (para backfill de assets_metadata).
+function instrumentToAssetType(t: string | null | undefined): string {
+  switch ((t ?? '').toUpperCase()) {
+    case 'ETF': return 'etf'
+    case 'MUTUALFUND': return 'fund'
+    case 'INDEX': return 'index'
+    case 'CRYPTOCURRENCY': return 'crypto'
+    default: return 'stock'
+  }
+}
+
 function getAdminClient() {
   return createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -106,6 +117,8 @@ export async function GET(request: NextRequest) {
           ticker: q.ticker,
           price: q.price,
           change_percent: q.change_percent,
+          name: q.name ?? null,
+          instrument_type: q.instrument_type ?? null,
           volume: q.volume ?? null,
           high_52w: q.high_52w ?? null,
           low_52w: q.low_52w ?? null,
@@ -128,6 +141,19 @@ export async function GET(request: NextRequest) {
           .from('price_cache')
           .upsert(upsertRows, { onConflict: 'ticker' })
         if (upsertErr) console.error('[quote] Supabase upsert error:', upsertErr.message)
+      }
+
+      // Backfill de nombres/tipos en assets_metadata (almacén canónico de nombres). Solo RELLENA
+      // huecos (ignoreDuplicates) → nunca pisa nombres curados. Sirve para que los peers de activos
+      // STATIC (que no se materializan en watchlist) tengan nombre real en vez del ticker/ISIN.
+      const metaRows = [...fetched.values()]
+        .filter((q) => q.name && q.name !== q.ticker)
+        .map((q) => ({ ticker: q.ticker, name: q.name as string, type: instrumentToAssetType(q.instrument_type) }))
+      if (metaRows.length > 0) {
+        const { error: metaErr } = await supabaseAdmin
+          .from('assets_metadata')
+          .upsert(metaRows, { onConflict: 'ticker', ignoreDuplicates: true })
+        if (metaErr) console.error('[quote] assets_metadata backfill error:', metaErr.message)
       }
     } catch (err) {
       console.error('[quote] Yahoo Finance fetch failed:', err instanceof Error ? err.message : err)

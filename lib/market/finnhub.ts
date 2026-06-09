@@ -35,6 +35,8 @@ async function fetchQuoteV8Chart(ticker: string): Promise<QuoteData | null> {
       ticker,
       price,
       change_percent: changePercent,
+      name: meta.longName ?? meta.shortName ?? null,
+      instrument_type: meta.instrumentType ?? null,
       volume: meta.regularMarketVolume ?? null,
       high_52w: meta.fiftyTwoWeekHigh ?? null,
       low_52w: meta.fiftyTwoWeekLow ?? null,
