@@ -214,11 +214,6 @@ export interface MultiReturns {
   years: Record<MultiReturnPeriod, number | null>
 }
 
-const EMPTY_MULTI: MultiReturns = {
-  returns: { '1W': null, '1M': null, '6M': null, YTD: null, '1Y': null },
-  years: { '1W': null, '1M': null, '6M': null, YTD: null, '1Y': null },
-}
-
 // Return value (%) and years between the close nearest `targetMs` and the last close.
 function returnFrom(
   history: HistoricalDataPoint[],
@@ -253,45 +248,54 @@ function returnFrom(
  * enough history resolves to null and never throws.
  */
 export async function calculateMultiReturns(ticker: string): Promise<MultiReturns> {
-  let history: HistoricalDataPoint[]
+  // Start all periods null; the fast path fills them from one 1Y series, and the per-period
+  // fallback below backfills whatever's still null. Initializing up front (instead of an early
+  // `return EMPTY_MULTI`) is what makes the fallback reachable even when the 1Y fetch is empty.
+  const returns: Record<MultiReturnPeriod, number | null> = { '1W': null, '1M': null, '6M': null, YTD: null, '1Y': null }
+  const years: Record<MultiReturnPeriod, number | null> = { '1W': null, '1M': null, '6M': null, YTD: null, '1Y': null }
+
+  let history: HistoricalDataPoint[] = []
   try {
     history = await fetchHistoricalData(ticker, '1Y')
   } catch {
-    return EMPTY_MULTI
-  }
-  if (!history || history.length < 2) return EMPTY_MULTI
-
-  const parsed = history.map((h) => new Date(h.date).getTime())
-  const endClose = history[history.length - 1].close
-  const endMs = parsed[parsed.length - 1]
-  if (!endClose || endClose === 0) return EMPTY_MULTI
-
-  const DAY = 24 * 60 * 60 * 1000
-  const endDate = new Date(endMs)
-  const ytdMs = Date.UTC(endDate.getUTCFullYear(), 0, 1)
-
-  const targets: Record<MultiReturnPeriod, number> = {
-    '1W': endMs - 7 * DAY,
-    '1M': endMs - 30 * DAY,
-    '6M': endMs - 182 * DAY,
-    YTD: ytdMs,
-    '1Y': parsed[0], // first point of the 1Y window
+    history = []
   }
 
-  const returns = {} as Record<MultiReturnPeriod, number | null>
-  const years = {} as Record<MultiReturnPeriod, number | null>
-  for (const p of MULTI_RETURN_PERIODS) {
-    const { value, years: y } = returnFrom(history, parsed, endClose, endMs, targets[p])
-    returns[p] = value
-    years[p] = y
+  // Fast path: when the 1Y series is usable, derive all 5 periods from it (one Yahoo request).
+  if (history.length >= 2) {
+    const parsed = history.map((h) => new Date(h.date).getTime())
+    const endClose = history[history.length - 1].close
+    const endMs = parsed[parsed.length - 1]
+
+    if (endClose && endClose !== 0) {
+      const DAY = 24 * 60 * 60 * 1000
+      const endDate = new Date(endMs)
+      const ytdMs = Date.UTC(endDate.getUTCFullYear(), 0, 1)
+
+      const targets: Record<MultiReturnPeriod, number> = {
+        '1W': endMs - 7 * DAY,
+        '1M': endMs - 30 * DAY,
+        '6M': endMs - 182 * DAY,
+        YTD: ytdMs,
+        '1Y': parsed[0], // first point of the 1Y window
+      }
+
+      for (const p of MULTI_RETURN_PERIODS) {
+        const { value, years: y } = returnFrom(history, parsed, endClose, endMs, targets[p])
+        returns[p] = value
+        years[p] = y
+      }
+    }
   }
 
   // Self-healing fallback: deriving every period from a single 1Y series is efficient but fragile —
-  // a short/degraded Yahoo response (or a window `returnFrom` can't cleanly cover) yields a null for
-  // a period that genuinely has data. The watchlist never hits this because it fetches a dedicated
-  // range per period. So for any null period, retry it via the SAME robust per-range path the
-  // watchlist uses (`calculateReturn`), guaranteeing PeerCard parity with WatchlistTable. Fires only
-  // for the rare null periods; each failure is swallowed so the period stays null (never throws).
+  // a short/degraded/empty Yahoo response (or a window `returnFrom` can't cleanly cover) yields a
+  // null for a period that genuinely has data. The watchlist never hits this because it fetches a
+  // dedicated range per period. So for any null period, retry it via the SAME robust per-range path
+  // the watchlist uses (`calculateReturn`) — a DIFFERENT URL per period, so a degraded `range=1y`
+  // response doesn't blank the whole bundle. Guarantees PeerCard parity with WatchlistTable. Fires
+  // only for the null periods (zero overhead on a healthy 1Y series); each failure is swallowed so
+  // the period stays null (never throws).
   const missing = MULTI_RETURN_PERIODS.filter((p) => returns[p] == null)
   if (missing.length > 0) {
     await Promise.all(
