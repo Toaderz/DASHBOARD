@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import type { MetricKey, QuoteData } from '@/types'
+import type { AssetType, MetricKey, QuoteData } from '@/types'
 import type { FxSpotRate } from '@/hooks/useFxData'
 
 export interface TopEntry {
@@ -16,6 +16,7 @@ export interface TopEntry {
 export interface TickerInfo {
   ticker: string
   name: string
+  type: AssetType | null
   watchlistNames: string[]
 }
 
@@ -53,12 +54,12 @@ export function useAllWatchlistTickers() {
 
       const { data: metaData } = await supabase
         .from('assets_metadata')
-        .select('ticker, name')
+        .select('ticker, name, type')
         .in('ticker', uniqueTickers)
 
-      const nameByTicker = new Map<string, string>()
-      for (const m of (metaData ?? []) as Array<{ ticker: string; name: string }>) {
-        nameByTicker.set(m.ticker, m.name)
+      const metaByTicker = new Map<string, { name: string; type: AssetType | null }>()
+      for (const m of (metaData ?? []) as Array<{ ticker: string; name: string; type: AssetType | null }>) {
+        metaByTicker.set(m.ticker, { name: m.name, type: m.type })
       }
 
       const map = new Map<string, TickerInfo>()
@@ -66,13 +67,14 @@ export function useAllWatchlistTickers() {
         const { asset_ticker: ticker, watchlists: wlRaw } = row
         const wl = Array.isArray(wlRaw) ? wlRaw[0] : wlRaw
         const wlName = wl?.name ?? '—'
-        const assetName = nameByTicker.get(ticker) ?? ticker
+        const meta = metaByTicker.get(ticker)
+        const assetName = meta?.name ?? ticker
 
         if (map.has(ticker)) {
           const existing = map.get(ticker)!
           if (!existing.watchlistNames.includes(wlName)) existing.watchlistNames.push(wlName)
         } else {
-          map.set(ticker, { ticker, name: assetName, watchlistNames: [wlName] })
+          map.set(ticker, { ticker, name: assetName, type: meta?.type ?? null, watchlistNames: [wlName] })
         }
       }
 

@@ -5,7 +5,7 @@ import { createClient } from '@/lib/supabase/client'
 import { useAllWatchlistTickers } from './useTopPerformers'
 import { useRealtimePrices } from './useRealtimePrices'
 import { useFxData } from './useFxData'
-import type { MetricKey } from '@/types'
+import type { AssetType, MetricKey } from '@/types'
 
 // The 6 periods of the Beating-Peers block.
 export const PEER_CMP_PERIODS: MetricKey[] = ['1D', '1W', '1M', '6M', 'YTD', '1Y']
@@ -36,9 +36,11 @@ export interface PeriodResult {
 export interface AssetComparison {
   ticker: string
   name: string
+  type: AssetType | null
   watchlistNames: string[]
   peers: string[]
   peerNames: Record<string, string>  // ticker peer → nombre (cae al ticker si no hay metadata)
+  peerTypes: Record<string, AssetType | null>  // ticker peer → tipo (para mostrar nombre en fondos)
   hasPeers: boolean
   metricsWon: number
   evaluatedPeriods: number
@@ -111,22 +113,28 @@ export function usePeerComparison() {
   }, [unionTickers, prices])
   const { fxRates, fxPeriodReturns, loading: fxLoading } = useFxData(currencies, RETURN_PERIODS)
 
-  // Nombres de los tickers de la unión (activo + peers). Cosmético para el panel expandido del
+  // Nombres y tipos de los tickers de la unión (activo + peers). Cosmético para el panel expandido del
   // PeerCard: NO bloquea `settled` (el panel funciona con tickers mientras cargan los nombres).
   const [names, setNames] = useState<Record<string, string>>({})
+  const [types, setTypes] = useState<Record<string, AssetType | null>>({})
   useEffect(() => {
-    if (unionTickers.length === 0) { setNames({}); return }
+    if (unionTickers.length === 0) { setNames({}); setTypes({}); return }
     let cancelled = false
     const supabase = createClient()
     supabase
       .from('assets_metadata')
-      .select('ticker, name')
+      .select('ticker, name, type')
       .in('ticker', unionTickers)
       .then(({ data }) => {
         if (cancelled || !data) return
-        const map: Record<string, string> = {}
-        for (const m of data as Array<{ ticker: string; name: string }>) map[m.ticker] = m.name
-        setNames(map)
+        const nameMap: Record<string, string> = {}
+        const typeMap: Record<string, AssetType | null> = {}
+        for (const m of data as Array<{ ticker: string; name: string; type: AssetType | null }>) {
+          nameMap[m.ticker] = m.name
+          typeMap[m.ticker] = m.type
+        }
+        setNames(nameMap)
+        setTypes(typeMap)
       })
     return () => { cancelled = true }
   }, [unionTickers])
@@ -194,10 +202,14 @@ export function usePeerComparison() {
       return {
         ticker: t.ticker,
         name: t.name,
+        type: t.type,
         watchlistNames: t.watchlistNames,
         peers,
         peerNames: Object.fromEntries(
           peers.map((p) => [p, names[p] ?? names[p.toUpperCase()] ?? p])
+        ),
+        peerTypes: Object.fromEntries(
+          peers.map((p) => [p, types[p] ?? types[p.toUpperCase()] ?? null])
         ),
         hasPeers: peers.length > 0,
         metricsWon,
@@ -208,7 +220,7 @@ export function usePeerComparison() {
 
     // Rank by metrics won, then by total periods evaluated (more data = more confident).
     return out.sort((a, b) => b.metricsWon - a.metricsWon || b.evaluatedPeriods - a.evaluatedPeriods || a.ticker.localeCompare(b.ticker))
-  }, [tickers, peerSets, returnsData, prices, fxRates, fxPeriodReturns, settled, names])
+  }, [tickers, peerSets, returnsData, prices, fxRates, fxPeriodReturns, settled, names, types])
 
   return {
     results,

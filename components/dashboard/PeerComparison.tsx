@@ -116,7 +116,7 @@ export function PeerComparison() {
             <Card className="bg-card/40">
               <CardContent className="p-4">
                 <p className="text-xs text-muted-foreground">
-                  Sin peers ({withoutPeers.length}): {withoutPeers.map((a) => a.ticker).join(', ')}. Añádelos desde el detalle del activo.
+                  Sin peers ({withoutPeers.length}): {withoutPeers.map((a) => (a.type === 'fund' ? a.name : a.ticker)).join(', ')}. Añádelos desde el detalle del activo.
                 </p>
               </CardContent>
             </Card>

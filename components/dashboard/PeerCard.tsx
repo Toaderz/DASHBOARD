@@ -20,16 +20,18 @@ function periodLabel(period: string): string {
 interface ReturnRow {
   ticker: string
   name: string
+  isFund: boolean
   ret: number | null
   isAsset: boolean
 }
 
 // Construye las filas ordenadas (activo primero, peers por retorno desc, sin-dato al fondo).
 function buildRows(asset: AssetComparison, r: PeriodResult): ReturnRow[] {
-  const assetRow: ReturnRow = { ticker: asset.ticker, name: asset.name, ret: r.assetReturn, isAsset: true }
+  const assetRow: ReturnRow = { ticker: asset.ticker, name: asset.name, isFund: asset.type === 'fund', ret: r.assetReturn, isAsset: true }
   const peerRows: ReturnRow[] = asset.peers.map((p) => ({
     ticker: p,
     name: asset.peerNames[p] ?? p,
+    isFund: asset.peerTypes[p] === 'fund',
     ret: r.peerReturns[p] ?? null,
     isAsset: false,
   }))
@@ -74,8 +76,8 @@ function ReturnRowItem({ row, assetReturn, maxAbsDelta }: { row: ReturnRow; asse
           ))}
       </span>
 
-      {/* Ticker */}
-      <span className="w-12 shrink-0 font-mono text-[11px] font-semibold">{row.ticker}</span>
+      {/* Ticker — los fondos ocultan su ISIN críptico (el nombre lo identifica) y conservan el ancho */}
+      <span className="w-12 shrink-0 font-mono text-[11px] font-semibold">{row.isFund ? '' : row.ticker}</span>
 
       {/* Nombre */}
       <span className="flex-1 truncate text-[10px] text-muted-foreground">
@@ -125,9 +127,16 @@ export function PeerCard({ asset }: { asset: AssetComparison }) {
       {/* Header */}
       <div className="flex items-center gap-3 px-3 py-2.5">
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2">
-            <span className="font-mono text-sm font-semibold">{asset.ticker}</span>
-            <span className="hidden sm:block truncate text-xs text-muted-foreground">{asset.name}</span>
+          <div className="flex items-center gap-2 min-w-0">
+            {asset.type === 'fund' ? (
+              // Fondos: el nombre es el identificador legible (el ISIN/ticker críptico se omite).
+              <span className="truncate text-sm font-semibold">{asset.name}</span>
+            ) : (
+              <>
+                <span className="font-mono text-sm font-semibold">{asset.ticker}</span>
+                <span className="hidden sm:block truncate text-xs text-muted-foreground">{asset.name}</span>
+              </>
+            )}
           </div>
           <div className="mt-0.5 flex flex-wrap gap-1">
             {asset.watchlistNames.map((wl) => (
