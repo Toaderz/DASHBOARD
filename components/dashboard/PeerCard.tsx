@@ -7,7 +7,7 @@ import { formatPercent, percentColor } from '@/lib/utils/formatters'
 import { cn } from '@/lib/utils/cn'
 import { Card } from '@/components/ui/card'
 import { PEER_CMP_PERIODS, type AssetComparison, type PeriodResult } from '@/hooks/usePeerComparison'
-import { METRIC_DEFINITIONS } from '@/types'
+import { type AssetType, METRIC_DEFINITIONS } from '@/types'
 
 const TOTAL_PERIODS = PEER_CMP_PERIODS.length
 const BAR_TRACK_PX = 56 // ancho total de la barra divergente (28px por lado desde el eje central)
@@ -20,18 +20,22 @@ function periodLabel(period: string): string {
 interface ReturnRow {
   ticker: string
   name: string
-  isFund: boolean
+  hideTicker: boolean
   ret: number | null
   isAsset: boolean
 }
 
+// Fondos y ETFs se identifican por nombre: ocultan el ticker (ISIN críptico en fondos, o ticker
+// que se duplicaría con la columna de nombre en ETFs). Acciones conservan ticker + nombre.
+const identifyByName = (type: AssetType | null): boolean => type === 'fund' || type === 'etf'
+
 // Construye las filas ordenadas (activo primero, peers por retorno desc, sin-dato al fondo).
 function buildRows(asset: AssetComparison, r: PeriodResult): ReturnRow[] {
-  const assetRow: ReturnRow = { ticker: asset.ticker, name: asset.name, isFund: asset.type === 'fund', ret: r.assetReturn, isAsset: true }
+  const assetRow: ReturnRow = { ticker: asset.ticker, name: asset.name, hideTicker: identifyByName(asset.type), ret: r.assetReturn, isAsset: true }
   const peerRows: ReturnRow[] = asset.peers.map((p) => ({
     ticker: p,
     name: asset.peerNames[p] ?? p,
-    isFund: asset.peerTypes[p] === 'fund',
+    hideTicker: identifyByName(asset.peerTypes[p]),
     ret: r.peerReturns[p] ?? null,
     isAsset: false,
   }))
@@ -76,8 +80,8 @@ function ReturnRowItem({ row, assetReturn, maxAbsDelta }: { row: ReturnRow; asse
           ))}
       </span>
 
-      {/* Ticker — los fondos ocultan su ISIN críptico (el nombre lo identifica) y conservan el ancho */}
-      <span className="w-12 shrink-0 font-mono text-[11px] font-semibold">{row.isFund ? '' : row.ticker}</span>
+      {/* Ticker — fondos/ETFs lo ocultan (el nombre los identifica) y conservan el ancho */}
+      <span className="w-12 shrink-0 font-mono text-[11px] font-semibold">{row.hideTicker ? '' : row.ticker}</span>
 
       {/* Nombre */}
       <span className="flex-1 truncate text-[10px] text-muted-foreground">
@@ -134,7 +138,9 @@ export function PeerCard({ asset }: { asset: AssetComparison }) {
             ) : (
               <>
                 <span className="font-mono text-sm font-semibold">{asset.ticker}</span>
-                <span className="hidden sm:block truncate text-xs text-muted-foreground">{asset.name}</span>
+                {asset.name !== asset.ticker && (
+                  <span className="hidden sm:block truncate text-xs text-muted-foreground">{asset.name}</span>
+                )}
               </>
             )}
           </div>
