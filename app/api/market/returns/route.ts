@@ -2,10 +2,21 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { calculateMultiReturns, type MultiReturns } from '@/lib/market/history'
 
+// The full Beating-Peers union (several hundred tickers) can need many cold Yahoo fetches on a
+// cache miss; allow headroom over Vercel's default so a partial-cold load completes instead of
+// timing out and blanking every peer. Cached loads still return in ~3s.
+export const maxDuration = 60
+
 // Returns change daily; 6 h keeps it fresh enough while sparing Yahoo requests.
 const RETURNS_TTL_MS = 6 * 60 * 60_000
 // Cap concurrent Yahoo fetches to avoid rate limiting on cold loads.
 const FETCH_CONCURRENCY = 8
+// Upper bound on tickers per request — purely an abuse guard. Beating-Peers sends the full
+// union (assets ∪ all peers) which is legitimately several hundred for a real portfolio
+// (~475 observed). The old 400 cap silently TRUNCATED that union, so any peer that landed
+// past position 400 rendered "— sin dato" forever. Set well above realistic unions; truncation
+// is logged (never silent) so a future overflow surfaces instead of dropping data quietly.
+const MAX_TICKERS = 1500
 
 function getAdminClient() {
   return createClient(
@@ -40,8 +51,13 @@ export async function POST(request: NextRequest) {
   }
 
   const raw = Array.isArray(body.tickers) ? body.tickers : []
-  // Dedup + normalize; cap to a sane upper bound to protect the endpoint.
-  const tickers = [...new Set(raw.filter((t): t is string => typeof t === 'string' && t.length > 0))].slice(0, 400)
+  // Dedup + normalize. Cap is an abuse guard, not a functional limit — log if we ever hit it
+  // so truncation is never silent (a truncated union = peers silently showing "— sin dato").
+  const deduped = [...new Set(raw.filter((t): t is string => typeof t === 'string' && t.length > 0))]
+  if (deduped.length > MAX_TICKERS) {
+    console.warn(`[returns] ticker union ${deduped.length} exceeds MAX_TICKERS ${MAX_TICKERS} — truncating; some peers will be missing`)
+  }
+  const tickers = deduped.slice(0, MAX_TICKERS)
 
   if (tickers.length === 0) {
     return NextResponse.json({})
