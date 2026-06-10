@@ -1,7 +1,11 @@
 import type { AssetType } from '@/types'
 
 // Shared asset-type labels + badge classes. Single source so AssetDetailModal and
-// TickerSearch stay consistent. ETF recolored off purple → brand teal/petróleo.
+// TickerSearch stay consistent.
+// V2 "color escaso = caro": stock/etf/fund are bone-neutral chips differentiated by
+// their TEXT label (not color) — a watchlist of N ETFs no longer floods the most-used
+// view with teal. Teal stays reserved for the ~4 high-signal spots. index/crypto keep
+// their rare semantic amber/orange.
 export const TYPE_LABELS: Record<AssetType, string> = {
   stock: 'Stock',
   etf: 'ETF',
@@ -11,10 +15,10 @@ export const TYPE_LABELS: Record<AssetType, string> = {
 }
 
 export const TYPE_BADGE: Record<AssetType, string> = {
-  stock:  'bg-electric/10 text-electric',
-  etf:    'bg-brand-teal/15 text-brand-teal dark:text-chart-5',
+  stock:  'bg-foreground/10 text-foreground',
+  etf:    'bg-foreground/10 text-foreground',
   index:  'bg-amber-500/10 text-amber-600 dark:text-amber-400',
-  fund:   'bg-chart-3/15 text-chart-3 dark:text-chart-4',
+  fund:   'bg-foreground/10 text-foreground',
   crypto: 'bg-orange-500/10 text-orange-600 dark:text-orange-400',
 }
 

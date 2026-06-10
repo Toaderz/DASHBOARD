@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useMemo, useCallback } from 'react'
+import dynamic from 'next/dynamic'
 import {
   useReactTable,
   getCoreRowModel,
@@ -15,9 +16,14 @@ import { ArrowUpDown, ArrowUp, ArrowDown, X, Search } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { PriceCell } from './PriceCell'
+import { AssetMonogram } from './AssetMonogram'
 import { MetricsSelector } from './MetricsSelector'
 import { TickerSearch } from './TickerSearch'
-import { AssetDetailModal } from './AssetDetailModal'
+// Lazy: the modal pulls in Recharts — defer its chunk until the first asset click.
+const AssetDetailModal = dynamic(
+  () => import('./AssetDetailModal').then((m) => m.AssetDetailModal),
+  { ssr: false }
+)
 import { useRealtimePrices } from '@/hooks/useRealtimePrices'
 import { usePerformanceMetrics } from '@/hooks/usePerformanceMetrics'
 import { createClient } from '@/lib/supabase/client'
@@ -26,6 +32,10 @@ import { useFxData } from '@/hooks/useFxData'
 import { METRIC_DEFINITIONS } from '@/types'
 import type { AssetMetadata, AssetWithCategory, MetricKey, Watchlist, AssetType } from '@/types'
 import { computeInitialPeers } from '@/lib/market/peer-taxonomy'
+import { cn } from '@/lib/utils/cn'
+import { colClass, pillClass, isNumericCol } from '@/lib/watchlist-table-style'
+import { LayoutGroup, motion, useReducedMotion } from 'framer-motion'
+import { assetLayoutId, morphTransition } from '@/lib/motion-tokens'
 
 interface WatchlistTableProps {
   watchlist: Watchlist
@@ -58,6 +68,7 @@ export function WatchlistTable({
   // Years for annualizable periods (>1Y with fixed duration)
   const ANNUALIZE_YEARS: Partial<Record<string, number>> = { '3Y': 3, '5Y': 5, '10Y': 10 }
 
+  const reduced = useReducedMotion()
   const tickers = useMemo(() => assets.map((a) => a.ticker), [assets])
   const { prices, flashStates } = useRealtimePrices(tickers)
   const activeMetrics = watchlist.selected_metrics as MetricKey[]
@@ -186,8 +197,15 @@ export function WatchlistTable({
         helper.accessor('ticker', {
           header: 'Ticker',
           cell: ({ row }) => (
-            <span className="flex items-center gap-1.5">
-              <span className="font-mono text-xs font-bold tracking-wider text-electric">{row.original.ticker}</span>
+            <span className="flex items-center gap-2">
+              <motion.span
+                layoutId={reduced ? undefined : assetLayoutId(row.original.ticker)}
+                transition={morphTransition}
+                className="flex items-center gap-2"
+              >
+                <AssetMonogram ticker={row.original.ticker} size="sm" />
+                <span className="font-mono text-xs font-bold tracking-wider text-foreground">{row.original.ticker}</span>
+              </motion.span>
               {row.original.source === 'auto-peer' && (
                 <span
                   title={`Peer auto-resuelto${row.original.peer_of ? ` de ${row.original.peer_of}` : ''}`}
@@ -241,7 +259,7 @@ export function WatchlistTable({
           cell: ({ row }) => {
             const t = row.original.ticker
             const v = adj1d(prices[t]?.change_percent, t)
-            return <span className={percentColor(v)}>{formatPercent(v)}</span>
+            return <span className={`tabular-nums font-semibold ${percentColor(v)}`}>{formatPercent(v)}</span>
           },
         }),
         ...(['1W', '1M', '6M', 'YTD', '1Y', '3Y', '5Y', '10Y', 'MAX', 'CY2025', 'CY2024', 'CY2023', 'CY2022', 'CY2021', 'CY2020', 'CY2019'] as MetricKey[]).map((period) =>
@@ -274,7 +292,7 @@ export function WatchlistTable({
               const years = ANNUALIZE_YEARS[period] ?? (period === 'MAX' ? (maxYears[t] ?? null) : null)
               const canAnnualize = years != null && years >= 1
               const v = annualize && canAnnualize ? annualizeReturn(raw, years!) : raw
-              return <span className={percentColor(v)}>{formatPercent(v)}</span>
+              return <span className={`tabular-nums font-semibold ${percentColor(v)}`}>{formatPercent(v)}</span>
             },
           })
         ),
@@ -338,7 +356,7 @@ export function WatchlistTable({
             const high = prices[t]?.high_52w
             if (!price || !high) return <span className="text-muted-foreground">—</span>
             const pct = ((price - high) / high) * 100
-            return <span className={percentColor(pct)}>{formatRatio(pct)}%</span>
+            return <span className={`tabular-nums font-semibold ${percentColor(pct)}`}>{formatRatio(pct)}%</span>
           },
         }),
         helper.accessor((row) => prices[row.ticker]?.expense_ratio ?? null, {
@@ -458,7 +476,7 @@ export function WatchlistTable({
         }),
       ]
     },
-    [prices, flashStates, returns, maxYears, onRemoveAsset, annualize, usd, toUsd, adjReturn, adj1d, mcSymbol, periodStartDate]
+    [prices, flashStates, returns, maxYears, onRemoveAsset, annualize, usd, toUsd, adjReturn, adj1d, mcSymbol, periodStartDate, reduced]
   )
 
   const columnOrder = useMemo<ColumnOrderState>(
@@ -491,21 +509,11 @@ export function WatchlistTable({
   const showCategories = sorting.length === 0
   const visibleColCount = table.getVisibleLeafColumns().length
 
-  // Columns hidden on mobile to reduce horizontal scrolling
-  const MOBILE_HIDDEN = new Set(['3Y', '5Y', '10Y', 'MAX', 'CY2025', 'CY2024', 'CY2023', 'CY2022', 'CY2021', 'CY2020', 'CY2019', 'expenseRatio', 'aum', 'beta', 'profitMargins', 'from52wHigh', 'inceptionDate', 'morningstarCategory', 'globalCategory'])
-  // Sticky left column on mobile
-  const STICKY_LEFT = new Set(['ticker'])
-
-  const colClass = (id: string, base = '') => {
-    const sticky = STICKY_LEFT.has(id) ? 'sticky left-0 z-10 bg-background' : ''
-    const hidden = MOBILE_HIDDEN.has(id) ? 'hidden md:table-cell' : ''
-    return [base, sticky, hidden].filter(Boolean).join(' ')
-  }
-
   return (
+    <LayoutGroup>
     <div className="flex flex-col gap-3">
-      {/* Toolbar — stacks vertically on mobile */}
-      <div className="flex flex-col gap-2 md:flex-row md:flex-wrap md:items-center">
+      {/* Toolbar — stacks vertically on mobile; sticks to the top on scroll */}
+      <div className="sticky top-0 z-20 flex flex-col gap-2 border-b border-border/60 bg-background/80 pb-3 backdrop-blur-sm md:flex-row md:flex-wrap md:items-center">
         <div className="flex gap-2 flex-1 min-w-0">
           <div className="flex-1 min-w-0 max-w-xs">
             <TickerSearch onAdd={onAddAsset} existingTickers={tickers} />
@@ -517,7 +525,7 @@ export function WatchlistTable({
               placeholder="Filter…"
               value={filterQuery}
               onChange={(e) => setFilterQuery(e.target.value)}
-              className="w-full rounded-sm border border-border bg-transparent pl-7 pr-7 py-1.5 text-xs font-ui placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+              className="w-full rounded-md border border-border bg-ink-elevated/40 pl-7 pr-7 py-1.5 text-xs font-ui placeholder:text-muted-foreground/70 transition-colors focus:outline-none focus:border-foreground/40"
             />
             {filterQuery && (
               <button
@@ -533,22 +541,14 @@ export function WatchlistTable({
           <button
             onClick={() => setAnnualize((v) => !v)}
             title="Annualize returns for 3Y, 5Y, 10Y periods"
-            className={`rounded-sm border px-2 py-1 font-mono text-xs tracking-wider uppercase transition-colors ${
-              annualize
-                ? 'bg-electric text-ink-void border-electric'
-                : 'border-border text-muted-foreground hover:border-electric/50 hover:text-foreground'
-            }`}
+            className={pillClass(annualize)}
           >
             Ann.
           </button>
           <button
             onClick={() => setUsd((v) => !v)}
             title="Convert all values to USD using live FX rates"
-            className={`rounded-sm border px-2 py-1 font-mono text-xs tracking-wider uppercase transition-colors ${
-              usd
-                ? 'bg-electric text-ink-void border-electric'
-                : 'border-border text-muted-foreground hover:border-electric/50 hover:text-foreground'
-            }`}
+            className={pillClass(usd)}
           >
             USD
           </button>
@@ -556,11 +556,7 @@ export function WatchlistTable({
             <button
               onClick={() => setShowAutoPeers((v) => !v)}
               title="Mostrar u ocultar los peers resueltos automáticamente (agrupados bajo cada activo)"
-              className={`rounded-sm border px-2 py-1 font-mono text-xs tracking-wider uppercase transition-colors ${
-                showAutoPeers
-                  ? 'bg-electric text-ink-void border-electric'
-                  : 'border-border text-muted-foreground hover:border-electric/50 hover:text-foreground'
-              }`}
+              className={pillClass(showAutoPeers)}
             >
               Peers
             </button>
@@ -570,32 +566,32 @@ export function WatchlistTable({
       </div>
 
       {/* Table */}
-      <div className="overflow-x-auto rounded-sm border border-border">
+      <div className="overflow-x-auto rounded-card border border-border shadow-card">
         <table className="w-full font-ui text-sm">
           <thead>
             {table.getHeaderGroups().map((hg) => (
-              <tr key={hg.id} className="border-b border-border bg-ink-elevated">
+              <tr key={hg.id} className="border-b-2 border-border/80 bg-ink-elevated">
                 {hg.headers.map((header) => (
                   <th
                     key={header.id}
-                    className={colClass(header.id, 'px-3 py-2 text-left font-mono text-[10px] uppercase tracking-wider text-muted-foreground whitespace-nowrap bg-ink-elevated')}
+                    className={colClass(header.id, 'px-3.5 py-2.5 font-mono text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground whitespace-nowrap bg-ink-elevated')}
                   >
                     {header.isPlaceholder ? null : (
                       <button
-                        className="flex items-center gap-1"
+                        className={cn('flex items-center gap-1', isNumericCol(header.id) && 'w-full justify-end')}
                         onClick={header.column.getToggleSortingHandler()}
                       >
                         {flexRender(header.column.columnDef.header, header.getContext())}
                         {header.column.getCanSort() && (
                           <>
                             {header.column.getIsSorted() === 'asc' && (
-                              <ArrowUp className="h-3 w-3 text-electric" />
+                              <ArrowUp className="h-3 w-3 text-spark" />
                             )}
                             {header.column.getIsSorted() === 'desc' && (
-                              <ArrowDown className="h-3 w-3 text-electric" />
+                              <ArrowDown className="h-3 w-3 text-spark" />
                             )}
                             {!header.column.getIsSorted() && (
-                              <ArrowUpDown className="h-3 w-3 opacity-30" />
+                              <ArrowUpDown className="h-3 w-3 text-muted-foreground opacity-40" />
                             )}
                           </>
                         )}
@@ -627,10 +623,10 @@ export function WatchlistTable({
 
                 if (showHeader) {
                   elements.push(
-                    <tr key={`cat-${cat}`} className="bg-ink-base border-b border-border/50">
+                    <tr key={`cat-${cat}`} className="border-y border-border/40 bg-ink-base/60">
                       <td
                         colSpan={visibleColCount}
-                        className="px-3 py-1 font-mono text-[10px] font-semibold uppercase tracking-[0.15em] text-muted-foreground/70"
+                        className="px-3.5 py-1.5 font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground/60"
                       >
                         {cat}
                       </td>
@@ -638,16 +634,24 @@ export function WatchlistTable({
                   )
                 }
 
+                const isSelected = selectedAsset?.ticker === row.original.ticker
                 elements.push(
                   <tr
                     key={row.id}
-                    className="group border-b border-border/50 cursor-pointer transition-colors hover:bg-ink-elevated last:border-0"
+                    className={cn(
+                      'group border-b border-border/50 cursor-pointer transition-colors hover:bg-ink-elevated last:border-0',
+                      isSelected && 'bg-spark/[0.04]'
+                    )}
                     onClick={() => handleRowClick(row.original)}
                   >
                     {row.getVisibleCells().map((cell) => (
                       <td
                         key={cell.id}
-                        className={colClass(cell.column.id, 'px-3 py-2.5 whitespace-nowrap')}
+                        className={colClass(
+                          cell.column.id,
+                          cn('px-3.5 py-3 align-middle whitespace-nowrap',
+                            isSelected && cell.column.id === 'ticker' && 'shadow-[inset_2px_0_0_0_hsl(var(--electric))]')
+                        )}
                       >
                         {flexRender(cell.column.columnDef.cell, cell.getContext())}
                       </td>
@@ -662,23 +666,26 @@ export function WatchlistTable({
         </table>
       </div>
 
-      {/* Loading skeletons */}
+      {/* Loading skeletons — matched to the table surface */}
       {tickers.length > 0 && Object.keys(prices).length === 0 && (
-        <div className="space-y-2">
+        <div className="space-y-2 rounded-card border border-border bg-ink-surface/40 p-3">
           {tickers.map((t) => (
             <Skeleton key={t} className="h-10 w-full" />
           ))}
         </div>
       )}
 
-      {/* Detail Modal */}
-      <AssetDetailModal
-        asset={selectedAsset}
-        quote={selectedAsset ? (prices[selectedAsset.ticker] ?? null) : null}
-        open={modalOpen}
-        onClose={() => setModalOpen(false)}
-        initialPeers={initialPeers}
-      />
+      {/* Detail Modal — only mounted once an asset has been selected (defers Recharts chunk) */}
+      {selectedAsset && (
+        <AssetDetailModal
+          asset={selectedAsset}
+          quote={prices[selectedAsset.ticker] ?? null}
+          open={modalOpen}
+          onClose={() => setModalOpen(false)}
+          initialPeers={initialPeers}
+        />
+      )}
     </div>
+    </LayoutGroup>
   )
 }

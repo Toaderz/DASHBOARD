@@ -132,7 +132,7 @@ export function TourSpotlight() {
 
       {/* Highlight del ancla */}
       <div
-        className="pointer-events-none absolute rounded-card ring-2 ring-electric shadow-glow"
+        className="pointer-events-none absolute rounded-card ring-2 ring-bone shadow-glow"
         style={{ top: cut.top, left: cut.left, width: cut.width, height: cut.height }}
       />
 

@@ -22,13 +22,14 @@ export const CHART_SERIES_HEX = [
 
 const FALLBACK = {
   series: [...CHART_SERIES_HEX] as string[],
-  gain: '#22c55e',
-  loss: '#ef4444',
-  neutral: '#7b8794',
-  grid: '#262b36',
-  axis: '#6b7280',
-  tooltipBg: '#1b1f29',
-  tooltipBorder: '#2b303b',
+  gain: '#36c281',
+  loss: '#e8654f',
+  neutral: '#8a857c',
+  // Warm-neutral chrome (mirrors warm near-black --chart-grid/axis/tooltip; series stay navy→teal)
+  grid: '#2b2926',
+  axis: '#87837c',
+  tooltipBg: '#24221f',
+  tooltipBorder: '#322f2b',
 }
 
 export interface ChartTheme {

@@ -22,11 +22,16 @@ import {
   Tooltip,
   ResponsiveContainer,
 } from 'recharts'
+import { motion, AnimatePresence, useReducedMotion } from 'framer-motion'
 import { TickerSearch } from './TickerSearch'
 import { FundamentalsPanel } from './FundamentalsPanel'
+import { AssetMonogram } from './AssetMonogram'
+import { NumberTicker } from './NumberTicker'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { SegmentedControl } from './SegmentedControl'
 import { useChartTheme, chartTooltipStyle } from '@/lib/chart-theme'
+import { assetLayoutId, morphTransition } from '@/lib/motion-tokens'
+import { ValuePulse } from '@/lib/motion-client'
 import { typeBadgeClass, typeLabel } from '@/lib/asset-style'
 import { formatPrice, formatPercent, percentColor, annualizeReturn } from '@/lib/utils/formatters'
 import { useFxData } from '@/hooks/useFxData'
@@ -75,6 +80,7 @@ export function AssetDetailModal({
   const [peerChartPeriod, setPeerChartPeriod] = useState<PeerPeriod>('1Y')
 
   const chartTheme = useChartTheme()
+  const reduced = useReducedMotion()
 
   // Persisted, per-user curated peer set (shared with the Beating-Peers page).
   // `initialPeers` is only a name/type hydration seed — the source of truth is the DB.
@@ -302,15 +308,30 @@ export function AssetDetailModal({
         aria-describedby={undefined}
       >
         <DialogHeader className="shrink-0">
-          <DialogTitle className="flex items-center gap-3">
-            <span className="font-mono text-2xl font-bold">{asset.ticker}</span>
-            <span className="text-base font-normal text-muted-foreground">{assetDisplayName ?? asset.name}</span>
+          <DialogTitle className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            {/* Shared element — the table row's monogram+ticker morphs into this on open */}
+            <motion.span
+              layoutId={reduced ? undefined : assetLayoutId(asset.ticker)}
+              transition={morphTransition}
+              className="flex items-center gap-2.5"
+            >
+              <AssetMonogram ticker={asset.ticker} size="md" />
+              <span className="font-mono text-2xl font-bold tracking-tight">{asset.ticker}</span>
+            </motion.span>
+            <span className="min-w-0 flex-1 truncate text-base font-normal text-muted-foreground">{assetDisplayName ?? asset.name}</span>
             <Badge
               variant="outline"
-              className={`border-0 text-xs ${typeBadgeClass(asset.type)}`}
+              className={`shrink-0 border-0 text-xs ${typeBadgeClass(asset.type)}`}
             >
               {typeLabel(asset.type)}
             </Badge>
+            {quote && (
+              <ValuePulse value={quote.price} tone="auto" className="ml-auto">
+                <span className="font-editorial text-2xl font-bold tabular-nums text-foreground">
+                  <NumberTicker target={quote.price} format={(v) => formatPrice(v)} />
+                </span>
+              </ValuePulse>
+            )}
           </DialogTitle>
         </DialogHeader>
 
@@ -326,29 +347,32 @@ export function AssetDetailModal({
           </TabsList>
 
           <div className="mt-3 flex-1 overflow-y-auto pr-1">
+            <AnimatePresence mode="wait" initial={false}>
+            <motion.div
+              key={activeTab}
+              initial={reduced ? false : { opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={reduced ? undefined : { opacity: 0, y: -8 }}
+              transition={{ duration: 0.18, ease: 'easeOut' }}
+            >
             {/* ── Summary ───────────────────────────────────────────────── */}
             <TabsContent value="summary" className="space-y-4">
-              {quote && (
-                <div className="flex items-baseline gap-3">
-                  <span className="text-3xl font-bold tabular-nums">{formatPrice(quote.price)}</span>
-                  {(() => {
-                    const years = ANNUALIZE_YEARS[chartPeriod] ?? (chartPeriod === 'MAX' ? chartYears : null)
-                    const displayReturn = annualize && years
-                      ? annualizeReturn(chartPeriodReturn, years)
-                      : chartPeriodReturn
-                    return (
-                      <>
-                        <span className={`text-lg font-semibold ${percentColor(displayReturn)}`}>
-                          {formatPercent(displayReturn)}
-                        </span>
-                        <span className="text-sm text-muted-foreground">
-                          {chartPeriod}{annualize && years ? ' ann' : ''}
-                        </span>
-                      </>
-                    )
-                  })()}
-                </div>
-              )}
+              {(() => {
+                const years = ANNUALIZE_YEARS[chartPeriod] ?? (chartPeriod === 'MAX' ? chartYears : null)
+                const displayReturn = annualize && years
+                  ? annualizeReturn(chartPeriodReturn, years)
+                  : chartPeriodReturn
+                return (
+                  <div className="flex items-baseline gap-2">
+                    <span className={`font-editorial text-2xl font-bold tabular-nums tracking-[-0.02em] ${percentColor(displayReturn)}`}>
+                      {formatPercent(displayReturn)}
+                    </span>
+                    <span className="text-xs font-mono uppercase tracking-wide text-muted-foreground">
+                      {chartPeriod}{annualize && years ? ' ann' : ''}
+                    </span>
+                  </div>
+                )
+              })()}
 
               <div>
                 <div className="mb-2">
@@ -398,6 +422,9 @@ export function AssetDetailModal({
                           strokeWidth={2}
                           fill="url(#colorClose)"
                           dot={false}
+                          isAnimationActive={!reduced}
+                          animationDuration={reduced ? 0 : 600}
+                          animationEasing="ease-out"
                         />
                       </AreaChart>
                     </ResponsiveContainer>
@@ -442,7 +469,7 @@ export function AssetDetailModal({
                         contentStyle={chartTooltipStyle(chartTheme)}
                         formatter={(v: number) => [formatPercent(v), 'Return']}
                       />
-                      <Bar dataKey="return" radius={[3, 3, 0, 0]}>
+                      <Bar dataKey="return" radius={[3, 3, 0, 0]} isAnimationActive={!reduced} animationDuration={reduced ? 0 : 600} animationEasing="ease-out">
                         {calYears.map((d) => (
                           <Cell key={d.year} fill={(d.return ?? 0) >= 0 ? chartTheme.gain : chartTheme.loss} />
                         ))}
@@ -484,7 +511,7 @@ export function AssetDetailModal({
                       onClick={() => togglePeerMetric(period)}
                       className={`focus-ring rounded-pill border px-2 py-0.5 text-xs font-medium transition-colors ${
                         peerMetrics.includes(period)
-                          ? 'border-electric bg-electric text-ink-void'
+                          ? 'border-foreground bg-foreground text-background'
                           : 'border-border text-muted-foreground hover:border-foreground hover:text-foreground'
                       }`}
                     >
@@ -498,7 +525,7 @@ export function AssetDetailModal({
                   title="Annualize returns for 3Y, 5Y, 10Y periods"
                   className={`focus-ring rounded-pill border px-2 py-0.5 text-xs font-medium transition-colors ${
                     annualize
-                      ? 'border-electric bg-electric text-ink-void'
+                      ? 'border-foreground bg-foreground text-background'
                       : 'border-border text-muted-foreground hover:border-foreground hover:text-foreground'
                   }`}
                 >
@@ -510,7 +537,7 @@ export function AssetDetailModal({
                   title="Convert all values to USD using live FX rates"
                   className={`focus-ring rounded-pill border px-2 py-0.5 text-xs font-medium transition-colors ${
                     usd
-                      ? 'border-electric bg-electric text-ink-void'
+                      ? 'border-foreground bg-foreground text-background'
                       : 'border-border text-muted-foreground hover:border-foreground hover:text-foreground'
                   }`}
                 >
@@ -564,7 +591,7 @@ export function AssetDetailModal({
                           contentStyle={chartTooltipStyle(chartTheme)}
                           formatter={(v: number) => [formatPercent(v), effectivePeerChartPeriod]}
                         />
-                        <Bar dataKey="value" radius={[3, 3, 0, 0]}>
+                        <Bar dataKey="value" radius={[3, 3, 0, 0]} isAnimationActive={!reduced} animationDuration={reduced ? 0 : 600} animationEasing="ease-out">
                           {peerChartData.map((d) => (
                             <Cell
                               key={d.ticker}
@@ -604,7 +631,7 @@ export function AssetDetailModal({
                       const displayPrice = usd ? toUsd(pq?.price ?? quote?.price, asset.ticker) : (pq?.price ?? quote?.price)
                       const display1d = adj1d(pq?.change_percent ?? quote?.change_percent, asset.ticker)
                       return (
-                        <tr key={asset.ticker} className="border-b border-border bg-electric/5 font-semibold">
+                        <tr key={asset.ticker} className="border-b border-border bg-foreground/[0.04] font-semibold">
                           <td className="py-1 font-mono">{asset.ticker}</td>
                           <td className="py-1 max-w-[140px] truncate">{assetDisplayName ?? asset.name}</td>
                           <td className="py-1 text-right tabular-nums">
@@ -675,6 +702,8 @@ export function AssetDetailModal({
                 </table>
               </div>
             </TabsContent>
+            </motion.div>
+            </AnimatePresence>
           </div>
         </Tabs>
       </DialogContent>

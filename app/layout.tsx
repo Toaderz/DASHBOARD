@@ -1,10 +1,12 @@
 import type { Metadata, Viewport } from 'next'
-import { JetBrains_Mono, Plus_Jakarta_Sans } from 'next/font/google'
+import { JetBrains_Mono, Plus_Jakarta_Sans, Space_Grotesk } from 'next/font/google'
 import { Providers } from '@/components/providers'
 import './globals.css'
 
 const jetbrains = JetBrains_Mono({ subsets: ['latin'], variable: '--font-mono', display: 'swap' })
 const jakarta = Plus_Jakarta_Sans({ subsets: ['latin'], variable: '--font-ui', display: 'swap' })
+// Display face — geometric grotesk with character; headlines + hero numbers (not body).
+const spaceGrotesk = Space_Grotesk({ subsets: ['latin'], variable: '--font-display', display: 'swap' })
 
 export const metadata: Metadata = {
   title: 'Evolve Dashboard',
@@ -35,7 +37,7 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" suppressHydrationWarning className={[jetbrains.variable, jakarta.variable].join(' ')}>
+    <html lang="en" suppressHydrationWarning className={[jetbrains.variable, jakarta.variable, spaceGrotesk.variable].join(' ')}>
       <body className="font-ui">
         <Providers>{children}</Providers>
       </body>

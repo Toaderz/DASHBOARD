@@ -1,7 +1,9 @@
 'use client'
 
+import { motion } from 'framer-motion'
 import { Newspaper } from 'lucide-react'
 import { Skeleton } from '@/components/ui/skeleton'
+import { fadeUp, staggerContainer } from '@/lib/motion-tokens'
 import { useNewsBrief } from '@/hooks/useNewsBrief'
 import { useWatchlists, useWatchlistAssets } from '@/hooks/useWatchlistAssets'
 import { WeeklyBriefCard } from '@/components/dashboard/WeeklyBriefCard'
@@ -99,19 +101,35 @@ export function NewsBlock() {
       {firstWatchlistId ? (
         <ActiveWatchlistTickers watchlistId={firstWatchlistId}>
           {(tickers) => (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <motion.div
+              className="grid grid-cols-1 md:grid-cols-2 gap-4"
+              variants={staggerContainer}
+              initial="hidden"
+              whileInView="show"
+              viewport={{ once: true, margin: '-10%' }}
+            >
               {sortedNews.map((news) => (
-                <NewsCard key={news.id} news={news} userTickers={tickers} />
+                <motion.div key={news.id} variants={fadeUp}>
+                  <NewsCard news={news} userTickers={tickers} />
+                </motion.div>
               ))}
-            </div>
+            </motion.div>
           )}
         </ActiveWatchlistTickers>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <motion.div
+          className="grid grid-cols-1 md:grid-cols-2 gap-4"
+          variants={staggerContainer}
+          initial="hidden"
+          whileInView="show"
+          viewport={{ once: true, margin: '-10%' }}
+        >
           {sortedNews.map((news) => (
-            <NewsCard key={news.id} news={news} userTickers={[]} />
+            <motion.div key={news.id} variants={fadeUp}>
+              <NewsCard news={news} userTickers={[]} />
+            </motion.div>
           ))}
-        </div>
+        </motion.div>
       )}
     </div>
   )

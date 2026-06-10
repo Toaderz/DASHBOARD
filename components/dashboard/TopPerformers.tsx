@@ -16,7 +16,7 @@ import { EmptyState } from '@/components/dashboard/EmptyState'
 
 // Podium accents from the chart palette (token-based, no raw palette colors)
 const RANK_STYLE: Record<number, string> = {
-  0: 'text-electric',
+  0: 'text-foreground',
   1: 'text-chart-3',
   2: 'text-chart-5',
 }
@@ -83,7 +83,7 @@ export function TopPerformers() {
               className={cn(
                 'focus-ring rounded-pill border px-3 py-1.5 text-[11px] font-mono tracking-wide transition-colors',
                 isAnnualized
-                  ? 'border-electric/50 bg-electric/10 text-electric'
+                  ? 'border-foreground bg-foreground text-background'
                   : 'border-border text-muted-foreground hover:text-foreground hover:bg-ink-elevated',
                 forceAnnualize && 'cursor-default opacity-60'
               )}

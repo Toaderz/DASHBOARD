@@ -2,25 +2,39 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
-import { LogOut, LayoutDashboard, Menu, X, TrendingUp, TrendingDown, Newspaper, Swords } from 'lucide-react'
+import { useRouter, usePathname } from 'next/navigation'
+import { LogOut, LayoutDashboard, Menu, X, TrendingUp, TrendingDown, Newspaper, Swords, type LucideIcon } from 'lucide-react'
 import Image from 'next/image'
 import type { User } from '@supabase/supabase-js'
+import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
+import { cn } from '@/lib/utils/cn'
+import { DUR, EASE_OUT } from '@/lib/motion-tokens'
 import { createClient } from '@/lib/supabase/client'
 import { ThemeToggle } from '@/components/dashboard/ThemeToggle'
 import { Button } from '@/components/ui/button'
 import { useWatchlists } from '@/hooks/useWatchlistAssets'
 import { WatchlistManager } from '@/components/dashboard/WatchlistManager'
 import { PriceMarquee } from '@/components/dashboard/PriceMarquee'
+import { PageTransition } from '@/components/dashboard/PageTransition'
 
 interface DashboardShellProps {
   user: User
   children: React.ReactNode
 }
 
+const NAV_ITEMS: { href: string; label: string; icon: LucideIcon; tour?: string }[] = [
+  { href: '/', label: 'Overview', icon: LayoutDashboard, tour: 'nav-overview' },
+  { href: '/top10', label: 'Top Performers', icon: TrendingUp },
+  { href: '/bottom10', label: 'Worst Performers', icon: TrendingDown },
+  { href: '/vs-peers', label: 'Beating Peers', icon: Swords, tour: 'nav-peers' },
+  { href: '/news', label: 'Market Brief', icon: Newspaper, tour: 'nav-news' },
+]
+
 export function DashboardShell({ user, children }: DashboardShellProps) {
   const router = useRouter()
+  const pathname = usePathname()
   const supabase = createClient()
+  const reduced = useReducedMotion()
   const { watchlists, ownerEmails, createWatchlist, deleteWatchlist, updateWatchlist, leaveWatchlist } = useWatchlists()
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [sidebarOpen, setSidebarOpen] = useState(false)
@@ -49,53 +63,30 @@ export function DashboardShell({ user, children }: DashboardShellProps) {
 
       {/* Nav */}
       <nav className="flex-1 overflow-y-auto p-3 space-y-4">
-        <div data-tour="nav-watchlists">
-          <p className="px-2 pb-1.5 text-[10px] font-mono uppercase tracking-[0.15em] text-muted-foreground">
+        <div data-tour="nav-watchlists" className="space-y-0.5">
+          <p className="px-3 pb-1.5 text-[10px] font-mono uppercase tracking-[0.15em] text-muted-foreground">
             Navigation
           </p>
-          <Link
-            href="/"
-            data-tour="nav-overview"
-            onClick={() => setSidebarOpen(false)}
-            className="flex items-center gap-2 rounded-sm px-2 py-2 text-sm text-muted-foreground hover:bg-ink-elevated hover:text-foreground transition-colors min-h-[40px]"
-          >
-            <LayoutDashboard className="h-4 w-4 shrink-0" />
-            Overview
-          </Link>
-          <Link
-            href="/top10"
-            onClick={() => setSidebarOpen(false)}
-            className="flex items-center gap-2 rounded-sm px-2 py-2 text-sm text-muted-foreground hover:bg-ink-elevated hover:text-foreground transition-colors min-h-[40px]"
-          >
-            <TrendingUp className="h-4 w-4 shrink-0" />
-            Top Performers
-          </Link>
-          <Link
-            href="/bottom10"
-            onClick={() => setSidebarOpen(false)}
-            className="flex items-center gap-2 rounded-sm px-2 py-2 text-sm text-muted-foreground hover:bg-ink-elevated hover:text-foreground transition-colors min-h-[40px]"
-          >
-            <TrendingDown className="h-4 w-4 shrink-0" />
-            Worst Performers
-          </Link>
-          <Link
-            href="/vs-peers"
-            data-tour="nav-peers"
-            onClick={() => setSidebarOpen(false)}
-            className="flex items-center gap-2 rounded-sm px-2 py-2 text-sm text-muted-foreground hover:bg-ink-elevated hover:text-foreground transition-colors min-h-[40px]"
-          >
-            <Swords className="h-4 w-4 shrink-0" />
-            Beating Peers
-          </Link>
-          <Link
-            href="/news"
-            data-tour="nav-news"
-            onClick={() => setSidebarOpen(false)}
-            className="flex items-center gap-2 rounded-sm px-2 py-2 text-sm text-muted-foreground hover:bg-ink-elevated hover:text-foreground transition-colors min-h-[40px]"
-          >
-            <Newspaper className="h-4 w-4 shrink-0" />
-            Market Brief
-          </Link>
+          {NAV_ITEMS.map(({ href, label, icon: Icon, tour }) => {
+            const active = href === '/' ? pathname === '/' : pathname.startsWith(href)
+            return (
+              <Link
+                key={href}
+                href={href}
+                data-tour={tour}
+                onClick={() => setSidebarOpen(false)}
+                className={cn(
+                  'relative flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors min-h-[40px]',
+                  active
+                    ? 'bg-bone/[0.08] text-foreground before:absolute before:left-0 before:top-1.5 before:bottom-1.5 before:w-[2px] before:rounded-full before:bg-spark'
+                    : 'text-muted-foreground hover:bg-foreground/[0.05] hover:text-foreground'
+                )}
+              >
+                <Icon className="h-5 w-5 shrink-0" strokeWidth={1.75} />
+                {label}
+              </Link>
+            )
+          })}
         </div>
 
         <div className="pt-1">
@@ -138,7 +129,7 @@ export function DashboardShell({ user, children }: DashboardShellProps) {
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-background">
       {/* Mobile header — only visible below md */}
-      <header className="md:hidden flex h-12 shrink-0 items-center justify-between px-4 border-b border-border bg-ink-base z-10">
+      <header className="md:hidden flex h-12 shrink-0 items-center justify-between px-4 border-b border-border bg-ink-void z-10">
         <button
           onClick={() => setSidebarOpen(true)}
           data-tour="mobile-menu"
@@ -157,28 +148,40 @@ export function DashboardShell({ user, children }: DashboardShellProps) {
       </header>
 
       {/* Mobile sidebar overlay */}
-      {sidebarOpen && (
-        <div className="md:hidden fixed inset-0 z-50">
-          <div
-            className="absolute inset-0 bg-black/70 backdrop-blur-sm"
-            onClick={() => setSidebarOpen(false)}
-          />
-          <aside className="absolute left-0 top-0 bottom-0 w-72 flex flex-col bg-ink-base border-r border-border overflow-hidden">
-            <button
+      <AnimatePresence>
+        {sidebarOpen && (
+          <div className="md:hidden fixed inset-0 z-50">
+            <motion.div
+              className="absolute inset-0 bg-black/70 backdrop-blur-sm"
               onClick={() => setSidebarOpen(false)}
-              className="absolute top-3 right-3 flex h-8 w-8 items-center justify-center rounded-sm text-muted-foreground hover:text-foreground hover:bg-ink-elevated transition-colors"
-              aria-label="Close menu"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: DUR.fast }}
+            />
+            <motion.aside
+              className="absolute left-0 top-0 bottom-0 w-72 flex flex-col bg-ink-void border-r border-border overflow-hidden"
+              initial={reduced ? false : { x: '-100%' }}
+              animate={{ x: 0 }}
+              exit={reduced ? undefined : { x: '-100%' }}
+              transition={{ duration: DUR.base, ease: EASE_OUT }}
             >
-              <X className="h-4 w-4" />
-            </button>
-            {sidebarContent}
-          </aside>
-        </div>
-      )}
+              <button
+                onClick={() => setSidebarOpen(false)}
+                className="absolute top-3 right-3 flex h-8 w-8 items-center justify-center rounded-sm text-muted-foreground hover:text-foreground hover:bg-ink-elevated transition-colors"
+                aria-label="Close menu"
+              >
+                <X className="h-4 w-4" />
+              </button>
+              {sidebarContent}
+            </motion.aside>
+          </div>
+        )}
+      </AnimatePresence>
 
       <div className="flex flex-1 overflow-hidden">
         {/* Desktop sidebar — hidden on mobile */}
-        <aside className="hidden md:flex w-60 shrink-0 flex-col border-r border-border bg-ink-base">
+        <aside className="hidden md:flex w-60 shrink-0 flex-col border-r border-border bg-ink-void">
           {sidebarContent}
         </aside>
 
@@ -188,7 +191,7 @@ export function DashboardShell({ user, children }: DashboardShellProps) {
             <PriceMarquee />
           </div>
           <div className="flex-1">
-            {children}
+            <PageTransition>{children}</PageTransition>
           </div>
         </main>
       </div>

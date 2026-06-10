@@ -1,25 +1,41 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-import { useMotionValue, useSpring } from 'framer-motion'
+import { useState, useEffect, useRef } from 'react'
+import { useMotionValue, useSpring, useReducedMotion, useInView } from 'framer-motion'
+import { TICKER_SPRING } from '@/lib/motion-tokens'
 
 // Animates from 0 → `target`, rendering each frame through `format`.
-// Extracted from FundamentalsPanel so Overview StatCards can reuse it.
+// Reused by Overview StatCards, FundamentalsPanel, the hero, brief counts.
+// Reduced-motion → shows the final value instantly. `startOnView` defers the
+// count-up until the element scrolls into view (for below-the-fold KPIs).
 export function NumberTicker({
   target,
   format,
   className = 'tabular-nums',
+  startOnView = false,
 }: {
   target: number
   format: (v: number) => string
   className?: string
+  startOnView?: boolean
 }) {
+  const reduced = useReducedMotion()
+  const ref = useRef<HTMLSpanElement>(null)
+  const inView = useInView(ref, { once: true, margin: '-10%' })
   const motionValue = useMotionValue(0)
-  const spring = useSpring(motionValue, { stiffness: 50, damping: 15 })
-  const [display, setDisplay] = useState(format(0))
+  const spring = useSpring(motionValue, TICKER_SPRING)
+  const [display, setDisplay] = useState(format(reduced ? target : 0))
 
-  useEffect(() => { motionValue.set(target) }, [target, motionValue])
-  useEffect(() => spring.on('change', (v) => setDisplay(format(v))), [spring, format])
+  useEffect(() => {
+    if (reduced) { setDisplay(format(target)); return }
+    if (startOnView && !inView) return
+    motionValue.set(target)
+  }, [target, motionValue, reduced, startOnView, inView, format])
 
-  return <span className={className}>{display}</span>
+  useEffect(() => {
+    if (reduced) return
+    return spring.on('change', (v) => setDisplay(format(v)))
+  }, [spring, format, reduced])
+
+  return <span ref={ref} className={className}>{display}</span>
 }

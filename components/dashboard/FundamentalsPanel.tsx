@@ -83,7 +83,7 @@ function formatInceptionDate(iso: string): string {
 
 // ─── Base card styles ─────────────────────────────────────────────────────────
 const BASE = 'rounded-card border border-border bg-card p-3 flex flex-col gap-1'
-const GLOW = 'rounded-card border border-border bg-card p-3 flex flex-col gap-1 cursor-default transition-all duration-300 hover:border-electric/40 hover:shadow-glow hover:bg-electric/[0.03]'
+const GLOW = 'rounded-card border border-border bg-card p-3 flex flex-col gap-1 cursor-default transition-all duration-300 hover:border-bone/30 hover:shadow-glow hover:bg-bone/[0.03]'
 const LABEL = 'text-[10px] font-mono uppercase tracking-[0.12em] text-muted-foreground flex items-center gap-1'
 const VALUE = 'text-lg font-bold tabular-nums leading-tight'
 const VALUE_SM = 'text-base font-semibold tabular-nums leading-tight'

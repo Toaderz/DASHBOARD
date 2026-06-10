@@ -75,7 +75,7 @@ export function BottomPerformers() {
               className={cn(
                 'focus-ring rounded-pill border px-3 py-1.5 text-[11px] font-mono tracking-wide transition-colors',
                 isAnnualized
-                  ? 'border-electric/50 bg-electric/10 text-electric'
+                  ? 'border-foreground bg-foreground text-background'
                   : 'border-border text-muted-foreground hover:text-foreground hover:bg-ink-elevated',
                 forceAnnualize && 'cursor-default opacity-60'
               )}

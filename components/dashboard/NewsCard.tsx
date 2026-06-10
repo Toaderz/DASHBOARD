@@ -49,14 +49,14 @@ const markdownComponents = {
   ),
   li: (props: ComponentPropsWithoutRef<'li'>) => <li {...props} className="pl-1" />,
   blockquote: (props: ComponentPropsWithoutRef<'blockquote'>) => (
-    <blockquote {...props} className="border-l-2 border-electric pl-4 my-4 italic text-muted-foreground" />
+    <blockquote {...props} className="border-l-2 border-bone/50 pl-4 my-4 italic text-muted-foreground" />
   ),
   strong: (props: ComponentPropsWithoutRef<'strong'>) => (
     <strong {...props} className="font-semibold text-foreground" />
   ),
   hr: () => <hr className="my-6 border-border" />,
   a: (props: ComponentPropsWithoutRef<'a'>) => (
-    <a {...props} target="_blank" rel="noopener noreferrer" className="text-electric underline-offset-2 hover:underline" />
+    <a {...props} target="_blank" rel="noopener noreferrer" className="text-foreground underline underline-offset-2 decoration-bone/40 hover:decoration-foreground" />
   ),
   img: (props: ComponentPropsWithoutRef<'img'>) => (
     // eslint-disable-next-line @next/next/no-img-element
@@ -121,7 +121,7 @@ export function NewsCard({ news, userTickers }: Props) {
       {/* Portfolio relevance badge */}
       {isRelevant && (
         <div className="px-4 pb-3">
-          <span className="inline-flex items-center gap-1 rounded-pill bg-electric/10 px-2 py-0.5 text-[11px] text-electric font-mono">
+          <span className="inline-flex items-center gap-1 rounded-pill bg-spark/10 px-2 py-0.5 text-[11px] text-spark font-mono animate-pulse-ring">
             🎯 Relevante para tu portafolio [{matchedTickers.join(', ')}]
           </span>
         </div>
@@ -173,7 +173,7 @@ export function NewsCard({ news, userTickers }: Props) {
           {news.full_text_md && (
             <button
               onClick={() => setDialogOpen(true)}
-              className="text-xs text-electric hover:underline"
+              className="text-xs text-foreground underline-offset-2 hover:underline"
             >
               📄 Artículo completo →
             </button>

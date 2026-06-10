@@ -1,7 +1,10 @@
 'use client'
 
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { NumberTicker } from '@/components/dashboard/NumberTicker'
 import type { MarketBrief, WatchlistItem } from '@/types'
+
+const intFmt = (v: number) => Math.round(v).toString()
 
 interface Props {
   brief: MarketBrief
@@ -28,9 +31,9 @@ export function WeeklyBriefCard({ brief }: Props) {
       <CardContent className="space-y-4">
         {/* Signal counts */}
         <div className="flex flex-wrap gap-4 text-sm">
-          <span>🔴 <strong className="tabular-nums">{brief.strong_signals}</strong> señales fuertes</span>
-          <span>🟡 <strong className="tabular-nums">{brief.moderate_signals}</strong> señales moderadas</span>
-          <span>⚪ <strong className="tabular-nums">{brief.weak_noise}</strong> ruido / baja relevancia</span>
+          <span>🔴 <strong className="tabular-nums"><NumberTicker target={brief.strong_signals} format={intFmt} startOnView /></strong> señales fuertes</span>
+          <span>🟡 <strong className="tabular-nums"><NumberTicker target={brief.moderate_signals} format={intFmt} startOnView /></strong> señales moderadas</span>
+          <span>⚪ <strong className="tabular-nums"><NumberTicker target={brief.weak_noise} format={intFmt} startOnView /></strong> ruido / baja relevancia</span>
         </div>
 
         {/* Tema + riesgo */}

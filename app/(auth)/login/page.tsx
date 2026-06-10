@@ -63,7 +63,7 @@ export default function LoginPage() {
           animate={{ opacity: 1, y: 0 }}
           className="w-full max-w-sm rounded-sm border border-border bg-ink-surface p-8 text-center"
         >
-          <div className="mb-4 font-mono text-3xl text-electric">✓</div>
+          <div className="mb-4 font-mono text-3xl text-gain">✓</div>
           <h2 className="mb-2 font-ui text-xl font-semibold tracking-tight">Check your email</h2>
           <p className="font-ui text-sm text-muted-foreground">
             Sent a confirmation link to <strong className="text-foreground">{email}</strong>.
@@ -86,14 +86,15 @@ export default function LoginPage() {
       className="flex min-h-screen items-center justify-center p-4"
       style={{ background: 'hsl(var(--ink-void))' }}
     >
-      {/* Subtle grid pattern */}
+      {/* Subtle bone grid pattern + warm glow sweep */}
       <div
-        className="pointer-events-none fixed inset-0 opacity-[0.025]"
+        className="pointer-events-none fixed inset-0 opacity-[0.03]"
         style={{
-          backgroundImage: 'linear-gradient(hsl(var(--electric)) 1px, transparent 1px), linear-gradient(90deg, hsl(var(--electric)) 1px, transparent 1px)',
+          backgroundImage: 'linear-gradient(hsl(var(--bone)) 1px, transparent 1px), linear-gradient(90deg, hsl(var(--bone)) 1px, transparent 1px)',
           backgroundSize: '64px 64px',
         }}
       />
+      <div className="pointer-events-none fixed left-1/2 top-1/3 h-72 w-72 -translate-x-1/2 rounded-full bg-bone/[0.05] blur-3xl" aria-hidden />
 
       <div className="relative w-full max-w-sm space-y-8">
         {/* Brand mark with stagger reveal */}
@@ -223,7 +224,7 @@ export default function LoginPage() {
             {mode === 'login' ? "Don't have an account? " : 'Already have an account? '}
             <button
               type="button"
-              className="font-medium text-electric hover:text-electric-bright transition-colors"
+              className="font-medium text-foreground underline-offset-2 hover:underline transition-colors"
               onClick={() => { setMode(mode === 'login' ? 'register' : 'login'); setError(null) }}
             >
               {mode === 'login' ? 'Sign up' : 'Sign in'}

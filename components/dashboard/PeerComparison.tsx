@@ -1,8 +1,10 @@
 'use client'
 
 import { useMemo, useState } from 'react'
+import { motion } from 'framer-motion'
 import { Loader2, Search, Swords, X } from 'lucide-react'
 import { usePeerComparison } from '@/hooks/usePeerComparison'
+import { fadeUp, staggerContainer } from '@/lib/motion-tokens'
 import { PageHeader } from './PageHeader'
 import { EmptyState } from './EmptyState'
 import { Card, CardContent } from '@/components/ui/card'
@@ -83,7 +85,7 @@ export function PeerComparison() {
                 placeholder="Filtrar…"
                 value={filterQuery}
                 onChange={(e) => setFilterQuery(e.target.value)}
-                className="w-full rounded-sm border border-border bg-transparent pl-7 pr-7 py-1.5 text-xs font-ui placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+                className="w-full rounded-md border border-border bg-ink-elevated/40 pl-7 pr-7 py-1.5 text-xs font-ui placeholder:text-muted-foreground/70 transition-colors focus:outline-none focus:border-foreground/40"
               />
               {filterQuery && (
                 <button
@@ -105,11 +107,13 @@ export function PeerComparison() {
               compact
             />
           ) : (
-            <div className="space-y-2">
+            <motion.div className="space-y-2" variants={staggerContainer} initial="hidden" animate="show">
               {visible.map((asset) => (
-                <PeerCard key={asset.ticker} asset={asset} />
+                <motion.div key={asset.ticker} variants={fadeUp}>
+                  <PeerCard asset={asset} />
+                </motion.div>
               ))}
-            </div>
+            </motion.div>
           )}
 
           {withoutPeers.length > 0 && (

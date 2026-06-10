@@ -735,7 +735,9 @@ export async function runNewsPipeline(supabaseAdmin: SupabaseClient): Promise<Ru
         full_text_md: fullText,
         source_url: article.source_url,
         source_name: article.source_name,
-        published_at: toValidDate(article.date),
+        // Fecha del LLM (la copia del prompt); si no la devolvió válida, cae a la fecha
+        // determinista de Tavily (published_date) para que la fecha SIEMPRE salga cuando la haya.
+        published_at: toValidDate(article.date) ?? toValidDate(rawByUrl.get(article.source_url)?.published_date),
         affected_tickers: affected.map((s) => s.ticker),
         affected_symbols: affected,
         relevance_source: affected.length

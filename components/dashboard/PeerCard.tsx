@@ -1,10 +1,11 @@
 'use client'
 
 import { useState } from 'react'
-import { AnimatePresence, motion } from 'framer-motion'
+import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
 import { ChevronDown, TrendingDown, TrendingUp } from 'lucide-react'
 import { formatPercent, percentColor } from '@/lib/utils/formatters'
 import { cn } from '@/lib/utils/cn'
+import { DUR, EASE_OUT, STAGGER_FAST, fadeUp } from '@/lib/motion-tokens'
 import { Card } from '@/components/ui/card'
 import { PEER_CMP_PERIODS, type AssetComparison, type PeriodResult } from '@/hooks/usePeerComparison'
 import { type AssetType, METRIC_DEFINITIONS } from '@/types'
@@ -49,6 +50,7 @@ function buildRows(asset: AssetComparison, r: PeriodResult): ReturnRow[] {
 }
 
 function ReturnRowItem({ row, assetReturn, maxAbsDelta }: { row: ReturnRow; assetReturn: number | null; maxAbsDelta: number }) {
+  const reduced = useReducedMotion()
   const noData = row.ret == null
   // Icono ✓/✗: comparación 1-a-1 activo↔peer (estricta; empate no cuenta). OJO: es distinta del
   // veredicto del período (r.state === 'won', umbral beaten/evaluated ≥ 0.75) — un período puede
@@ -64,7 +66,8 @@ function ReturnRowItem({ row, assetReturn, maxAbsDelta }: { row: ReturnRow; asse
   const peerWon = barDelta != null && barDelta > 0
 
   return (
-    <div
+    <motion.div
+      variants={fadeUp}
       className={cn(
         'flex items-center gap-2 py-0.5',
         row.isAsset && 'bg-brand-teal/10 border border-brand-teal/20 rounded-md px-2'
@@ -99,12 +102,14 @@ function ReturnRowItem({ row, assetReturn, maxAbsDelta }: { row: ReturnRow; asse
           <span className="absolute left-1/2 top-0 h-full w-1 -translate-x-1/2 rounded-full bg-brand-teal" />
         ) : (
           barDelta != null && (
-            <span
+            <motion.span
               className={cn(
                 'absolute top-0 h-full rounded-full',
                 peerWon ? 'left-1/2 bg-loss' : 'right-1/2 bg-brand-teal'
               )}
-              style={{ width: `${barWidth}px` }}
+              initial={reduced ? false : { width: 0 }}
+              animate={{ width: barWidth }}
+              transition={{ duration: DUR.base, ease: EASE_OUT }}
             />
           )
         )}
@@ -119,7 +124,7 @@ function ReturnRowItem({ row, assetReturn, maxAbsDelta }: { row: ReturnRow; asse
       <span className={cn('hidden sm:block w-20 shrink-0 text-right font-mono text-[10px]', delta != null ? percentColor(delta) : 'text-transparent')}>
         {delta != null ? `${delta >= 0 ? '+' : ''}${delta.toFixed(2)}pp vs tú` : ''}
       </span>
-    </div>
+    </motion.div>
   )
 }
 
@@ -163,11 +168,11 @@ export function PeerCard({ asset }: { asset: AssetComparison }) {
         <div className="shrink-0 text-right">
           <div
             className={cn(
-              'text-sm font-mono font-bold',
+              'font-editorial text-xl font-bold tabular-nums leading-none',
               asset.metricsWon >= 4 ? 'text-gain' : asset.metricsWon > 0 ? 'text-foreground' : 'text-muted-foreground'
             )}
           >
-            {asset.metricsWon}/{TOTAL_PERIODS}
+            {asset.metricsWon}<span className="text-sm text-muted-foreground">/{TOTAL_PERIODS}</span>
           </div>
           <div className="text-[10px] font-mono uppercase tracking-[0.12em] text-muted-foreground">won</div>
         </div>
@@ -237,14 +242,19 @@ export function PeerCard({ asset }: { asset: AssetComparison }) {
                       initial={{ height: 0, opacity: 0 }}
                       animate={{ height: 'auto', opacity: 1 }}
                       exit={{ height: 0, opacity: 0 }}
-                      transition={{ duration: 0.2, ease: 'easeOut' }}
+                      transition={{ duration: DUR.base, ease: EASE_OUT }}
                       className="overflow-hidden"
                     >
-                      <div className="space-y-0.5 px-3 pb-2 pl-12">
+                      <motion.div
+                        className="space-y-0.5 px-3 pb-2 pl-12"
+                        variants={{ hidden: {}, show: { transition: { staggerChildren: STAGGER_FAST } } }}
+                        initial="hidden"
+                        animate="show"
+                      >
                         {rows.map((row) => (
                           <ReturnRowItem key={row.ticker} row={row} assetReturn={r.assetReturn} maxAbsDelta={maxAbsDelta} />
                         ))}
-                      </div>
+                      </motion.div>
                     </motion.div>
                   )
                 })()}

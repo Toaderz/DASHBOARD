@@ -17,7 +17,7 @@ export function PageHeader({ title, description, icon: Icon, actions, className 
     <div className={cn('flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between', className)}>
       <div className="flex items-start gap-3 min-w-0">
         {Icon && (
-          <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-card border border-border bg-card text-electric shadow-card">
+          <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-card border border-border bg-card text-bone-dim shadow-card">
             <Icon className="h-4.5 w-4.5" strokeWidth={1.75} />
           </span>
         )}

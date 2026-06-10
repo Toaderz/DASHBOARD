@@ -181,7 +181,7 @@ export function WatchlistManager({
           <div
             key={wl.id}
             className={`group flex items-center gap-1 rounded-sm px-2 min-h-[44px] cursor-pointer transition-colors
-              ${selectedId === wl.id ? 'bg-electric/10 text-electric' : 'hover:bg-ink-elevated text-foreground'}`}
+              ${selectedId === wl.id ? 'bg-bone/[0.08] text-foreground' : 'hover:bg-foreground/[0.05] text-foreground'}`}
             onClick={() => onSelect(wl.id)}
           >
             {!isOwned && (

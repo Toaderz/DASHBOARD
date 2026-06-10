@@ -97,7 +97,7 @@ export function MetricsSelector({ selected, onChange }: MetricsSelectorProps) {
                   onDrop={(e) => handleDrop(e, i)}
                   onDragEnd={handleDragEnd}
                   className={`flex items-center gap-2 rounded px-1 py-1 cursor-grab transition-colors ${
-                    dragOver === i ? 'bg-electric/10 border border-electric/30' : 'hover:bg-ink-elevated'
+                    dragOver === i ? 'bg-bone/[0.08] border border-bone/30' : 'hover:bg-ink-elevated'
                   }`}
                 >
                   <GripVertical className="h-3.5 w-3.5 text-muted-foreground/50 shrink-0" />

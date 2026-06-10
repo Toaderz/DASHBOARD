@@ -14,7 +14,7 @@ const buttonVariants = cva(
         secondary:   'bg-secondary text-secondary-foreground shadow-sm hover:bg-secondary/80',
         ghost:       'hover:bg-accent hover:text-accent-foreground',
         link:        'text-primary underline-offset-4 hover:underline',
-        terminal:    'border border-electric/40 bg-transparent text-electric hover:bg-electric/10 hover:border-electric font-mono text-xs tracking-wider uppercase',
+        terminal:    'border border-bone/40 bg-transparent text-bone hover:bg-bone/10 hover:border-bone font-mono text-xs tracking-wider uppercase',
         'ghost-dim': 'text-muted-foreground hover:text-foreground hover:bg-ink-elevated',
         danger:      'border border-loss/40 bg-transparent text-loss hover:bg-loss/10 hover:border-loss',
       },

@@ -11,7 +11,8 @@ const config: Config = {
   theme: {
     extend: {
       fontFamily: {
-        editorial: ['var(--font-ui)', 'system-ui', 'sans-serif'],
+        display:   ['var(--font-display)', 'var(--font-ui)', 'system-ui', 'sans-serif'],
+        editorial: ['var(--font-display)', 'var(--font-ui)', 'system-ui', 'sans-serif'],
         ui:        ['var(--font-ui)', 'system-ui', 'sans-serif'],
         mono:      ['var(--font-mono)', 'ui-monospace', 'monospace'],
       },
@@ -61,6 +62,14 @@ const config: Config = {
           DEFAULT: 'hsl(var(--electric))',
           dim:     'hsl(var(--electric-dim))',
           bright:  'hsl(var(--electric-bright))',
+        },
+        // Teal-spark alias (same token as electric) — readable name for the ~4 high-signal spots
+        spark:   'hsl(var(--electric))',
+        // Bone — warm off-white CHROME accent (the default for borders/hover/active/focus)
+        bone: {
+          DEFAULT: 'hsl(var(--bone))',
+          dim:     'hsl(var(--bone-dim))',
+          bright:  'hsl(var(--bone-bright))',
         },
         gain:    'hsl(var(--gain))',
         loss:    'hsl(var(--loss))',
