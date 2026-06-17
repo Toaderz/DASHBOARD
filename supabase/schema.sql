@@ -465,6 +465,8 @@ begin
 
   insert into assets_metadata (ticker, name, type, sector, region) values
     ('PSH.L', 'Pershing Square Holdings, Ltd.',                      'stock', 'Financials',       'UK'),
+    ('PS',    'Pershing Square Holdings Corp',                       'stock', 'Financials',       'US'),
+    ('PSUS',  'Pershing Square USA, Ltd.',                           'stock', 'Financials',       'US'),
     ('HHH',   'Howard Hughes Holdings Inc',                          'stock', 'Real Estate',      'US'),
     ('IJR',         'iShares Core S&P Small-Cap ETF',                      'etf',  'Equity',     'US'),
     ('RECS',        'Columbia Research Enhanced Core ETF',                 'etf',  'Equity',     'US'),
@@ -492,6 +494,8 @@ begin
     (v_watchlist_id, 'RECS',  'US',                         103),
     (v_watchlist_id, 'RDVY',  'US',                         104),
     (v_watchlist_id, '0P00000XBQ.L', 'US',                105),
+    (v_watchlist_id, 'PS',    'US',                         106),
+    (v_watchlist_id, 'PSUS',  'US',                         107),
     -- US SMALL CAPS
     (v_watchlist_id, 'SDVY',  'US SMALL CAPS',              200),
     (v_watchlist_id, '^RUT',  'US SMALL CAPS',              201),

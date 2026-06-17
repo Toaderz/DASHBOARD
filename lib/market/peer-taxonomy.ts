@@ -585,6 +585,7 @@ export const STATIC_PEERS: Record<string, string[]> = {
   '0P00000R0U.L': ['0P0000JCSG.F', '0P0000611O.F'],
   // Pershing Square holdings & proxies
   PSH:   ['GURU', 'ALFA', 'BRK-B'],
+  PS:    ['GURU', 'ALFA', 'BRK-B'],
   PSUS:  ['GURU', 'ALFA', 'BRK-B'],
   HHH:   ['TPL', 'BXP', 'VNO'],
   BN:    ['BX', 'KKR', 'APO'],

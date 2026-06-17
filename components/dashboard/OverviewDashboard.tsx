@@ -388,7 +388,7 @@ function Leaderboard({
                   )}>
                     {i + 1}
                   </span>
-                  <span className="flex-1 truncate font-mono text-sm font-semibold tracking-wide">{entry.ticker}</span>
+                  <span className="flex-1 truncate text-sm font-semibold">{entry.name || entry.ticker}</span>
                   {/* Inline magnitude bar (CSS only, from the scalar return — no fetch) */}
                   <div className="hidden h-1.5 w-14 shrink-0 overflow-hidden rounded-full bg-foreground/[0.06] sm:block" aria-hidden>
                     <div
@@ -444,7 +444,7 @@ function PeersMiniList({
                   variants={fadeUp}
                   className="group flex items-center gap-2.5 rounded-md px-2 py-1.5 transition-colors hover:bg-ink-elevated"
                 >
-                  <span className="flex-1 truncate font-mono text-sm font-semibold tracking-wide">{asset.ticker}</span>
+                  <span className="flex-1 truncate text-sm font-semibold">{asset.name || asset.ticker}</span>
                   <div className="hidden shrink-0 items-center gap-0.5 sm:flex" aria-hidden>
                     {Array.from({ length: 6 }).map((_, j) => (
                       <span

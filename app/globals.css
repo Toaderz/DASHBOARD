@@ -113,8 +113,8 @@
 
     --chart-grid:           40 6% 18%;
     --chart-axis:           40 6% 52%;
-    --chart-tooltip-bg:     38 5% 14%;
-    --chart-tooltip-border: 40 6% 24%;
+    --chart-tooltip-bg:     38 6% 22%;
+    --chart-tooltip-border: 40 8% 34%;
 
     /* Elevation aliases */
     --elevation-0: var(--ink-base);
@@ -150,7 +150,7 @@
     --chart-grid:           40 16% 89%;
     --chart-axis:           40 6% 52%;
     --chart-tooltip-bg:     0 0% 100%;
-    --chart-tooltip-border: 40 16% 86%;
+    --chart-tooltip-border: 40 16% 78%;
 
     /* Shadows — V2 light: warm, minimal — cards lift by soft shadow not border */
     --shadow-xs:   0 1px 2px hsl(40 18% 30% / 0.04);

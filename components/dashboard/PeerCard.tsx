@@ -11,8 +11,6 @@ import { PEER_CMP_PERIODS, type AssetComparison, type PeriodResult } from '@/hoo
 import { type AssetType, METRIC_DEFINITIONS } from '@/types'
 
 const TOTAL_PERIODS = PEER_CMP_PERIODS.length
-const BAR_TRACK_PX = 56 // ancho total de la barra divergente (28px por lado desde el eje central)
-const BAR_HALF_PX = BAR_TRACK_PX / 2
 
 function periodLabel(period: string): string {
   return METRIC_DEFINITIONS.find((m) => m.key === period)?.label?.replace(' %', '') ?? period
@@ -49,80 +47,99 @@ function buildRows(asset: AssetComparison, r: PeriodResult): ReturnRow[] {
   return [assetRow, ...peerRows]
 }
 
-function ReturnRowItem({ row, assetReturn, maxAbsDelta }: { row: ReturnRow; assetReturn: number | null; maxAbsDelta: number }) {
+// Escala común del grupo para las barras ranqueadas: baseline en 0, posición del activo de referencia.
+interface BarScale {
+  lo: number      // extremo izq. (= min(0, mínimo del grupo))
+  span: number    // rango total (hi − lo), nunca 0
+  zeroPct: number // posición del 0 dentro del track (%)
+  assetPct: number | null // posición del retorno del activo (línea de referencia)
+}
+
+function ReturnRowItem({ row, assetReturn, scale }: { row: ReturnRow; assetReturn: number | null; scale: BarScale }) {
   const reduced = useReducedMotion()
   const noData = row.ret == null
-  // Icono ✓/✗: comparación 1-a-1 activo↔peer (estricta; empate no cuenta). OJO: es distinta del
-  // veredicto del período (r.state === 'won', umbral beaten/evaluated ≥ 0.75) — un período puede
-  // estar 'lost' aunque el activo gane a algún peer individual. No recalcular el estado aquí.
-  const assetBeatsPeer = !row.isAsset && !noData && assetReturn != null && assetReturn > (row.ret as number)
-  // Delta del texto "pp vs tú" (activo − peer): positivo = el activo va por delante.
-  const delta = !row.isAsset && !noData && assetReturn != null ? assetReturn - (row.ret as number) : null
-  // Barra divergente centrada en el retorno del activo (eje = delta 0). barDelta = peer − activo:
-  // negativo → el activo ganó (barra a la IZQUIERDA, teal favorable); positivo → el peer ganó
-  // (barra a la DERECHA, loss desfavorable). Longitud ∝ |barDelta| escalada al máx del grupo, 4px mín.
-  const barDelta = !row.isAsset && !noData && assetReturn != null ? (row.ret as number) - assetReturn : null
-  const barWidth = barDelta != null ? Math.max(4, Math.round((Math.abs(barDelta) / maxAbsDelta) * BAR_HALF_PX)) : 0
-  const peerWon = barDelta != null && barDelta > 0
+  const v = noData ? 0 : (row.ret as number)
+  const valPct = noData ? 0 : ((v - scale.lo) / scale.span) * 100
+  const isNeg = v < 0
+  // La barra crece desde el 0: positivos hacia la derecha, negativos hacia la izquierda.
+  const barWidthPct = noData ? 0 : Math.abs(valPct - scale.zeroPct)
+
+  // Veredicto 1-a-1 (solo peers con dato): el activo le gana si su retorno es estrictamente mayor.
+  // OJO: distinto del veredicto del período (r.state === 'won', umbral ≥ 0.75) — no se recalcula aquí.
+  const delta = !row.isAsset && !noData && assetReturn != null ? assetReturn - v : null
+  const beats = delta != null && delta > 0
+  const ties = delta != null && delta === 0
 
   return (
     <motion.div
       variants={fadeUp}
       className={cn(
-        'flex items-center gap-2 py-0.5',
-        row.isAsset && 'bg-brand-teal/10 border border-brand-teal/20 rounded-md px-2'
+        'flex items-center gap-2 py-1',
+        row.isAsset && 'rounded-md bg-brand-teal/10 px-2 ring-1 ring-inset ring-brand-teal/25'
       )}
     >
-      {/* Icono ✓/✗ */}
-      <span className="w-3 shrink-0">
-        {!row.isAsset && !noData &&
-          (assetBeatsPeer ? (
-            <TrendingUp className="h-3 w-3 text-gain" />
-          ) : (
-            <TrendingDown className="h-3 w-3 text-loss" />
-          ))}
-      </span>
-
-      {/* Ticker — fondos/ETFs lo ocultan (el nombre los identifica) y conservan el ancho */}
-      <span className="w-12 shrink-0 font-mono text-[11px] font-semibold">{row.hideTicker ? '' : row.ticker}</span>
-
-      {/* Nombre */}
-      <span className="flex-1 truncate text-[10px] text-muted-foreground">
-        {row.isAsset ? 'Tu activo' : row.name}
-      </span>
-
-      {/* Barra divergente: eje central = retorno del activo. Izq (teal) = activo ganó; der (loss) = peer ganó */}
-      <span className="relative block h-1.5 w-[56px] shrink-0">
-        {/* Eje central (solo en filas con dato; las sin dato quedan neutras sin eje) */}
-        {(row.isAsset || !noData) && (
-          <span className="absolute left-1/2 top-0 h-full w-px bg-border" />
+      {/* Etiqueta: chip "Tú" para el activo; ticker (oculto en fondos) + nombre para peers */}
+      <div className="flex w-24 shrink-0 items-center gap-1.5 sm:w-40">
+        {row.isAsset && (
+          <span className="rounded-pill bg-brand-teal px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-white">
+            Tú
+          </span>
         )}
-        {row.isAsset ? (
-          // Activo: pip centrado en el eje (referencia delta 0), sin barra divergente.
-          <span className="absolute left-1/2 top-0 h-full w-1 -translate-x-1/2 rounded-full bg-brand-teal" />
-        ) : (
-          barDelta != null && (
-            <motion.span
-              className={cn(
-                'absolute top-0 h-full rounded-full',
-                peerWon ? 'left-1/2 bg-loss' : 'right-1/2 bg-brand-teal'
-              )}
-              initial={reduced ? false : { width: 0 }}
-              animate={{ width: barWidth }}
-              transition={{ duration: DUR.base, ease: EASE_OUT }}
-            />
-          )
+        {!row.isAsset && !row.hideTicker && (
+          <span className="font-mono text-[11px] font-semibold">{row.ticker}</span>
         )}
-      </span>
+        <span className={cn('truncate text-[10px]', row.isAsset ? 'font-semibold text-foreground' : 'text-muted-foreground')}>
+          {row.name}
+        </span>
+      </div>
+
+      {/* Barra de retorno en escala común (baseline 0). Color = quién gana: teal=tú · azul=le ganas · rojo=te gana */}
+      <div className="relative h-2.5 min-w-0 flex-1 rounded-sm bg-foreground/[0.05]">
+        {/* Línea del cero */}
+        <span className="absolute top-0 h-full w-px bg-border" style={{ left: `${scale.zeroPct}%` }} />
+        {/* Marcador punteado del nivel del activo (referencia en filas de peers) */}
+        {!row.isAsset && scale.assetPct != null && (
+          <span
+            className="absolute top-[-2px] h-[calc(100%+4px)] border-l border-dashed border-brand-teal/70"
+            style={{ left: `${scale.assetPct}%` }}
+            aria-hidden
+          />
+        )}
+        {!noData && (
+          <motion.span
+            className={cn(
+              'absolute top-0 h-full rounded-sm',
+              row.isAsset ? 'bg-brand-teal' : beats ? 'bg-chart-1' : 'bg-loss/80'
+            )}
+            style={isNeg ? { right: `${100 - scale.zeroPct}%` } : { left: `${scale.zeroPct}%` }}
+            initial={reduced ? false : { width: 0 }}
+            animate={{ width: `${barWidthPct}%` }}
+            transition={{ duration: DUR.base, ease: EASE_OUT }}
+          />
+        )}
+      </div>
 
       {/* Retorno */}
-      <span className={cn('w-16 shrink-0 text-right font-mono text-[11px]', noData ? 'text-muted-foreground' : percentColor(row.ret))}>
-        {noData ? '— sin dato' : formatPercent(row.ret)}
+      <span className={cn('w-14 shrink-0 text-right font-mono text-[11px] sm:w-16', noData ? 'text-muted-foreground' : percentColor(row.ret))}>
+        {noData ? '—' : formatPercent(row.ret)}
       </span>
 
-      {/* Delta pp vs tú (oculto en mobile) */}
-      <span className={cn('hidden sm:block w-20 shrink-0 text-right font-mono text-[10px]', delta != null ? percentColor(delta) : 'text-transparent')}>
-        {delta != null ? `${delta >= 0 ? '+' : ''}${delta.toFixed(2)}pp vs tú` : ''}
+      {/* Veredicto en lenguaje claro */}
+      <span className="w-[64px] shrink-0 sm:w-28">
+        {row.isAsset ? null : noData ? (
+          <span className="block text-right text-[10px] text-muted-foreground">sin dato</span>
+        ) : (
+          <span
+            className={cn(
+              'inline-flex w-full items-center justify-end gap-1 text-[10px] font-semibold',
+              ties ? 'text-muted-foreground' : beats ? 'text-gain' : 'text-loss'
+            )}
+          >
+            {!ties && (beats ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />)}
+            <span className="hidden sm:inline">{ties ? 'empata' : beats ? 'le ganas' : 'te gana'}</span>
+            {delta != null && <span className="tabular-nums">{`${delta >= 0 ? '+' : ''}${delta.toFixed(1)}pp`}</span>}
+          </span>
+        )}
       </span>
     </motion.div>
   )
@@ -224,19 +241,18 @@ export function PeerCard({ asset }: { asset: AssetComparison }) {
                 )}
               </button>
 
-              {/* Expanded detail: retorno del activo y de cada peer + delta pp + barra de contexto */}
+              {/* Detalle expandido: barras de retorno ranqueadas en escala común + veredicto por peer */}
               <AnimatePresence initial={false}>
                 {isOpen && hasData && (() => {
                   const rows = buildRows(asset, r)
-                  // Escala de la barra divergente: máx |peer − activo| del grupo (0 → guarda 1 para no dividir por 0).
-                  const maxAbsDelta = r.assetReturn == null
-                    ? 1
-                    : Math.max(
-                        1,
-                        ...rows
-                          .filter((row) => !row.isAsset && row.ret != null)
-                          .map((row) => Math.abs((row.ret as number) - (r.assetReturn as number)))
-                      )
+                  // Escala común del grupo: rango [lo,hi] sobre activo + peers con dato, siempre incluyendo el 0.
+                  const vals = rows.filter((row) => row.ret != null).map((row) => row.ret as number)
+                  const lo = Math.min(0, ...vals)
+                  const hi = Math.max(0, ...vals)
+                  const span = (hi - lo) || 1
+                  const zeroPct = ((0 - lo) / span) * 100
+                  const assetPct = r.assetReturn != null ? ((r.assetReturn - lo) / span) * 100 : null
+                  const scale = { lo, span, zeroPct, assetPct }
                   return (
                     <motion.div
                       initial={{ height: 0, opacity: 0 }}
@@ -245,16 +261,26 @@ export function PeerCard({ asset }: { asset: AssetComparison }) {
                       transition={{ duration: DUR.base, ease: EASE_OUT }}
                       className="overflow-hidden"
                     >
-                      <motion.div
-                        className="space-y-0.5 px-3 pb-2 pl-12"
-                        variants={{ hidden: {}, show: { transition: { staggerChildren: STAGGER_FAST } } }}
-                        initial="hidden"
-                        animate="show"
-                      >
-                        {rows.map((row) => (
-                          <ReturnRowItem key={row.ticker} row={row} assetReturn={r.assetReturn} maxAbsDelta={maxAbsDelta} />
-                        ))}
-                      </motion.div>
+                      <div className="px-3 pb-2.5 pl-4 pt-1 sm:pl-12">
+                        {/* Cabecera del desglose — contexto legible */}
+                        <p className="mb-1.5 text-[10px] text-muted-foreground">
+                          <span className="font-mono font-semibold text-foreground">{periodLabel(period)}</span>
+                          {' · tú vs peers · '}
+                          <span className={cn('font-semibold', r.won ? 'text-gain' : 'text-foreground')}>
+                            ganaste a {r.beaten.length}/{r.assigned}
+                          </span>
+                        </p>
+                        <motion.div
+                          className="space-y-0.5"
+                          variants={{ hidden: {}, show: { transition: { staggerChildren: STAGGER_FAST } } }}
+                          initial="hidden"
+                          animate="show"
+                        >
+                          {rows.map((row) => (
+                            <ReturnRowItem key={row.ticker} row={row} assetReturn={r.assetReturn} scale={scale} />
+                          ))}
+                        </motion.div>
+                      </div>
                     </motion.div>
                   )
                 })()}
