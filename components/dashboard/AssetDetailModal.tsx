@@ -29,7 +29,7 @@ import { AssetMonogram } from './AssetMonogram'
 import { NumberTicker } from './NumberTicker'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { SegmentedControl } from './SegmentedControl'
-import { useChartTheme, chartTooltipStyle } from '@/lib/chart-theme'
+import { useChartTheme, chartTooltipStyle, chartTooltipLabelStyle, chartTooltipItemStyle } from '@/lib/chart-theme'
 import { assetLayoutId, morphTransition } from '@/lib/motion-tokens'
 import { ValuePulse } from '@/lib/motion-client'
 import { typeBadgeClass, typeLabel } from '@/lib/asset-style'
@@ -412,7 +412,9 @@ export function AssetDetailModal({
                           domain={['auto', 'auto']}
                         />
                         <Tooltip
-                          contentStyle={chartTooltipStyle(chartTheme)}
+                          contentStyle={chartTooltipStyle}
+                          labelStyle={chartTooltipLabelStyle}
+                          itemStyle={chartTooltipItemStyle}
                           formatter={(v: number) => [formatPrice(v), 'Price']}
                         />
                         <Area
@@ -466,7 +468,9 @@ export function AssetDetailModal({
                         tickFormatter={(v: number) => `${v.toFixed(0)}%`}
                       />
                       <Tooltip
-                        contentStyle={chartTooltipStyle(chartTheme)}
+                        contentStyle={chartTooltipStyle}
+                        labelStyle={chartTooltipLabelStyle}
+                        itemStyle={chartTooltipItemStyle}
                         formatter={(v: number) => [formatPercent(v), 'Return']}
                       />
                       <Bar dataKey="return" radius={[3, 3, 0, 0]} isAnimationActive={!reduced} animationDuration={reduced ? 0 : 600} animationEasing="ease-out">
@@ -588,7 +592,9 @@ export function AssetDetailModal({
                           tickFormatter={(v: number) => `${v.toFixed(0)}%`}
                         />
                         <Tooltip
-                          contentStyle={chartTooltipStyle(chartTheme)}
+                          contentStyle={chartTooltipStyle}
+                          labelStyle={chartTooltipLabelStyle}
+                          itemStyle={chartTooltipItemStyle}
                           formatter={(v: number) => [formatPercent(v), effectivePeerChartPeriod]}
                         />
                         <Bar dataKey="value" radius={[3, 3, 0, 0]} isAnimationActive={!reduced} animationDuration={reduced ? 0 : 600} animationEasing="ease-out">

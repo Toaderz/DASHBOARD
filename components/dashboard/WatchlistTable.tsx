@@ -70,6 +70,19 @@ export function WatchlistTable({
 
   const reduced = useReducedMotion()
   const tickers = useMemo(() => assets.map((a) => a.ticker), [assets])
+  // Un mismo ticker puede aparecer en varias categorías (p.ej. THEMATICS repite ^GSPC/CIBR/FAI).
+  // El layoutId del shared-element morph DEBE ser único en la página: con duplicados, Framer Motion
+  // colapsa una de las instancias (la fila "desaparece"). Para esos tickers desactivamos el layoutId
+  // (se pierde solo el morph en duplicados; la fila renderiza normal). Los tickers únicos lo conservan.
+  const dupTickers = useMemo(() => {
+    const seen = new Set<string>()
+    const dup = new Set<string>()
+    for (const t of tickers) {
+      if (seen.has(t)) dup.add(t)
+      else seen.add(t)
+    }
+    return dup
+  }, [tickers])
   const { prices, flashStates } = useRealtimePrices(tickers)
   const activeMetrics = watchlist.selected_metrics as MetricKey[]
   const { returns, maxYears } = usePerformanceMetrics(tickers, prices, activeMetrics)
@@ -199,7 +212,7 @@ export function WatchlistTable({
           cell: ({ row }) => (
             <span className="flex items-center gap-2">
               <motion.span
-                layoutId={reduced ? undefined : assetLayoutId(row.original.ticker)}
+                layoutId={reduced || dupTickers.has(row.original.ticker) ? undefined : assetLayoutId(row.original.ticker)}
                 transition={morphTransition}
                 className="flex items-center gap-2"
               >
@@ -476,7 +489,7 @@ export function WatchlistTable({
         }),
       ]
     },
-    [prices, flashStates, returns, maxYears, onRemoveAsset, annualize, usd, toUsd, adjReturn, adj1d, mcSymbol, periodStartDate, reduced]
+    [prices, flashStates, returns, maxYears, onRemoveAsset, annualize, usd, toUsd, adjReturn, adj1d, mcSymbol, periodStartDate, reduced, dupTickers]
   )
 
   const columnOrder = useMemo<ColumnOrderState>(

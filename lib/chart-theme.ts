@@ -58,17 +58,31 @@ export function seriesColor(i: number): string {
   return CHART_SERIES[((i % 8) + 8) % 8]
 }
 
-/** Tooltip contentStyle for Recharts, built from a resolved theme. */
-export function chartTooltipStyle(theme: ChartTheme): React.CSSProperties {
-  return {
-    backgroundColor: theme.tooltipBg,
-    border: `1px solid ${theme.tooltipBorder}`,
-    borderRadius: 8,
-    fontSize: 12,
-    fontFamily: 'var(--font-mono), monospace',
-    color: 'hsl(var(--foreground))',
-    boxShadow: 'var(--shadow-pop)',
-  }
+/**
+ * Tooltip styles for Recharts. Uses live CSS-var strings (not JS-resolved colors): the tooltip
+ * node lives inside the themed DOM (under html.light/.dark), so the cascade picks the right value
+ * in BOTH themes automatically — no getComputedStyle timing/scope pitfalls. `labelStyle`/`itemStyle`
+ * are set explicitly because Recharts otherwise colors the label/value lines with its own defaults
+ * (often the bar's fill or #000), which made the year/ticker label unreadable.
+ */
+export const chartTooltipStyle: React.CSSProperties = {
+  backgroundColor: 'hsl(var(--chart-tooltip-bg))',
+  border: '1px solid hsl(var(--chart-tooltip-border))',
+  borderRadius: 8,
+  fontSize: 12,
+  fontFamily: 'var(--font-mono), monospace',
+  color: 'hsl(var(--popover-foreground))',
+  boxShadow: 'var(--shadow-pop)',
+}
+
+export const chartTooltipLabelStyle: React.CSSProperties = {
+  color: 'hsl(var(--popover-foreground))',
+  fontWeight: 600,
+  marginBottom: 2,
+}
+
+export const chartTooltipItemStyle: React.CSSProperties = {
+  color: 'hsl(var(--popover-foreground))',
 }
 
 function readVar(name: string): string | null {
