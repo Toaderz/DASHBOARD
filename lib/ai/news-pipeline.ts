@@ -14,6 +14,21 @@ import type { AffectedSymbol } from '@/types'
 
 // ── Types ────────────────────────────────────────────────────
 
+// Categoría semántica de la query que originó el candidato (NO el `topic` de Tavily,
+// que solo distingue 'finance'/'news'). Es el bucket de DIVERSIDAD: el pre-ranking
+// reparte cuotas por categoría para que un macro-evento no monopolice el pool.
+export type NewsCategory =
+  | 'fed-macro'    // Economía / Reserva Federal / macro EE.UU.
+  | 'mexico'       // México / Banxico / peso
+  | 'geopolitics'  // gobierno EE.UU. / aranceles / geopolítica / energía
+  | 'portfolio'    // earnings / noticias de los tickers del universo
+  | 'technology'   // sector tecnología / IA
+
+// Orden estable de categorías para el reparto round-robin del pre-ranking.
+const NEWS_CATEGORY_ORDER: NewsCategory[] = [
+  'fed-macro', 'mexico', 'geopolitics', 'portfolio', 'technology',
+]
+
 export interface RawArticle {
   url: string
   title: string
@@ -21,6 +36,7 @@ export interface RawArticle {
   score: number
   published_date?: string
   source?: string
+  category?: NewsCategory  // query que lo surfó primero (para cuotas de diversidad)
 }
 
 export interface AnalyzedArticle {
@@ -31,6 +47,10 @@ export interface AnalyzedArticle {
   source_url: string
   summary: string
   insight: string
+  // Etiqueta canónica del SUCESO base (≤5 palabras). Dos artículos del mismo evento
+  // deben compartirla → dedup semántica dura en selectFinalArticles. Siempre string
+  // tras analyzeAndSynthesize (se normaliza el output del LLM; '' si no la devolvió).
+  core_event_tag: string
   score: number
   rating: 'A' | 'B' | 'C' | 'D'
   signal: 'STRONG' | 'MODERATE' | 'WEAK'
@@ -163,12 +183,20 @@ export async function searchNews(tickers: string[]): Promise<RawArticle[]> {
   // Foco geográfico: EE.UU. + México (más temas globales que SÍ mueven esos mercados:
   // petróleo/commodities, geopolítica de alto impacto, grandes tecnológicas, treasuries).
   // Evita atraer decisiones domésticas de bancos centrales irrelevantes (Sudáfrica, Corea, etc.).
-  const queries = [
-    { query: 'US economy markets Federal Reserve outlook this week', topic: 'finance' as const, days: 7, max_results: 12 },
-    { query: 'Federal Reserve interest rates US inflation; Banxico Mexico monetary policy peso', topic: 'finance' as const, days: 7, max_results: 10 },
-    { query: 'US government policy tariffs trade geopolitical risk oil market impact', topic: 'news' as const, days: 7, max_results: 10 },
-    { query: `${topTickers} earnings revenue guidance market news`, topic: 'finance' as const, days: 7, max_results: 10 },
-    { query: 'US technology AI sector stocks institutional investors outlook', topic: 'finance' as const, days: 7, max_results: 8 },
+  // `category` es el bucket de diversidad del pre-ranking (uno por query). NO confundir con
+  // `topic`, que es el modo de búsqueda de Tavily ('finance'/'news').
+  const queries: Array<{
+    query: string
+    topic: 'finance' | 'news'
+    days: number
+    max_results: number
+    category: NewsCategory
+  }> = [
+    { category: 'fed-macro',   query: 'US economy markets Federal Reserve outlook this week', topic: 'finance', days: 7, max_results: 12 },
+    { category: 'mexico',      query: 'Federal Reserve interest rates US inflation; Banxico Mexico monetary policy peso', topic: 'finance', days: 7, max_results: 10 },
+    { category: 'geopolitics', query: 'US government policy tariffs trade geopolitical risk oil market impact', topic: 'news', days: 7, max_results: 10 },
+    { category: 'portfolio',   query: `${topTickers} earnings revenue guidance market news`, topic: 'finance', days: 7, max_results: 10 },
+    { category: 'technology',  query: 'US technology AI sector stocks institutional investors outlook', topic: 'finance', days: 7, max_results: 8 },
   ]
 
   const results = await Promise.allSettled(
@@ -189,8 +217,12 @@ export async function searchNews(tickers: string[]): Promise<RawArticle[]> {
   const cutoff = new Date()
   cutoff.setDate(cutoff.getDate() - 7)
 
-  for (const result of results) {
+  // Itera por índice para mantener la asociación resultado→query (mismo orden que Promise.allSettled).
+  // La primera query que surfa una URL le fija su `category` (dedup-por-primero, determinista).
+  for (let qi = 0; qi < results.length; qi++) {
+    const result = results[qi]
     if (result.status === 'rejected') continue
+    const category = queries[qi].category
     for (const item of result.value.results) {
       if (!item.url || seen.has(item.url)) continue
       if ((item.score ?? 0) < 0.4) continue
@@ -209,6 +241,7 @@ export async function searchNews(tickers: string[]): Promise<RawArticle[]> {
         score: item.score ?? 0,
         published_date: item.publishedDate ?? undefined,
         source: item.url ? new URL(item.url).hostname.replace('www.', '') : undefined,
+        category,
       })
     }
   }
@@ -231,14 +264,34 @@ function recencyScore(publishedDate?: string): number {
   return Math.max(0, Math.min(1, 1 - days / 10))
 }
 
+// Clave canónica de agrupación por suceso. Robusta a las variaciones del LLM:
+// minúsculas, sin acentos, sin puntuación, espacios colapsados. '' si no hay tag.
+export function normalizeEventTag(tag: string | null | undefined): string {
+  if (!tag || typeof tag !== 'string') return ''
+  return tag
+    .normalize('NFD').replace(/[̀-ͯ]/g, '') // quita acentos (Decisión → decision)
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, ' ')                      // quita puntuación
+    .replace(/\s+/g, ' ')                              // colapsa espacios
+    .trim()
+}
+
 // Ordena candidatos por una señal compuesta y determinista ANTES del LLM:
 // relevancia de búsqueda (Tavily) + autoridad de fuente + recencia + un empujón si toca
-// el portafolio (para que esas noticias no se caigan del set de candidatos). Devuelve el top.
+// el portafolio (para que esas noticias no se caigan del set de candidatos).
 // `relevantUrls`: URLs que cruzan el universo (matching preliminar por snippet, hecho por el caller).
+//
+// CUOTAS DE DIVERSIDAD (anti-cámara-de-eco): en vez de un Top-N global —donde un macro-evento
+// con score altísimo barre todos los slots— reparte por CATEGORÍA en round-robin: cada bucket
+// coloca su mejor candidato antes de que ninguno coloque el 2º (`perCategory` rondas). Los slots
+// sobrantes hasta `limit` se rellenan con los mejores globales restantes. Así el LLM de selección
+// recibe un pool forzosamente diverso (Fed, México, geopolítica, portafolio, tecnología) y la
+// deduplicación dura final (selectFinalArticles) ya no tiene 5 notas del mismo suceso que comprimir.
 export function rankCandidates(
   articles: RawArticle[],
   relevantUrls?: Set<string>,
-  limit = 14
+  limit = 14,
+  perCategory = 3
 ): RawArticle[] {
   const composite = (a: RawArticle): number => {
     const tavily = Math.max(0, Math.min(1, a.score))
@@ -247,11 +300,56 @@ export function rankCandidates(
     const portfolio = relevantUrls?.has(a.url) ? 1 : 0
     return 0.4 * tavily + 0.3 * authority + 0.2 * recency + 0.1 * portfolio
   }
-  return [...articles]
+
+  // Orden global descendente: base para los buckets, el round-robin y el relleno.
+  const scored = [...articles]
     .map((a) => ({ a, c: composite(a) }))
     .sort((x, y) => y.c - x.c)
-    .slice(0, limit)
-    .map((x) => x.a)
+
+  if (scored.length <= limit) return scored.map((x) => x.a)
+
+  // Agrupa por categoría preservando el orden desc dentro de cada bucket.
+  const buckets = new Map<string, RawArticle[]>()
+  for (const { a } of scored) {
+    const key = a.category ?? 'uncategorized'
+    const arr = buckets.get(key)
+    if (arr) arr.push(a)
+    else buckets.set(key, [a])
+  }
+
+  // Orden estable de categorías: las conocidas primero (orden fijo), luego cualquier
+  // extra/'uncategorized' presente (alfabético) para que el reparto sea determinista.
+  const known = NEWS_CATEGORY_ORDER as readonly string[]
+  const extras = [...buckets.keys()].filter((k) => !known.includes(k)).sort()
+  const categoryOrder = [...known, ...extras].filter((k) => buckets.has(k))
+
+  const picked: RawArticle[] = []
+  const pickedUrls = new Set<string>()
+
+  // Fase 1 — cuota equitativa por categoría (round-robin hasta `perCategory` o `limit`).
+  for (let round = 0; round < perCategory && picked.length < limit; round++) {
+    for (const cat of categoryOrder) {
+      if (picked.length >= limit) break
+      const item = buckets.get(cat)?.[round]
+      if (item && !pickedUrls.has(item.url)) {
+        picked.push(item)
+        pickedUrls.add(item.url)
+      }
+    }
+  }
+
+  // Fase 2 — rellena los slots restantes con los mejores globales aún no elegidos.
+  for (const { a } of scored) {
+    if (picked.length >= limit) break
+    if (!pickedUrls.has(a.url)) {
+      picked.push(a)
+      pickedUrls.add(a.url)
+    }
+  }
+
+  // Devuelve en orden de score compuesto desc (el fallback determinista de selectTop7
+  // respeta este orden, y así limita 2 por dominio empezando por el mejor material).
+  return picked.sort((x, y) => composite(y) - composite(x))
 }
 
 // ── Function C ───────────────────────────────────────────────
@@ -317,14 +415,37 @@ export interface SelectableArticle {
   source_url: string
   score: number
   rating: 'A' | 'B' | 'C' | 'D'
+  core_event_tag?: string  // etiqueta canónica del suceso (dedup semántica dura)
 }
 
-// Decide qué artículos ENTRAN al brief tras el análisis. Reglas:
-// - Núcleo de calidad: ratings A/B (STRONG/MODERATE), ordenados por score.
-// - Conteo variable 3–7: si el núcleo es <3, rellena con los mejores siguientes; nunca >7.
-// - Garantía de inclusión: una noticia que TOCA el portafolio y supera el mínimo (score>=11, C+)
-//   entra aunque no sea top macro, SUSTITUYENDO a la de menor importancia NO relevante del set,
-//   priorizando entre las garantizadas las de mayor score. Nunca excede el tope de 7.
+// Colapsa artículos del MISMO suceso (core_event_tag normalizado): conserva SOLO el de mayor
+// score total. Empate de score → prefiere el relevante para el portafolio (no perder esa señal).
+// Tags vacíos/ausentes → cada artículo es ÚNICO (clave por source_url; nunca se fusionan entre sí).
+function dedupeByEvent<T extends SelectableArticle>(articles: T[], isRelevant: (a: T) => boolean): T[] {
+  const winners = new Map<string, T>()
+  for (const a of articles) {
+    const tag = normalizeEventTag(a.core_event_tag)
+    const key = tag || `__unique__:${a.source_url}`
+    const cur = winners.get(key)
+    if (!cur) {
+      winners.set(key, a)
+      continue
+    }
+    const wins = a.score > cur.score || (a.score === cur.score && isRelevant(a) && !isRelevant(cur))
+    if (wins) winners.set(key, a)
+  }
+  return [...winners.values()]
+}
+
+// Decide qué artículos ENTRAN al brief tras el análisis. Reglas (en orden):
+// 0. DEDUP SEMÁNTICA DURA: agrupa por core_event_tag y conserva solo el de mayor score por suceso.
+//    Es la defensa anti-cámara-de-eco: aunque 5 notas del mismo macro-evento lleguen como A/STRONG,
+//    aquí quedan reducidas a 1 ANTES de competir por los slots, liberando espacio para otros temas.
+// 1. Núcleo de calidad: ratings A/B (STRONG/MODERATE), ordenados por score.
+// 2. Conteo variable 3–7: si el núcleo es <3, rellena con los mejores siguientes; nunca >7.
+// 3. Garantía de inclusión: una noticia que TOCA el portafolio y supera el mínimo (score>=11, C+)
+//    entra aunque no sea top macro, SUSTITUYENDO a la de menor importancia NO relevante del set,
+//    priorizando entre las garantizadas las de mayor score. Nunca excede el tope de 7.
 export function selectFinalArticles<T extends SelectableArticle>(
   articles: T[],
   isRelevant: (a: T) => boolean,
@@ -333,7 +454,10 @@ export function selectFinalArticles<T extends SelectableArticle>(
 ): T[] {
   if (!articles.length) return []
   const byScore = (a: T, b: T) => b.score - a.score
-  const sorted = [...articles].sort(byScore)
+
+  // Paso 0 — dedup semántica dura por suceso (antes de cualquier selección).
+  const deduped = dedupeByEvent(articles, isRelevant)
+  const sorted = [...deduped].sort(byScore)
 
   // Núcleo: A/B. Si no llega al mínimo, rellena con los siguientes mejores (incluye D solo si hace falta).
   const selected = sorted.filter((a) => a.rating === 'A' || a.rating === 'B').slice(0, max)
@@ -521,11 +645,15 @@ CALIBRACIÓN (ejemplos de referencia para anclar el rubric y reducir varianza):
 - D (≈8): Resumen/explainer genérico de mercado sin dato nuevo ni evento. macro=2, surprise=1, market_rel=2, forward=2, structural=1, time_decay=0 → ruido.
 - D/C bajo (≈7-9) por FOCO GEOGRÁFICO: un banco central extranjero sube tasas (p.ej. Sudáfrica +25 pb, o Corea del Sur con división hawkish) sin contagio claro a EE.UU./México descrito en el texto. macro=2, surprise=2, market_rel=1, forward=2, structural=2, time_decay=0 → bajo interés para este lector pese a ser decisión de tasas.
 
+CORE EVENT TAG (clave para deduplicar — léelo con cuidado): por CADA artículo añade "core_event_tag", una etiqueta CANÓNICA de máximo 5 palabras que identifique el SUCESO BASE del que trata (NO el ángulo, NO la fuente, NO el enfoque editorial). Regla de oro: dos artículos que cubren el MISMO evento subyacente DEBEN llevar EXACTAMENTE el mismo core_event_tag, palabra por palabra, aunque sean de fuentes distintas o lo cuenten desde otro ángulo. Construye la etiqueta con sustantivos concretos en este orden: [institución/empresa/persona] + [acción/evento] (+ [detalle distintivo solo si hace falta). Sin artículos, sin verbos conjugados, sin relleno, sin la fuente. Si un artículo es ÚNICO (nadie más cubre ese suceso), igual ponle su etiqueta; NUNCA la dejes vacía.
+Ejemplos de etiquetas canónicas: "Decision tasas Fed Warsh", "Resultados trimestrales Nvidia", "Banxico recorte tasas", "Aranceles EEUU China", "Empleo no agricola EEUU", "Acuerdo nuclear Iran". Ejemplo de agrupación: tres notas (Reuters, CNBC, AP) sobre la misma decisión de la Fed → las TRES llevan "Decision tasas Fed Warsh".
+
 OUTPUT JSON SCHEMA:
 {
   "articles": [{
     "rank": 1, "title": "Título en español", "date": "YYYY-MM-DD",
     "source_name": "wsj.com", "source_url": "https://...",
+    "core_event_tag": "Decision tasas Fed Warsh",
     "summary": "1 párrafo 3-4 oraciones: qué pasó (hechos/datos del artículo) + contexto. Descriptivo, sin pronóstico ni cifras inventadas",
     "insight": "1 párrafo 2-3 oraciones: trasfondo y hacia dónde apunta el tema según el artículo, con detalles específicos. Sin llamadas de mercado ni datos inventados",
     "score": 24, "rating": "A", "signal": "STRONG", "actionability": "MONITOR",
@@ -545,7 +673,7 @@ OUTPUT JSON SCHEMA:
   }
 }
 
-Analiza TODOS los artículos proporcionados (hasta 7), ordenados por importancia. Cada summary e insight ÚNICO y específico; cero frases prohibidas. Devuelve SOLO el JSON.
+Analiza TODOS los artículos proporcionados (hasta 7), ordenados por importancia. Cada summary e insight ÚNICO y específico; cero frases prohibidas. Cada artículo DEBE traer su core_event_tag (mismo tag literal para notas del mismo suceso). Devuelve SOLO el JSON.
 
 ARTÍCULOS:
 ${articleBlocks}`
@@ -568,6 +696,14 @@ ${articleBlocks}`
       result = extractJson<PipelineResult>(response)
     } catch (e) {
       lastErr = e
+    }
+  }
+
+  // Resiliencia de tipado: el LLM puede omitir o ensuciar core_event_tag. Garantizamos que SIEMPRE
+  // sea string (el contrato de AnalyzedArticle) — '' si no lo devolvió; la dedup tratará '' como único.
+  if (result?.articles) {
+    for (const a of result.articles) {
+      a.core_event_tag = typeof a.core_event_tag === 'string' ? a.core_event_tag.trim() : ''
     }
   }
 

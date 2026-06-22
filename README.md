@@ -30,7 +30,7 @@ Dashboard financiero multiusuario SaaS para monitoreo de portafolios globales en
 - **Columna CCY** — moneda nativa de cada activo
 - **Filtro inline** — busca por ticker o nombre dentro de la watchlist
 - **Ordenar por métrica** — click en cualquier cabecera; nulls siempre al fondo; respeta Ann. y USD
-- **Compartir watchlists** — por email; el destinatario ve la lista (solo lectura) con `de @usuario`; puede dejar de seguirla
+- **Compartir watchlists** — por email; el destinatario ve la lista (solo lectura) con `de @usuario`; puede dejar de seguirla. Opción **"Team Evolve"**: comparte de un golpe con todos los miembros del equipo (perfiles con `is_team_evolve=true`); el alta de cuentas y el flag se gestionan fuera de la app con `scripts/manage-team-evolve.mjs`
 - **Modal de detalle** — 3 tabs: Summary (gráfico histórico + fundamentals), Calendar Years (retornos por año calendario desde 2019), Peers (comparativa BarChart + tabla editable)
 - **Top 10 / Bottom 10** — vistas dedicadas de mejores y peores performers por período
 - **Beating Peers** — por cada activo de tus watchlists, en cuántas de 6 métricas (1D/1W/1M/6M/YTD/1Y) le gana a sus peers (gana un periodo si supera al ≥75% de los peers con dato), con detalle de a cuántos y a cuáles. Al expandir un período se ve el retorno (en USD) del activo y de cada peer, por cuántos puntos porcentuales le gana o le pierde a cada uno, y una mini-barra de contexto que ubica cada retorno dentro del rango del grupo. El denominador mostrado es siempre el total de peers asignados (constante entre períodos). Incluye filtro de relevancia (mostrar solo activos que ganan ≥N de 6 períodos) y buscador por ticker/nombre. Retornos en USD. Peers auto-sugeridos deterministas (STATIC_PEERS exactos como override + scoring con categoría Morningstar/sector/geo), editables desde el modal y persistidos por usuario. **Display por tipo**: fondos (mutual funds) muestran nombre en el header y en filas (sin ISIN/ticker críptico); ETFs muestran ticker + nombre real (backfilled automáticamente desde Yahoo Finance)
@@ -62,7 +62,7 @@ FINNHUB_API_KEY=             # 'your-finnhub-api-key' activa modo mock
 TAVILY_API_KEY=              # búsqueda de noticias
 FIRECRAWL_API_KEY=           # extracción del artículo completo
 FIRECRAWL_API_KEY_2=         # respaldo: se usa si la primaria se queda sin créditos
-CRON_SECRET=                 # Bearer token del cron de Vercel (/api/cron/news-pipeline)
+CRON_SECRET=                 # Bearer del trigger HTTP manual/respaldo (/api/cron/news-pipeline); el automático es GitHub Actions y no lo usa
 NEWS_LLM_CHAIN=gemini,groq,cerebras   # cadena de fallback LLM (default)
 GEMINI_API_KEY=              # principal: Gemini 2.5 Flash (free, 1M ctx)
 OLLAMA_API_URL=https://api.groq.com/openai   # fallback 1: Groq
@@ -74,7 +74,9 @@ CEREBRAS_API_KEY=            # fallback 2: Cerebras (free)
 
 ### 2. Base de datos
 
-Corre `supabase/schema.sql` completo en el SQL Editor de Supabase. Incluye DDL, RLS, triggers de seed y migraciones (columnas `source`/`peer_of` en `watchlist_assets`, curación en `user_asset_peers`, `country` en `price_cache`, `onboarding_seen` en `profiles`).
+Corre `supabase/schema.sql` completo en el SQL Editor de Supabase. Incluye DDL, RLS, triggers de seed y migraciones (columnas `source`/`peer_of` en `watchlist_assets`, curación en `user_asset_peers`, `country` en `price_cache`, `onboarding_seen` e `is_team_evolve` en `profiles`).
+
+> El trigger chain de alta de usuarios (`auth.users` → `profiles` → seed de las 3 watchlists) es frágil: si una función seed falla, **toda la creación del usuario aborta**. Diagnóstico en `scripts/diagnose-seed.sql` y fix en `scripts/fix-seed-trigger.sql` (ver `CLAUDE.md` para los modos de fallo conocidos).
 
 ### 3. Desarrollo
 
@@ -102,8 +104,10 @@ app/api/users/
 app/api/news/
   current/  → brief vigente (o último como stale) + market_news (auth)
 app/api/cron/
-  news-pipeline/  → POST (Bearer CRON_SECRET) — orquesta el pipeline de noticias
+  news-pipeline/  → POST (Bearer CRON_SECRET) — trigger HTTP manual/respaldo; llama runNewsPipeline() (el automático es GitHub Actions)
 ```
+
+> El trigger automático del brief es **GitHub Actions** (`.github/workflows/news-pipeline.yml` → `npx tsx scripts/run-news-pipeline.ts`), no Vercel Cron — el plan Hobby mataba el cron a los 60s. La orquestación vive en `runNewsPipeline()` (compartida por el runner y la route HTTP de respaldo).
 
 ### Hooks
 
@@ -158,13 +162,16 @@ components/onboarding/    → TourProvider + TourSpotlight (tour guiado)
 
 ### Pipeline de noticias (Market Brief)
 
-Genera el brief dos veces por semana (cron de Vercel, Lun/Vie 13:00 UTC / 07:00 MX). El guard anti-doble-ejecución tiene cota temporal y auto-recupera briefs atascados en `generating` >15 min (un run que excede `maxDuration` ya no bloquea los crons siguientes); logging con prefijo `[news-cron]` en los logs de Vercel. Flujo:
+Genera el brief dos veces por semana (**GitHub Actions**, Lun/Vie 13:00 UTC / 07:00 MX — reemplazó al Vercel Cron, que moría a los 60s en el plan Hobby). El workflow corre `npx tsx scripts/run-news-pipeline.ts`, que invoca `runNewsPipeline()` directo (sin HTTP, sin límite de tiempo); `workflow_dispatch` permite disparo manual desde la pestaña Actions. La route `/api/cron/news-pipeline` (Bearer `CRON_SECRET`) queda como trigger HTTP de respaldo y llama al mismo `runNewsPipeline()`. El guard anti-doble-ejecución tiene cota temporal y auto-recupera briefs atascados en `generating` >15 min (un run matado ya no bloquea las ejecuciones siguientes); logging con prefijo `[news-cron]`. Flujo:
 
 ```
-enrichAssetProfiles → searchNews (Tavily) → rankCandidates (pre-ranking) →
-selectTop7 (LLM) → extractContent (Firecrawl) → analyzeAndSynthesize (LLM) →
-matchAffectedSymbols (determinista) → market_briefs + market_news
+enrichAssetProfiles → searchNews (Tavily) → rankCandidates (cuotas por categoría) →
+selectTop7 (LLM) → extractContent (Firecrawl) → analyzeAndSynthesize (LLM, +core_event_tag) →
+matchAffectedSymbols (determinista) → selectFinalArticles (dedup dura por evento) →
+market_briefs + market_news
 ```
+
+**Diversidad (anti-cámara-de-eco):** un macro-evento grande (p.ej. una decisión de la Fed) tiende a copar el brief porque todas sus notas reciben un score altísimo. Dos defensas combinadas: (1) **cuotas en el pre-ranking** — `rankCandidates` reparte candidatos en round-robin por categoría (Fed, México, geopolítica, portafolio, tecnología), garantizando un pool diverso para el LLM; (2) **deduplicación semántica dura** — el análisis emite un `core_event_tag` canónico por noticia y `selectFinalArticles` colapsa las del mismo suceso (conserva la de mayor score) antes de la selección final, liberando espacio para otros sectores.
 
 ```
 lib/ai/news-pipeline.ts    → pipeline completo (búsqueda, selección, análisis, scoring)
@@ -173,12 +180,17 @@ lib/ai/llm.ts              → callLLM con cadena de fallback (Gemini → Groq �
 lib/ai/source-authority.ts → autoridad de fuente para el pre-ranking
 ```
 
-Características: selección por **importancia de mercado** (no por score de búsqueda), **foco geográfico EE.UU./México**, **sin redundancia temática**, relevancia de portafolio **determinista** (badge 🎯 calculado por usuario), scoring de 5 dimensiones (máx 25) con calibración few-shot, y redacción neutral en español sin cifras inventadas.
+Características: selección por **importancia de mercado** (no por score de búsqueda), **foco geográfico EE.UU./México**, **diversidad forzada** (cuotas por categoría + dedup dura por `core_event_tag`, sin redundancia temática), relevancia de portafolio **determinista** (badge 🎯 calculado por usuario), scoring de 5 dimensiones (máx 25) con calibración few-shot, y redacción neutral en español sin cifras inventadas.
 
 ## Diagnóstico
 
 ```bash
 node scripts/diagnose.mjs <TICKER>      # 3 capas: HTTP, paths JSON de Yahoo, API route interna
-node scripts/refresh-news.mjs           # regenera el brief ahora (necesita npm run dev corriendo)
+node scripts/refresh-news.mjs           # regenera el brief ahora vía HTTP (necesita npm run dev corriendo)
+npx tsx scripts/run-news-pipeline.ts    # corre el pipeline standalone (igual que GitHub Actions); lee .env.local
+node scripts/check-cron.mjs             # estado del brief + dispara la route + últimos market_briefs en Supabase
 node scripts/check-llm.mjs              # verifica la cadena LLM (Gemini/Groq/Cerebras)
+node scripts/manage-team-evolve.mjs     # alta de cuentas Supabase + flag is_team_evolve (Team Evolve)
 ```
+
+> Trigger chain de alta de usuarios: `scripts/diagnose-seed.sql` (diagnóstico) y `scripts/fix-seed-trigger.sql` (fix con verificación ROLLBACK) — correr por bloques en el SQL Editor de Supabase.
