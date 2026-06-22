@@ -252,8 +252,11 @@ export async function searchNews(tickers: string[]): Promise<RawArticle[]> {
 // ── Pre-ranking determinista ─────────────────────────────────
 
 // Cuántos candidatos pasan a extracción/análisis (cota superior; el conteo FINAL del brief
-// lo decide la calidad: 3 a 7, ver selectFinalArticles).
-const MAX_CANDIDATES = 7
+// lo decide la calidad: 5 a 7, ver selectFinalArticles).
+// Headroom DELIBERADO (>7): la dedup por core_event_tag colapsa varios candidatos del MISMO
+// suceso en 1, así que analizamos de más para que tras la dedup queden ≥5 eventos distintos
+// y el piso de 5 sea alcanzable incluso en semanas con un macro-evento dominante.
+const MAX_CANDIDATES = 10
 
 // Recencia 0..1 (hoy = 1, ~0 a los 10 días). Penaliza noticias viejas sin descartarlas.
 function recencyScore(publishedDate?: string): number {
@@ -409,7 +412,7 @@ ${list}`
   }
 }
 
-// ── Selección final del brief (conteo variable 3–7 + garantía de inclusión) ──
+// ── Selección final del brief (conteo variable 5–7 + garantía de inclusión) ──
 
 export interface SelectableArticle {
   source_url: string
@@ -442,14 +445,14 @@ function dedupeByEvent<T extends SelectableArticle>(articles: T[], isRelevant: (
 //    Es la defensa anti-cámara-de-eco: aunque 5 notas del mismo macro-evento lleguen como A/STRONG,
 //    aquí quedan reducidas a 1 ANTES de competir por los slots, liberando espacio para otros temas.
 // 1. Núcleo de calidad: ratings A/B (STRONG/MODERATE), ordenados por score.
-// 2. Conteo variable 3–7: si el núcleo es <3, rellena con los mejores siguientes; nunca >7.
+// 2. Conteo variable 5–7: si el núcleo es <5, rellena con los mejores siguientes; nunca >7.
 // 3. Garantía de inclusión: una noticia que TOCA el portafolio y supera el mínimo (score>=11, C+)
 //    entra aunque no sea top macro, SUSTITUYENDO a la de menor importancia NO relevante del set,
 //    priorizando entre las garantizadas las de mayor score. Nunca excede el tope de 7.
 export function selectFinalArticles<T extends SelectableArticle>(
   articles: T[],
   isRelevant: (a: T) => boolean,
-  min = 3,
+  min = 5,
   max = 7
 ): T[] {
   if (!articles.length) return []
@@ -673,7 +676,7 @@ OUTPUT JSON SCHEMA:
   }
 }
 
-Analiza TODOS los artículos proporcionados (hasta 7), ordenados por importancia. Cada summary e insight ÚNICO y específico; cero frases prohibidas. Cada artículo DEBE traer su core_event_tag (mismo tag literal para notas del mismo suceso). Devuelve SOLO el JSON.
+Analiza TODOS los artículos proporcionados, ordenados por importancia. Cada summary e insight ÚNICO y específico; cero frases prohibidas. Cada artículo DEBE traer su core_event_tag (mismo tag literal para notas del mismo suceso). Devuelve SOLO el JSON.
 
 ARTÍCULOS:
 ${articleBlocks}`
@@ -853,7 +856,7 @@ export async function runNewsPipeline(supabaseAdmin: SupabaseClient): Promise<Ru
       affectedByUrl.set(article.source_url, matchAffectedSymbols(`${article.title}\n${fullText}`, universe))
     }
 
-    // Conteo variable 3–7 + garantía de inclusión por portafolio (tope 7), calidad sobre cantidad.
+    // Conteo variable 5–7 + garantía de inclusión por portafolio (tope 7), calidad sobre cantidad.
     const finalArticles = selectFinalArticles(
       result.articles,
       (a) => (affectedByUrl.get(a.source_url)?.length ?? 0) > 0
