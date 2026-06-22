@@ -11,9 +11,13 @@ import type { SearchResult, AssetType } from '@/types'
 interface TickerSearchProps {
   onAdd: (ticker: string, name: string, type: AssetType) => Promise<void>
   existingTickers: string[]
+  placeholder?: string
+  // Optional lock: return a short reason string to disable a result (e.g. wrong
+  // asset group, comparison full). Undefined → selectable. Backward-compatible.
+  disabledFor?: (result: SearchResult) => string | undefined
 }
 
-export function TickerSearch({ onAdd, existingTickers }: TickerSearchProps) {
+export function TickerSearch({ onAdd, existingTickers, placeholder, disabledFor }: TickerSearchProps) {
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<SearchResult[]>([])
   const [isSearching, setIsSearching] = useState(false)
@@ -56,7 +60,7 @@ export function TickerSearch({ onAdd, existingTickers }: TickerSearchProps) {
         <Input
           value={query}
           onChange={(e) => handleChange(e.target.value)}
-          placeholder="Search ticker or company..."
+          placeholder={placeholder ?? 'Search ticker or company...'}
           className="focus-ring pl-9 pr-9"
           onFocus={() => results.length > 0 && setOpen(true)}
           onBlur={() => setTimeout(() => setOpen(false), 150)}
@@ -70,15 +74,21 @@ export function TickerSearch({ onAdd, existingTickers }: TickerSearchProps) {
         <div className="absolute z-50 mt-1 w-full rounded-md border bg-popover shadow-lg">
           {results.map((result) => {
             const alreadyAdded = existingTickers.includes(result.ticker)
+            const lockReason = !alreadyAdded ? disabledFor?.(result) : undefined
+            const disabled = alreadyAdded || adding === result.ticker || !!lockReason
+            const selectable = !disabled
             return (
               <div
                 key={result.ticker}
-                className={`flex items-center justify-between px-3 py-2 hover:bg-accent ${!alreadyAdded && adding !== result.ticker ? 'cursor-pointer' : 'cursor-default'}`}
-                onClick={() => { if (!alreadyAdded && adding !== result.ticker) handleAdd(result) }}
+                title={lockReason}
+                className={`flex items-center justify-between px-3 py-2 ${selectable ? 'cursor-pointer hover:bg-accent' : 'cursor-default opacity-60'}`}
+                onClick={() => { if (selectable) handleAdd(result) }}
               >
                 <div className="flex items-center gap-2 min-w-0">
                   <span className="font-mono text-sm font-semibold">{result.ticker}</span>
-                  <span className="truncate text-xs text-muted-foreground">{result.name}</span>
+                  <span className="truncate text-xs text-muted-foreground">
+                    {lockReason ?? result.name}
+                  </span>
                   <Badge
                     variant="outline"
                     className={`shrink-0 border-0 text-xs ${typeBadgeClass(result.type)}`}
@@ -89,8 +99,8 @@ export function TickerSearch({ onAdd, existingTickers }: TickerSearchProps) {
                 <Button
                   size="sm"
                   variant="ghost"
-                  disabled={alreadyAdded || adding === result.ticker}
-                  onClick={(e) => { e.stopPropagation(); handleAdd(result) }}
+                  disabled={disabled}
+                  onClick={(e) => { e.stopPropagation(); if (selectable) handleAdd(result) }}
                   className="ml-2 h-7 w-7 shrink-0 p-0"
                 >
                   {adding === result.ticker ? (
