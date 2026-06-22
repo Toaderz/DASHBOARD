@@ -171,6 +171,11 @@ const NEWS_SOURCES = [
   'thehill.com', 'politico.com',      // gobierno y política de EE.UU.
   'aljazeera.com',                    // geopolítica (Medio Oriente, Irán)
   'semafor.com', 'fortune.com',       // negocios/mercados, acceso abierto
+  // Ampliación (acceso abierto, US/finanzas): suben el VOLUMEN del long-tail no-Fed
+  // (tech, energía, earnings, México) para que en semanas tranquilas igual entren ≥5 sucesos
+  // distintos. El pre-ranking por autoridad las deja al fondo si no aportan, así que no degradan.
+  'businessinsider.com', 'forbes.com', 'investing.com',
+  'cnn.com', 'cbsnews.com', 'nbcnews.com', 'usatoday.com', 'investopedia.com',
 ]
 
 // Títulos que NO son artículos de noticia (páginas índice, columnas de mercado, live blogs).
@@ -192,11 +197,11 @@ export async function searchNews(tickers: string[]): Promise<RawArticle[]> {
     max_results: number
     category: NewsCategory
   }> = [
-    { category: 'fed-macro',   query: 'US economy markets Federal Reserve outlook this week', topic: 'finance', days: 7, max_results: 12 },
-    { category: 'mexico',      query: 'Federal Reserve interest rates US inflation; Banxico Mexico monetary policy peso', topic: 'finance', days: 7, max_results: 10 },
-    { category: 'geopolitics', query: 'US government policy tariffs trade geopolitical risk oil market impact', topic: 'news', days: 7, max_results: 10 },
-    { category: 'portfolio',   query: `${topTickers} earnings revenue guidance market news`, topic: 'finance', days: 7, max_results: 10 },
-    { category: 'technology',  query: 'US technology AI sector stocks institutional investors outlook', topic: 'finance', days: 7, max_results: 8 },
+    { category: 'fed-macro',   query: 'US economy markets Federal Reserve outlook this week', topic: 'finance', days: 12, max_results: 15 },
+    { category: 'mexico',      query: 'Mexico Banxico peso economy; US inflation interest rates impact', topic: 'finance', days: 12, max_results: 12 },
+    { category: 'geopolitics', query: 'US government policy tariffs trade geopolitical risk oil market impact', topic: 'news', days: 12, max_results: 12 },
+    { category: 'portfolio',   query: `${topTickers} earnings revenue guidance market news`, topic: 'finance', days: 12, max_results: 12 },
+    { category: 'technology',  query: 'US technology AI semiconductors software stocks sector outlook', topic: 'finance', days: 12, max_results: 12 },
   ]
 
   const results = await Promise.allSettled(
@@ -205,7 +210,7 @@ export async function searchNews(tickers: string[]): Promise<RawArticle[]> {
         topic: q.topic,
         days: q.days,
         maxResults: q.max_results,
-        timeRange: 'week',
+        timeRange: 'month',  // no capar a 7 días; el cutoff (12d) + recencyScore controlan la frescura
         includeAnswer: false,
         includeDomains: NEWS_SOURCES,
       })
@@ -215,7 +220,7 @@ export async function searchNews(tickers: string[]): Promise<RawArticle[]> {
   const seen = new Set<string>()
   const articles: RawArticle[] = []
   const cutoff = new Date()
-  cutoff.setDate(cutoff.getDate() - 7)
+  cutoff.setDate(cutoff.getDate() - 12)  // ventana de 12 días: más volumen en semanas tranquilas
 
   // Itera por índice para mantener la asociación resultado→query (mismo orden que Promise.allSettled).
   // La primera query que surfa una URL le fija su `category` (dedup-por-primero, determinista).
@@ -225,10 +230,10 @@ export async function searchNews(tickers: string[]): Promise<RawArticle[]> {
     const category = queries[qi].category
     for (const item of result.value.results) {
       if (!item.url || seen.has(item.url)) continue
-      if ((item.score ?? 0) < 0.4) continue
+      if ((item.score ?? 0) < 0.3) continue  // piso más bajo: el pre-ranking + LLM filtran calidad después
       // Descarta páginas no-artículo: índices de titulares, "Market Talk", live blogs, "what to watch".
       if (JUNK_TITLE.test(item.title ?? '')) continue
-      // Hard reject articles older than 10 days
+      // Rechazo duro de artículos más viejos que la ventana (cutoff arriba)
       if (item.publishedDate) {
         const pub = new Date(item.publishedDate)
         if (!isNaN(pub.getTime()) && pub < cutoff) continue
@@ -246,7 +251,10 @@ export async function searchNews(tickers: string[]): Promise<RawArticle[]> {
     }
   }
 
-  return articles.sort((a, b) => b.score - a.score).slice(0, 25)
+  // Cota generosa (40): NO recortar agresivo por score aquí, porque eso tiraría categorías
+  // diversas de score bajo ANTES de que rankCandidates aplique sus cuotas. La diversidad y el
+  // recorte fino los hace rankCandidates (round-robin por categoría → 14).
+  return articles.sort((a, b) => b.score - a.score).slice(0, 40)
 }
 
 // ── Pre-ranking determinista ─────────────────────────────────
