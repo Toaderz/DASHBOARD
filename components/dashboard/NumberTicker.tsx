@@ -28,8 +28,19 @@ export function NumberTicker({
 
   useEffect(() => {
     if (reduced) { setDisplay(format(target)); return }
-    if (startOnView && !inView) return
-    motionValue.set(target)
+    if (!startOnView || inView) { motionValue.set(target); return }
+    // startOnView but the in-view observer hasn't reported yet. It can miss
+    // elements already painted above the fold at mount (IntersectionObserver
+    // fires late / the initial intersection is lost), which would freeze the
+    // value at 0. Fall back to a synchronous visibility check so on-screen
+    // counters always animate; genuinely below-the-fold ones stay deferred
+    // until `inView` flips on scroll.
+    const el = ref.current
+    if (el) {
+      const r = el.getBoundingClientRect()
+      const vh = window.innerHeight || document.documentElement.clientHeight
+      if (r.top < vh && r.bottom > 0) motionValue.set(target)
+    }
   }, [target, motionValue, reduced, startOnView, inView, format])
 
   useEffect(() => {
