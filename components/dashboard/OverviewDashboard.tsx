@@ -219,13 +219,17 @@ function HeroBand({
   const reduced = useReducedMotion()
   return (
     <SpotlightCard className="grain relative overflow-hidden p-5 sm:p-6">
-      {/* Faint bone accent wash + slow gradient sweep (decorative, aria-hidden) */}
-      <div className="pointer-events-none absolute -right-20 -top-24 h-52 w-52 rounded-full bg-bone/[0.05] blur-3xl" aria-hidden />
+      {/* Faint bone accent wash + slow gradient sweep (decorative, aria-hidden).
+          NOTE: inline position:absolute is intentional — globals' `.spotlight > *`
+          rule (same utility layer/specificity as Tailwind's `.absolute`) would
+          otherwise force these direct children into normal flow, reserving the
+          wash's h-52 height as empty space above the content. Inline style wins. */}
+      <div className="pointer-events-none absolute -right-20 -top-24 h-52 w-52 rounded-full bg-bone/[0.05] blur-3xl" style={{ position: 'absolute' }} aria-hidden />
       {!reduced && (
         <motion.div
           aria-hidden
           className="pointer-events-none absolute inset-0 opacity-[0.04]"
-          style={{ background: 'linear-gradient(115deg, transparent 30%, hsl(var(--bone)) 50%, transparent 70%)', backgroundSize: '250% 100%' }}
+          style={{ position: 'absolute', background: 'linear-gradient(115deg, transparent 30%, hsl(var(--bone)) 50%, transparent 70%)', backgroundSize: '250% 100%' }}
           animate={{ backgroundPosition: ['150% 0%', '-50% 0%'] }}
           transition={{ duration: 9, ease: 'linear', repeat: Infinity }}
         />
