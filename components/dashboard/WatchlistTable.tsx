@@ -233,7 +233,7 @@ export function WatchlistTable({
         helper.accessor('name', {
           header: 'Name',
           cell: ({ getValue }) => (
-            <span className="truncate font-ui text-xs text-muted-foreground max-w-[140px] block">{getValue()}</span>
+            <span className="block w-full truncate font-ui text-xs text-muted-foreground">{getValue()}</span>
           ),
         }),
         helper.accessor((row) => prices[row.ticker]?.price ?? null, {

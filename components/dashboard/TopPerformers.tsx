@@ -66,33 +66,33 @@ export function TopPerformers() {
         icon={TrendingUp}
         title="Top 10 Performers"
         description="Best 10 across all your watchlists — returns converted to USD."
-        className="mb-5"
-        actions={
-          <div className="flex flex-wrap items-center gap-2">
-            <SegmentedControl
-              options={periodOptions}
-              value={activePeriod}
-              onChange={setActivePeriod}
-              size="sm"
-              aria-label="Período de retorno"
-            />
-            <button
-              onClick={() => setAnnualize(a => !a)}
-              disabled={forceAnnualize}
-              title={forceAnnualize ? 'MAX is always annualized' : 'Toggle annualized returns (CAGR)'}
-              className={cn(
-                'focus-ring rounded-pill border px-3 py-1.5 text-[11px] font-mono tracking-wide transition-colors',
-                isAnnualized
-                  ? 'border-foreground bg-foreground text-background'
-                  : 'border-border text-muted-foreground hover:text-foreground hover:bg-ink-elevated',
-                forceAnnualize && 'cursor-default opacity-60'
-              )}
-            >
-              Ann.
-            </button>
-          </div>
-        }
+        className="mb-4"
       />
+
+      {/* Period selector — own row so the editorial title never gets squeezed */}
+      <div className="mb-5 flex flex-wrap items-center gap-2">
+        <SegmentedControl
+          options={periodOptions}
+          value={activePeriod}
+          onChange={setActivePeriod}
+          size="sm"
+          aria-label="Período de retorno"
+        />
+        <button
+          onClick={() => setAnnualize(a => !a)}
+          disabled={forceAnnualize}
+          title={forceAnnualize ? 'MAX is always annualized' : 'Toggle annualized returns (CAGR)'}
+          className={cn(
+            'focus-ring rounded-pill border px-3 py-1.5 text-[11px] font-mono tracking-wide transition-colors',
+            isAnnualized
+              ? 'border-foreground bg-foreground text-background'
+              : 'border-border text-muted-foreground hover:text-foreground hover:bg-ink-elevated',
+            forceAnnualize && 'cursor-default opacity-60'
+          )}
+        >
+          Ann.
+        </button>
+      </div>
 
       {/* Ranked list */}
       {loading ? (

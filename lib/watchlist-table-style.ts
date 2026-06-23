@@ -20,6 +20,9 @@ const NUMERIC_COLS = new Set([
 
 const COL_WIDTH: Record<string, string> = {
   ticker: 'min-w-[8.5rem]',
+  // Give the name its own floor+ceiling so auto-layout can't collapse it (which
+  // clipped the label mid-word) and it never crowds the numeric columns.
+  name: 'min-w-[11rem] max-w-[18rem]',
   price: 'min-w-[7rem]',
 }
 const NUMERIC_DEFAULT_WIDTH = 'min-w-[4.5rem]'

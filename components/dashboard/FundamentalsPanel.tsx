@@ -68,10 +68,18 @@ function formatMarketCap(n: number): string {
   return '$' + n.toFixed(0)
 }
 
+// Yahoo returns sector keys in mixed shapes: snake_case ("communication_services"),
+// run-together ("realestate") and the occasional camelCase. Normalize to Title Case.
+const SECTOR_LABEL_OVERRIDES: Record<string, string> = {
+  realestate: 'Real Estate',
+}
 function labelSector(raw: string): string {
+  const key = raw.toLowerCase()
+  if (SECTOR_LABEL_OVERRIDES[key]) return SECTOR_LABEL_OVERRIDES[key]
   return raw
-    .replace(/([A-Z])/g, ' $1')
-    .replace(/^./, (s) => s.toUpperCase())
+    .replace(/_/g, ' ') // snake_case → spaces
+    .replace(/([a-z])([A-Z])/g, '$1 $2') // camelCase → spaces
+    .replace(/\b\w/g, (s) => s.toUpperCase()) // Title Case each word
     .trim()
 }
 
