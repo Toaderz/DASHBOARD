@@ -4,7 +4,8 @@ import { useMemo } from 'react'
 import {
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
 } from 'recharts'
-import { useChartTheme, seriesColor, chartTooltipStyle, chartTooltipLabelStyle } from '@/lib/chart-theme'
+import { useChartTheme, chartTooltipStyle, chartTooltipLabelStyle } from '@/lib/chart-theme'
+import { compareSeriesColor } from './compare-utils'
 
 const MAX_YEARS = 6
 
@@ -68,7 +69,7 @@ export function CompareAnnualReturns({ tickers, annualByTicker, loading }: Compa
           />
           <Legend wrapperStyle={{ fontSize: 12 }} />
           {tickers.map((t, i) => (
-            <Bar key={t} dataKey={t} fill={seriesColor(i)} radius={[2, 2, 0, 0]} isAnimationActive={false} />
+            <Bar key={t} dataKey={t} fill={compareSeriesColor(i)} radius={[2, 2, 0, 0]} isAnimationActive={false} />
           ))}
         </BarChart>
       </ResponsiveContainer>

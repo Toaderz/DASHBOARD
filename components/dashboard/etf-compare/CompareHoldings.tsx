@@ -7,6 +7,7 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { EmptyState } from '@/components/dashboard/EmptyState'
 import { useChartTheme, seriesColor, chartTooltipStyle, chartTooltipLabelStyle } from '@/lib/chart-theme'
+import { compareSeriesColor } from './compare-utils'
 import { PieChart as PieIcon } from 'lucide-react'
 import type { QuoteData } from '@/types'
 
@@ -136,7 +137,7 @@ function SectorBars({ tickers, quotes }: CompareHoldingsProps) {
               />
               <Legend wrapperStyle={{ fontSize: 12 }} />
               {tickers.map((t, i) => (
-                <Bar key={t} dataKey={t} fill={seriesColor(i)} radius={[2, 2, 0, 0]} isAnimationActive={false} />
+                <Bar key={t} dataKey={t} fill={compareSeriesColor(i)} radius={[2, 2, 0, 0]} isAnimationActive={false} />
               ))}
             </BarChart>
           </ResponsiveContainer>

@@ -34,6 +34,7 @@ Dashboard financiero multiusuario SaaS para monitoreo de portafolios globales en
 - **Modal de detalle** — 3 tabs: Summary (gráfico histórico + fundamentals), Calendar Years (retornos por año calendario desde 2019), Peers (comparativa BarChart + tabla editable)
 - **Top 10 / Bottom 10** — vistas dedicadas de mejores y peores performers por período
 - **Beating Peers** — por cada activo de tus watchlists, en cuántas de 6 métricas (1D/1W/1M/6M/YTD/1Y) le gana a sus peers (gana un periodo si supera al ≥75% de los peers con dato), con detalle de a cuántos y a cuáles. Al expandir un período se ve el retorno (en USD) del activo y de cada peer, por cuántos puntos porcentuales le gana o le pierde a cada uno, y una mini-barra de contexto que ubica cada retorno dentro del rango del grupo. El denominador mostrado es siempre el total de peers asignados (constante entre períodos). Incluye filtro de relevancia (mostrar solo activos que ganan ≥N de 6 períodos) y buscador por ticker/nombre. Retornos en USD. Peers auto-sugeridos deterministas (STATIC_PEERS exactos como override + scoring con categoría Morningstar/sector/geo), editables desde el modal y persistidos por usuario. **Display por tipo**: fondos (mutual funds) muestran nombre en el header y en filas (sin ISIN/ticker críptico); ETFs muestran ticker + nombre real (backfilled automáticamente desde Yahoo Finance)
+- **Comparar (ETF Comparison)** — comparador de activos lado a lado inspirado en ETF.com: agrega hasta varios ETFs/fondos/acciones/índices (el primero fija el grupo; ETFs e índices se comparan entre sí, fondos y acciones por separado) y compáralos en Overview (emisor, expense ratio, AUM, inception, categoría), Performance (gráfico "Crecimiento de $10,000", retornos acumulados 1M/6M/YTD/1Y/3Y/5Y y retornos por año calendario), Holdings (donut de top-10 + barras por sector) y Risk & Dividends (beta, std dev, sharpe, alpha, dividend yield). Estado compartible en la URL (`?tickers=...`), toggle "Resaltar diferencias" que marca el mejor valor por métrica, y fetch optimizado (2 llamadas batched + N series, con cola de concurrencia) para no saturar Yahoo
 - **Market Brief (noticias)** — brief de mercado generado por IA dos veces por semana: resumen semanal (tema dominante, riesgo clave, qué vigilar) + tarjetas de noticias con señal (STRONG/MODERATE/WEAK), score 0–25, análisis y artículo completo legible. Foco geográfico EE.UU./México, sin redundancia temática, y badge 🎯 cuando la noticia toca un activo de tu watchlist
 - **Tema oscuro** por defecto con toggle dark/light — identidad "warm bone + rare teal spark" (warm near-black en dark, papel cálido en light); paleta de charts adaptativa (navy→teal→sky)
 - **Movimiento premium** — shared-element al abrir el modal, pulso de valor cuando un precio live cambia, contadores count-up, transiciones de página y reveals escalonados; todo respeta `prefers-reduced-motion`
@@ -121,6 +122,8 @@ usePeerComparison.ts        → Beating Peers: won/lost/insufficient, normalizad
 usePeerSet.ts               → add→pinned, remove→removed; STATIC_PEERS inalterables
 useCalendarYearReturns.ts   → retornos CY2019..actual (mode=calYear, staleTime 6h)
 useNewsBrief.ts             → brief vigente + market_news
+useCompareTickers.ts        → tickers del comparador en la URL (?tickers=); add/remove/reset, uppercase/dedup/cap
+useEtfComparison.ts         → orquesta quotes (useRealtimePrices) + N series 5Y (useQueries, cola ≤4); deriva trailing (acumulado) + anuales (= Yahoo) client-side
 ```
 
 ### Componentes clave
@@ -138,6 +141,7 @@ EmptyState.tsx         → estado vacío con CTA
 StatCard.tsx           → tarjeta de KPI con Tooltip
 PeerComparison.tsx     → lista ordenada por métricas ganadas + toolbar (filtro ≥N/6 + buscador)
 PeerCard.tsx           → won/lost/insufficient + filas por periodo; fondos muestran nombre-solo (sin ticker), ETFs muestran ticker+nombre real; panel expandido (motion): retorno del activo + cada peer, delta pp, ✓/✗ 1-a-1, mini-barra de contexto
+etf-compare/           → módulo Comparar: EtfCompare (orquesta tabs + type-lock), CompareTickerBar, CompareHero, CompareMetricsTable (transpuesta + resaltar diferencias), CompareGrowthChart, CompareAnnualReturns, CompareHoldings; compare-utils (compareSeriesColor reordena --chart-1..8 sin tocarla)
 ```
 
 ### Sistema de diseño

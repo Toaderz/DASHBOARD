@@ -4,7 +4,8 @@ import { useMemo } from 'react'
 import {
   ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
 } from 'recharts'
-import { useChartTheme, seriesColor, chartTooltipStyle, chartTooltipLabelStyle } from '@/lib/chart-theme'
+import { useChartTheme, chartTooltipStyle, chartTooltipLabelStyle } from '@/lib/chart-theme'
+import { compareSeriesColor } from './compare-utils'
 import type { HistoricalDataPoint } from '@/types'
 
 export type GrowthRange = '1Y' | '3Y' | '5Y'
@@ -109,7 +110,7 @@ export function CompareGrowthChart({ tickers, seriesByTicker, range, loading }: 
               key={t}
               type="monotone"
               dataKey={t}
-              stroke={seriesColor(i)}
+              stroke={compareSeriesColor(i)}
               strokeWidth={2}
               dot={false}
               connectNulls

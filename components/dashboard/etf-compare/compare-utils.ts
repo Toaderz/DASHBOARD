@@ -1,4 +1,17 @@
 import type { AssetType } from '@/types'
+import { seriesColor } from '@/lib/chart-theme'
+
+// The navy→teal→sky CHART_SERIES ramp is monochromatic, so consecutive indices
+// (0,1,2) read as nearly the same blue when used for adjacent compared assets.
+// This permutation reorders the SAME 8 palette colors (we don't touch --chart-1..8)
+// so the first assets land on maximally-spaced lightness steps:
+// dark navy → light cyan → mid teal → light blue → … (readable in both themes).
+const COMPARE_ORDER = [0, 4, 2, 6, 1, 3, 5, 7] as const
+
+/** Per-asset chart color for the compare module — high-contrast ordering of CHART_SERIES. */
+export function compareSeriesColor(i: number): string {
+  return seriesColor(COMPARE_ORDER[((i % 8) + 8) % 8])
+}
 
 // Comparison compatibility groups. The user's rule: ETFs and indices compare with
 // each other; funds only with funds; stocks only with stocks. The first ticker locks

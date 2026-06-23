@@ -100,6 +100,9 @@ Los siguientes consumidores DEBEN filtrar `source='user'` para que los auto-peer
 - `validateResult: false` en `quoteSummary()`: Yahoo devuelve `fundProfile.brokerages` como array de strings (no objetos), rompiendo la validación del schema.
 - ETFs/fondos: `beta3Year` (no `beta`), `summaryDetail.yield` (no `dividendYield`), `defaultKeyStatistics.totalAssets` para AUM.
 - Stocks: `summaryDetail.marketCap` (no `defaultKeyStatistics.marketCap` — ese campo no existe en v3 para equities).
+- **Unidades de los campos — CRÍTICO (no aplicar ×100 a ciegas):** `summaryDetail.yield`/`.dividendYield`, `defaultKeyStatistics.profitMargins`, `fundProfile.feesExpensesInvestment.annualReportExpenseRatio` y `topHoldings.holdings[].holdingPercent`/`sectorWeightings[]` vienen como **decimales** (0.0093 = 0.93%) → sí llevan `pct(v)=v*100`. PERO `fundPerformance.riskOverviewStatistics.riskStatistics[0].stdDev` viene **ya en puntos %** (18.09 = 18.09%) → NO lleva `pct()` (un ×100 erróneo daba 1809%). `alpha`/`sharpeRatio`/`treynorRatio` se muestran tal cual (ratios). Verificado contra Yahoo en RDVY/SDVY/VIG.
+- **Inception date:** la fecha real está en `defaultKeyStatistics.fundInceptionDate` (Date ya parseado); `fundProfile.inceptionDate` viene `undefined` para ETFs. `fetchFundamentals` lee el primero con fallback al segundo (antes solo leía `fundProfile` → la fila Inception siempre salía "—").
+- **Retornos del modal Comparar son cálculo PROPIO (no campos de Yahoo):** `deriveTrailing`/`deriveAnnual` (en `useEtfComparison.ts`) los computan sobre una serie diaria de `adjclose` (total return) de Yahoo v8. Difieren a propósito de `fundPerformance.trailingReturns` porque (1) trailing 3Y/5Y se muestran **acumulados** (sección rotulada "Retornos acumulados"), no anualizados como Yahoo (CAGR); (2) los `trailingReturns` de Yahoo son snapshots a **fin de mes**, los nuestros son en vivo. Los **retornos por año calendario** (`deriveAnnual`) SÍ matchean `annualTotalReturns` de Yahoo a ≤0.02pp.
 - `serverExternalPackages: ['yahoo-finance2']` en `next.config.ts`: evita que webpack bundlee el paquete (tiene imports de test que fallan en build).
 
 ## Estructura de archivos clave
@@ -119,6 +122,7 @@ app/
     bottom10/page.tsx              # Vista bottom 10 performers (wrapper de BottomPerformers)
     vs-peers/page.tsx              # Vista Beating Peers (wrapper de PeerComparison)
     news/page.tsx                  # Brief de mercado (wrapper de NewsBlock)
+    etf-compare/page.tsx           # Comparador de activos lado a lado (wrapper de EtfCompare)
     watchlist/[id]/page.tsx        # Server — carga watchlist + assets por ID
   api/
     market/
@@ -169,6 +173,15 @@ components/
     PageTransition.tsx             # V2 — cross-fade de ruta dentro de <main> (AnimatePresence keyed por pathname; reduced→passthrough)
     AssetMonogram.tsx              # V2 — chip de monograma bone neutro único (MONO_STYLE; sin hash arcoíris)
     SpotlightCard.tsx              # V2 — Card con .gradient-border + spotlight bone
+    etf-compare/                   # Módulo Comparar (inspirado en ETF.com, recoloreado a V2)
+      EtfCompare.tsx               # Orquesta URL state + type-lock por grupo + tabs (Overview/Performance/Holdings/Risk&Dividends); tab visible solo si ≥1 activo tiene su dato
+      CompareTickerBar.tsx         # Chips de activos + TickerSearch (deshabilita otros grupos) + Reset
+      CompareHero.tsx              # Banda héroe: tickers grandes + nombre + precio live
+      CompareMetricsTable.tsx      # Tabla transpuesta (filas=métricas, cols=activos) + toggle "Resaltar diferencias" (énfasis bone/font-semibold por dirección, NO teal)
+      CompareGrowthChart.tsx       # LineChart "Crecimiento de $10,000" (rebase a 10k + merge por fecha); usa compareSeriesColor(i)
+      CompareAnnualReturns.tsx     # BarChart agrupado por año calendario (deriveAnnual); compareSeriesColor(i)
+      CompareHoldings.tsx          # Donut top-10 por activo (seriesColor — slices intra-fondo) + SectorBars agrupadas (compareSeriesColor)
+      compare-utils.ts             # compareSeriesColor() (permutación [0,4,2,6,1,3,5,7] de --chart-1..8 para máximo contraste sin tocar la rampa) + compatGroup/groupLockReason/instrumentToType
   ui/
     card.tsx                       # Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter
     tabs.tsx                       # Tabs in-house (sin @radix-ui/react-tabs): teclado ArrowLeft/Right/Home/End
@@ -184,6 +197,8 @@ hooks/
   usePeerSet.ts                    # add→pinned, remove→removed+borra fila; STATIC_PEERS nunca se recomputa
   useCalendarYearReturns.ts        # Retornos por año calendario (CY2019..actual); mode=calYear, staleTime 6h
   useNewsBrief.ts                  # GET /api/news/current — brief vigente + market_news
+  useCompareTickers.ts             # Estado de tickers del comparador en la URL (?tickers=); add/remove/reset, uppercase/dedup, cap MAX_COMPARE_TICKERS
+  useEtfComparison.ts              # Orquesta useRealtimePrices(quotes/fundamentals) + useQueries(N series 5Y con cola de concurrencia ≤4); deriveTrailing (1M/6M/YTD/1Y/3Y/5Y ACUMULADO desde adjclose) + deriveAnnual (año calendario, matchea Yahoo annualTotalReturns)
 lib/
   ai/
     news-pipeline.ts               # Pipeline de noticias: searchNews→rankCandidates (cuotas por categoría)→selectTop7→extractContent→analyzeAndSynthesize (+core_event_tag)→selectFinalArticles (dedup dura por evento). normalizeEventTag = clave de agrupación canónica
@@ -316,6 +331,7 @@ node scripts/manage-team-evolve.mjs  # Alta de cuentas Supabase + flag is_team_e
 - **Overview** (`OverviewDashboard.tsx`): dashboard agregado en `/` (ya no redirige a watchlist). KPIs best/worst performer (`useTopPerformers`), contador "beating peers" (`usePeerComparison`), snapshot de mercado (`useRealtimePrices(BENCHMARK_TICKERS)`), teaser del Market Brief (`useNewsBrief`). Solo reutiliza hooks existentes — cero endpoints nuevos.
 - **AssetDetailModal — Tabs**: 3 tabs (Summary · Calendar Years · Peers). Calendar Years usa `useCalendarYearReturns` gateado: solo fetchea cuando `activeTab === 'calendar'` (pasa `null` en otras tabs, `enabled: !!ticker` previene la request). `activeTab` se resetea al cerrar el modal. Todos los hooks son incondicionales (Rules of Hooks).
 - **Onboarding**: `TourProvider` + `TourSpotlight` en `components/onboarding/`. `app/(dashboard)/layout.tsx` lee `profiles.onboarding_seen` y pasa la prop. Tour arranca automáticamente una sola vez (localStorage `evolve_onboarding_seen` como fallback). Al terminar/saltar persiste en Supabase via browser client (RLS permite UPDATE del propio perfil). Anchors `data-tour="..."` en `DashboardShell` y `WatchlistManager`.
+- **Comparar** (`/etf-compare`, `EtfCompare.tsx` + `useEtfComparison`/`useCompareTickers`): comparador de activos lado a lado inspirado en ETF.com, recoloreado a V2. Estado en la URL (`?tickers=DDIV,SDVY,RDVY`, compartible). **Type-lock por grupo**: el primer ticker fija el grupo (`compatGroup`: etf+index se mezclan; fund solo con fund; stock solo con stock) y el search deshabilita resultados de otro grupo. Cap `MAX_COMPARE_TICKERS`. **Fetch colapsado** (no 3N peticiones): `useRealtimePrices` (1 batch → Header/Overview/Risk/Holdings) + `useQueries` de N series 5Y (cola client-side ≤4 in-flight + `retry:2` backoff). Tabs: Overview · Performance · Holdings · Risk&Dividends — cada tab visible solo si **≥1** activo tiene su dato (índices solo Overview+Performance; stocks ocultan Holdings y muestran MktCap/PE/Sector). **Toggle "Resaltar diferencias"**: marca el "mejor" valor por fila con énfasis **bone/`font-semibold`** (NO teal, respeta el invariante) según dirección por métrica (expense/std_dev → menor mejor; returns/sharpe/alpha/aum/yield → mayor mejor). **Colores de charts**: `compareSeriesColor(i)` reordena los mismos `--chart-1..8` con la permutación `[0,4,2,6,1,3,5,7]` (máximo contraste de luminosidad para activos adyacentes **sin tocar la rampa**); el donut de holdings usa `seriesColor(i)` directo (slices dentro de un mismo fondo, no activos comparados). **Retornos**: trailing 1M/6M/YTD/1Y/3Y/5Y y anuales se derivan client-side (`deriveTrailing`/`deriveAnnual`) de una sola serie `adjclose` 5Y — los trailing 3Y/5Y se muestran **acumulados** (sección "Retornos acumulados", NO anualizados como Yahoo); los anuales matchean `annualTotalReturns` de Yahoo a ≤0.02pp. ⚠️ El BarChart anual queda acotado a la ventana 5Y (`MAX_YEARS`), aunque el fondo tenga más historia. **Verificado contra Yahoo** (RDVY/SDVY/VIG): expense/AUM/categoría/beta/yield/std_dev/sharpe/alpha/holdings/sectores/anuales matchean; std_dev e inception corregidos (ver `### yahoo-finance2 v3`).
 
 ### Sección de noticias (Market Brief)
 - **Pipeline** (`lib/ai/news-pipeline.ts`): la orquestación vive en **`runNewsPipeline(supabaseAdmin)`** (export de `news-pipeline.ts`), invocada por DOS triggers: el runner `scripts/run-news-pipeline.ts` (GitHub Actions, canónico) y la route HTTP `app/api/cron/news-pipeline/route.ts` (manual/respaldo). Flujo: `enrichAssetProfiles` → `searchNews` (Tavily) → `rankCandidates` (pre-ranking determinista) → `selectTop7` (selección LLM) → `extractContent` (Firecrawl) → `analyzeAndSynthesize` (análisis/scoring LLM) → `matchAffectedSymbols` (matching determinista) → `selectFinalArticles` → insert en `market_briefs` + `market_news`
