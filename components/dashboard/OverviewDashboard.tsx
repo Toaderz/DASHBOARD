@@ -512,9 +512,9 @@ function BriefTeaser() {
         ) : (
           <div className="space-y-3">
             <div className="flex flex-wrap gap-4 text-xs">
-              <span className="text-muted-foreground">🔴 <strong className="tabular-nums text-foreground"><NumberTicker target={brief.strong_signals} format={(v) => Math.round(v).toString()} startOnView /></strong> fuertes</span>
-              <span className="text-muted-foreground">🟡 <strong className="tabular-nums text-foreground"><NumberTicker target={brief.moderate_signals} format={(v) => Math.round(v).toString()} startOnView /></strong> moderadas</span>
-              <span className="text-muted-foreground">⚪ <strong className="tabular-nums text-foreground"><NumberTicker target={brief.weak_noise} format={(v) => Math.round(v).toString()} startOnView /></strong> ruido</span>
+              <span className="inline-flex items-center gap-1.5 text-muted-foreground"><span className="h-1.5 w-1.5 rounded-full bg-red-500" /><strong className="tabular-nums text-foreground"><NumberTicker target={brief.strong_signals} format={(v) => Math.round(v).toString()} startOnView /></strong> fuertes</span>
+              <span className="inline-flex items-center gap-1.5 text-muted-foreground"><span className="h-1.5 w-1.5 rounded-full bg-amber-400" /><strong className="tabular-nums text-foreground"><NumberTicker target={brief.moderate_signals} format={(v) => Math.round(v).toString()} startOnView /></strong> moderadas</span>
+              <span className="inline-flex items-center gap-1.5 text-muted-foreground"><span className="h-1.5 w-1.5 rounded-full bg-bone-dim" /><strong className="tabular-nums text-foreground"><NumberTicker target={brief.weak_noise} format={(v) => Math.round(v).toString()} startOnView /></strong> ruido</span>
             </div>
             {brief.top_theme && (
               <p className="text-sm text-muted-foreground">
