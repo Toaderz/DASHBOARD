@@ -54,11 +54,7 @@ export function WeeklyBriefCard({ brief }: Props) {
               {paragraphs.map((p, i) => (
                 <p
                   key={i}
-                  className={
-                    i === 0
-                      ? 'text-[15px] leading-7 text-foreground/90 first-letter:float-left first-letter:mr-2.5 first-letter:mt-1 first-letter:font-editorial first-letter:text-5xl first-letter:font-bold first-letter:leading-[0.7] first-letter:text-foreground'
-                      : 'text-[15px] leading-7 text-foreground/80'
-                  }
+                  className={i === 0 ? 'text-[15px] leading-7 text-foreground/90' : 'text-[15px] leading-7 text-foreground/80'}
                 >
                   {p}
                 </p>
