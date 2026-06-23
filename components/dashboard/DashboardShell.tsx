@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import { useRouter, usePathname } from 'next/navigation'
-import { LogOut, LayoutDashboard, Menu, X, TrendingUp, TrendingDown, Newspaper, Swords, type LucideIcon } from 'lucide-react'
+import { LogOut, LayoutDashboard, Menu, X, TrendingUp, TrendingDown, Newspaper, Swords, GitCompare, type LucideIcon } from 'lucide-react'
 import Image from 'next/image'
 import type { User } from '@supabase/supabase-js'
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
@@ -27,6 +27,7 @@ const NAV_ITEMS: { href: string; label: string; icon: LucideIcon; tour?: string 
   { href: '/top10', label: 'Top Performers', icon: TrendingUp },
   { href: '/bottom10', label: 'Worst Performers', icon: TrendingDown },
   { href: '/vs-peers', label: 'Beating Peers', icon: Swords, tour: 'nav-peers' },
+  { href: '/etf-compare', label: 'Comparar', icon: GitCompare },
   { href: '/news', label: 'Market Brief', icon: Newspaper, tour: 'nav-news' },
 ]
 

@@ -113,7 +113,7 @@ interface YSummary {
   summaryDetail?: { trailingPE?: number; marketCap?: number; dividendYield?: number; yield?: number } | null
   defaultKeyStatistics?: {
     totalAssets?: number; beta?: number; beta3Year?: number
-    profitMargins?: number; fundFamily?: string
+    profitMargins?: number; fundFamily?: string; fundInceptionDate?: number | Date
   } | null
   summaryProfile?: { sector?: string; industry?: string; country?: string } | null
   assetProfile?: { sector?: string; industry?: string; country?: string } | null
@@ -194,13 +194,15 @@ export async function fetchFundamentals(ticker: string): Promise<Fundamentals> {
         fund_family:    data.defaultKeyStatistics?.fundFamily ?? data.fundProfile?.family ?? null,
         alpha:          riskStats?.alpha ?? null,
         r_squared:      riskStats?.rSquared ?? null,
-        std_dev:        pct(riskStats?.stdDev),
+        std_dev:        riskStats?.stdDev ?? null,  // Yahoo ya lo da en puntos % (18.09 = 18.09%), NO decimal
         sharpe:         riskStats?.sharpeRatio ?? null,
         treynor:        riskStats?.treynorRatio ?? null,
         sector_weightings: sectorWeightings.length > 0 ? sectorWeightings : null,
         top_holdings:      topHoldings.length > 0 ? topHoldings : null,
         inception_date: (() => {
-          const raw = data.fundProfile?.inceptionDate
+          // Yahoo expone la fecha en defaultKeyStatistics.fundInceptionDate (Date ya parseado);
+          // fundProfile.inceptionDate suele venir undefined para ETFs → usar aquél primero.
+          const raw = data.defaultKeyStatistics?.fundInceptionDate ?? data.fundProfile?.inceptionDate
           if (raw == null) return null
           const d = raw instanceof Date ? raw : new Date((raw as number) * 1000)
           return isNaN(d.getTime()) ? null : d.toISOString().split('T')[0]
