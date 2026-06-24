@@ -3,95 +3,100 @@
 @tailwind utilities;
 
 @layer base {
-  :root {
-    /* ── DARK THEME (next-themes class="dark") — V2 warm near-black ── */
-    --ink-void:     40 6% 6%;
-    --ink-dark:     40 5% 9%;
-    --ink-base:     40 5% 9%;
-    --ink-surface:  38 5% 12%;
-    --ink-elevated: 38 4% 16%;
-    --ink-overlay:  38 5% 14%;
+  :root,
+  .theme-dark {
+    /* ── DARK THEME — "aireado": cool graphite, LAYERED (not flat black) ──
+       `.theme-dark` lets any subtree force dark (e.g. the always-dark login),
+       overriding an inherited `.light` by custom-property proximity. ──
+       Elevation ladder reads by visible luminosity steps: 11 → 14.5 → 18.5 → 22 */
+    --ink-void:     222 22% 7%;
+    --ink-dark:     222 18% 9%;
+    --ink-base:     222 16% 11%;
+    --ink-surface:  220 15% 15%;
+    --ink-elevated: 220 14% 19%;
+    --ink-overlay:  219 13% 22%;
 
-    /* Accent — RARE teal spark (color is scarce = expensive) */
-    --electric:        175 62% 45%;
-    --electric-dim:    175 64% 38%;
-    --electric-bright: 175 60% 54%;
+    /* Accent — Evolve cyan-teal "signal" (alive / intelligent / interactive) */
+    --electric:        184 80% 50%;
+    --electric-dim:    187 74% 42%;
+    --electric-bright: 183 86% 62%;
 
-    /* Bone — warm off-white CHROME accent (borders, hover, active, focus) */
-    --bone:        40 30% 90%;
-    --bone-dim:    40 14% 64%;
-    --bone-bright: 40 36% 95%;
+    /* Mist — cool silver CHROME neutral (borders, hover, active, focus, hairlines) */
+    --bone:        210 22% 88%;
+    --bone-dim:    214 12% 62%;
+    --bone-bright: 210 26% 96%;
 
-    /* Semantic financial — warmth-nudged, still clearly green/red */
-    --gain:         150 56% 50%;
-    --loss:           8 76% 64%;
+    /* Semantic financial — preserved (clearly green/red) */
+    --gain:         152 56% 50%;
+    --loss:           5 76% 64%;
     --warn:          38 90% 58%;
-    --neutral-text:  40 6% 58%;
+    --neutral-text:  220 8% 62%;
 
-    /* shadcn bridge — V2 warm near-black */
-    --background:             40 6% 7%;
-    --foreground:             40 12% 92%;
-    --card:                   38 5% 12%;
-    --card-foreground:        40 12% 92%;
-    --popover:                38 5% 14%;
-    --popover-foreground:     40 12% 92%;
-    --primary:                175 62% 45%;
-    --primary-foreground:     175 30% 8%;
-    --secondary:              38 4% 17%;
-    --secondary-foreground:   40 10% 88%;
-    --muted:                  40 5% 8%;
-    --muted-foreground:       40 6% 60%;
-    --accent:                 38 4% 16%;
-    --accent-foreground:      40 12% 92%;
-    --destructive:            8 76% 64%;
+    /* shadcn bridge — layered cool graphite */
+    --background:             222 16% 11%;
+    --foreground:             216 24% 96%;
+    --card:                   220 15% 15%;
+    --card-foreground:        216 24% 96%;
+    --popover:                220 14% 19%;
+    --popover-foreground:     216 24% 96%;
+    --primary:                184 80% 50%;
+    --primary-foreground:     200 50% 7%;
+    --secondary:              220 13% 20%;
+    --secondary-foreground:   216 18% 90%;
+    --muted:                  220 15% 14%;
+    --muted-foreground:       218 11% 65%;
+    --accent:                 220 13% 20%;
+    --accent-foreground:      216 24% 96%;
+    --destructive:            5 76% 64%;
     --destructive-foreground: 0 0% 100%;
-    --border:                 40 6% 22%;
-    --input:                  40 6% 28%;
-    --ring:                   40 30% 90%;
+    --border:                 220 13% 23%;
+    --input:                  220 12% 28%;
+    --ring:                   184 80% 50%;
     --radius:                 0.5rem;
   }
 
   .light {
-    /* ── LIGHT THEME — V2 "warm paper / daylight terminal" (designed apart) ── */
-    --ink-void:     42 30% 97%;
-    --ink-dark:     40 32% 95%;
-    --ink-base:     40 32% 95%;
-    --ink-surface:  40 40% 99%;
-    --ink-elevated: 40 28% 93%;
+    /* ── LIGHT THEME — "cool paper": airy, layered, institutional (AA) ──
+       Cards lift off paper by soft shadow + hairline, not by heavy fills. */
+    --ink-void:     210 24% 96%;
+    --ink-dark:     210 22% 97%;
+    --ink-base:     210 24% 98%;
+    --ink-surface:  0 0% 100%;
+    --ink-elevated: 0 0% 100%;
     --ink-overlay:  0 0% 100%;
 
-    /* shadcn bridge — V2 warm paper */
-    --background:             40 32% 95%;
-    --foreground:             252 8% 11%;
-    --card:                   40 40% 99%;
-    --card-foreground:        252 8% 11%;
+    /* shadcn bridge — cool paper */
+    --background:             210 24% 98%;
+    --foreground:             222 28% 12%;
+    --card:                   0 0% 100%;
+    --card-foreground:        222 28% 12%;
     --popover:                0 0% 100%;
-    --popover-foreground:     252 8% 11%;
-    --primary:                176 64% 32%;
+    --popover-foreground:     222 28% 12%;
+    --primary:                188 88% 31%;
     --primary-foreground:     0 0% 100%;
-    --secondary:              40 26% 92%;
-    --secondary-foreground:   252 8% 16%;
-    --muted:                  40 26% 92%;
-    --muted-foreground:       40 6% 42%;
-    --accent:                 40 26% 92%;
-    --accent-foreground:      252 8% 11%;
-    --destructive:            8 66% 50%;
+    --secondary:              210 22% 95%;
+    --secondary-foreground:   222 24% 18%;
+    --muted:                  210 22% 95%;
+    --muted-foreground:       220 12% 40%;
+    --accent:                 210 22% 95%;
+    --accent-foreground:      222 28% 12%;
+    --destructive:            5 68% 48%;
     --destructive-foreground: 0 0% 100%;
-    --border:                 40 16% 88%;
-    --input:                  40 14% 83%;
-    --ring:                   40 12% 40%;
+    --border:                 214 20% 89%;
+    --input:                  214 18% 83%;
+    --ring:                   188 88% 31%;
 
-    /* Accent + chrome — teal-spark darkened for AA on white; bone inverts to warm-charcoal */
-    --electric:        176 64% 32%;
-    --electric-dim:    176 66% 26%;
-    --electric-bright: 176 60% 38%;
-    --bone:            252 7% 22%;
-    --bone-dim:        40 6% 46%;
-    --bone-bright:     252 8% 12%;
-    --gain:            150 52% 36%;
-    --loss:              8 66% 50%;
-    --warn:             38 86% 44%;
-    --neutral-text:     40 6% 46%;
+    /* Accent + chrome — accent darkened for AA on white; mist inverts to cool charcoal */
+    --electric:        188 88% 31%;
+    --electric-dim:    190 90% 25%;
+    --electric-bright: 186 80% 39%;
+    --bone:            222 22% 24%;
+    --bone-dim:        216 12% 46%;
+    --bone-bright:     222 28% 14%;
+    --gain:            150 62% 31%;
+    --loss:              5 68% 47%;
+    --warn:             38 86% 40%;
+    --neutral-text:     220 10% 44%;
   }
 }
 
@@ -111,10 +116,10 @@
     --chart-7: 208 40% 64%;
     --chart-8: 192 48% 80%;
 
-    --chart-grid:           40 6% 18%;
-    --chart-axis:           40 6% 52%;
-    --chart-tooltip-bg:     38 6% 22%;
-    --chart-tooltip-border: 40 8% 34%;
+    --chart-grid:           220 13% 19%;
+    --chart-axis:           220 8% 54%;
+    --chart-tooltip-bg:     220 14% 19%;
+    --chart-tooltip-border: 220 12% 30%;
 
     /* Elevation aliases */
     --elevation-0: var(--ink-base);
@@ -122,22 +127,22 @@
     --elevation-2: var(--ink-elevated);
     --elevation-3: var(--ink-overlay);
 
-    /* Radii — v2 softened */
-    --radius-card: 0.75rem;
-    --radius-lg:   1rem;
+    /* Radii — softened, airy */
+    --radius-card: 0.875rem;
+    --radius-lg:   1.125rem;
     --radius-pill: 9999px;
 
-    /* Shadows — V2 dark: warm-hued near-black, layered */
-    --shadow-xs:   0 1px 2px hsl(40 30% 2% / 0.30);
-    --shadow-sm:   0 1px 2px hsl(40 30% 2% / 0.40), 0 1px 3px hsl(40 30% 2% / 0.30);
-    --shadow-card: 0 1px 2px hsl(40 30% 2% / 0.30), 0 2px 8px -2px hsl(40 30% 2% / 0.40);
-    --shadow-md:   0 2px 6px hsl(40 30% 2% / 0.40), 0 10px 24px -6px hsl(40 30% 2% / 0.50);
-    --shadow-pop:  0 10px 24px -8px hsl(40 30% 2% / 0.55), 0 24px 48px -16px hsl(40 30% 2% / 0.65);
-    --shadow-glow: 0 0 0 4px hsl(var(--bone) / 0.14);
+    /* Shadows — dark: cool-hued, soft & ambient (depth by light, not weight) */
+    --shadow-xs:   0 1px 2px hsl(220 45% 2% / 0.30);
+    --shadow-sm:   0 1px 2px hsl(220 45% 2% / 0.40), 0 1px 3px hsl(220 45% 2% / 0.30);
+    --shadow-card: 0 1px 2px hsl(220 45% 2% / 0.28), 0 4px 16px -4px hsl(220 45% 2% / 0.44);
+    --shadow-md:   0 2px 6px hsl(220 45% 2% / 0.38), 0 12px 28px -8px hsl(220 45% 2% / 0.50);
+    --shadow-pop:  0 12px 28px -10px hsl(220 45% 2% / 0.55), 0 28px 56px -18px hsl(220 45% 2% / 0.66);
+    --shadow-glow: 0 0 0 1px hsl(var(--electric) / 0.40), 0 0 26px -4px hsl(var(--electric) / 0.38);
   }
 
   .light {
-    /* Chart series — v2 light: richer for contrast on white */
+    /* Chart series — light: richer for contrast on white (PRESERVED ramp) */
     --chart-1: 205 78% 34%;
     --chart-2: 199 72% 38%;
     --chart-3: 196 60% 47%;
@@ -147,18 +152,18 @@
     --chart-7: 208 38% 60%;
     --chart-8: 192 50% 74%;
 
-    --chart-grid:           40 16% 89%;
-    --chart-axis:           40 6% 52%;
+    --chart-grid:           214 22% 90%;
+    --chart-axis:           220 8% 50%;
     --chart-tooltip-bg:     0 0% 100%;
-    --chart-tooltip-border: 40 16% 78%;
+    --chart-tooltip-border: 214 18% 82%;
 
-    /* Shadows — V2 light: warm, minimal — cards lift by soft shadow not border */
-    --shadow-xs:   0 1px 2px hsl(40 18% 30% / 0.04);
-    --shadow-sm:   0 1px 2px hsl(40 18% 30% / 0.05), 0 1px 3px hsl(40 18% 30% / 0.04);
-    --shadow-card: 0 1px 2px hsl(40 18% 30% / 0.05), 0 2px 6px -1px hsl(40 18% 30% / 0.07);
-    --shadow-md:   0 2px 4px hsl(40 18% 30% / 0.06), 0 8px 20px -6px hsl(40 18% 30% / 0.11);
-    --shadow-pop:  0 8px 16px -6px hsl(40 18% 30% / 0.11), 0 20px 40px -12px hsl(40 18% 30% / 0.17);
-    --shadow-glow: 0 0 0 4px hsl(var(--bone) / 0.10);
+    /* Shadows — light: cool, minimal — cards lift by soft shadow + hairline */
+    --shadow-xs:   0 1px 2px hsl(220 30% 30% / 0.05);
+    --shadow-sm:   0 1px 2px hsl(220 30% 30% / 0.06), 0 1px 3px hsl(220 30% 30% / 0.05);
+    --shadow-card: 0 1px 2px hsl(220 30% 30% / 0.06), 0 4px 12px -3px hsl(220 30% 30% / 0.10);
+    --shadow-md:   0 2px 4px hsl(220 30% 30% / 0.07), 0 10px 24px -6px hsl(220 30% 30% / 0.13);
+    --shadow-pop:  0 10px 20px -6px hsl(220 30% 30% / 0.13), 0 24px 48px -14px hsl(220 30% 30% / 0.18);
+    --shadow-glow: 0 0 0 1px hsl(var(--electric) / 0.30), 0 0 20px -4px hsl(var(--electric) / 0.28);
   }
 }
 
@@ -287,6 +292,42 @@
     z-index: 0;
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
   }
+
+  /* Glass — translucent elevated surface (auth card, command palette, popovers) */
+  .glass {
+    background-color: hsl(var(--card) / 0.72);
+    backdrop-filter: blur(16px) saturate(140%);
+    -webkit-backdrop-filter: blur(16px) saturate(140%);
+    border: 1px solid hsl(var(--bone) / 0.12);
+  }
+  .light .glass {
+    background-color: hsl(var(--card) / 0.78);
+    border-color: hsl(var(--border));
+  }
+
+  /* Ambient precision grid — faint background motif (login, empty states) */
+  .ambient-grid {
+    background-image:
+      linear-gradient(hsl(var(--bone) / 1) 1px, transparent 1px),
+      linear-gradient(90deg, hsl(var(--bone) / 1) 1px, transparent 1px);
+    background-size: 56px 56px;
+    opacity: 0.04;
+  }
+
+  /* Accent cursor spotlight — signature "alive" glow that follows the pointer */
+  .spotlight-accent::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background: radial-gradient(320px circle at var(--mx, 50%) var(--my, 0%), hsl(var(--electric) / 0.14), transparent 70%);
+    opacity: 0;
+    transition: opacity 0.4s ease;
+    pointer-events: none;
+    z-index: 0;
+  }
+  .spotlight-accent:hover::before { opacity: 1; }
+  .spotlight-accent > * { position: relative; z-index: 1; }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -302,7 +343,8 @@
   .card-lift:hover {
     transform: none;
   }
-  .spotlight::before {
+  .spotlight::before,
+  .spotlight-accent::before {
     display: none;
   }
   .gradient-border::after {

@@ -64,6 +64,8 @@ export function TopPerformers() {
     <div className="p-6 max-w-2xl">
       <PageHeader
         icon={TrendingUp}
+        accent="gain"
+        eyebrow="Rendimiento · Líderes"
         title="Top 10 Performers"
         description="Best 10 across all your watchlists — returns converted to USD."
         className="mb-4"

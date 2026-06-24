@@ -56,6 +56,8 @@ export function BottomPerformers() {
     <div className="p-6 max-w-2xl">
       <PageHeader
         icon={TrendingDown}
+        accent="loss"
+        eyebrow="Rendimiento · Rezagados"
         title="Bottom 10 Performers"
         description="Worst 10 across all your watchlists — returns converted to USD."
         className="mb-4"

@@ -43,6 +43,8 @@ export function PeerComparison() {
     <div className="p-6 max-w-2xl space-y-6">
       <PageHeader
         icon={Swords}
+        accent="signal"
+        eyebrow="Comparativa · vs Peers"
         title="Beating Peers"
         description="En cuántas de 6 métricas (1D, 1W, 1M, 6M, YTD, 1Y) cada activo le gana a sus peers — retornos en USD. Gana un periodo si supera al ≥75% de sus peers. Edita los peers desde el detalle de cada activo."
       />

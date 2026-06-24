@@ -2,26 +2,24 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Loader2 } from 'lucide-react'
-import Image from 'next/image'
+import { Loader2, Activity, Sparkles, Swords } from 'lucide-react'
 import { motion, useReducedMotion } from 'framer-motion'
 import { createClient } from '@/lib/supabase/client'
-import { BENCHMARK_TICKERS, BENCHMARK_LABELS } from '@/lib/market/benchmarks'
+import { fadeBlur, staggerContainer, EASE_OUT } from '@/lib/motion-tokens'
+import { EvolveMark } from '@/components/brand/EvolveMark'
+import { IntelligenceField } from '@/components/auth/IntelligenceField'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 
 type Mode = 'login' | 'register'
 
-// Decorative ticker strip — product benchmark labels (no network, purely visual).
-const STRIP = [...BENCHMARK_TICKERS].map((t) => BENCHMARK_LABELS[t] ?? t)
-
-// Faint bone grid (login is an always-dark surface, independent of theme).
-const GRID_BG = {
-  backgroundImage:
-    'linear-gradient(hsl(var(--bone)) 1px, transparent 1px), linear-gradient(90deg, hsl(var(--bone)) 1px, transparent 1px)',
-  backgroundSize: '64px 64px',
-}
+// Plain-language value props (Cash App clarity) — what Evolve does, at a glance.
+const VALUE_PROPS = [
+  { icon: Activity, title: 'Precios en vivo', desc: 'Cotizaciones que se actualizan cada 5 segundos.' },
+  { icon: Sparkles, title: 'Inteligencia de mercado', desc: 'Un brief con IA: lo que mueve a tu portafolio.' },
+  { icon: Swords, title: 'Compárate con tus pares', desc: 'Mide cada activo contra su competencia real.' },
+]
 
 export default function LoginPage() {
   const [mode, setMode] = useState<Mode>('login')
@@ -65,195 +63,174 @@ export default function LoginPage() {
     setLoading(false)
   }
 
-  // ── Shared atmospheric backdrop ──────────────────────────────────────────
+  // ── Atmospheric backdrop: live constellation + faint grid + ambient glows ──
   const Backdrop = (
     <>
-      <div className="pointer-events-none absolute inset-0 opacity-[0.035]" style={GRID_BG} aria-hidden />
-      <div className="pointer-events-none absolute -left-40 top-0 h-[28rem] w-[28rem] rounded-full bg-bone/[0.05] blur-3xl" aria-hidden />
-      <div className="pointer-events-none absolute -right-40 bottom-0 h-[28rem] w-[28rem] rounded-full bg-bone/[0.04] blur-3xl" aria-hidden />
-      {!reduced && (
-        <motion.div
-          aria-hidden
-          className="pointer-events-none absolute inset-0 opacity-[0.04]"
-          style={{ background: 'linear-gradient(115deg, transparent 35%, hsl(var(--bone)) 50%, transparent 65%)', backgroundSize: '250% 100%' }}
-          animate={{ backgroundPosition: ['160% 0%', '-60% 0%'] }}
-          transition={{ duration: 12, ease: 'linear', repeat: Infinity }}
-        />
-      )}
+      <IntelligenceField className="pointer-events-none absolute inset-0" />
+      <div className="ambient-grid pointer-events-none absolute inset-0" aria-hidden />
+      <div className="pointer-events-none absolute -left-32 top-1/4 h-[34rem] w-[34rem] rounded-full bg-signal/[0.06] blur-[120px]" aria-hidden />
+      <div className="pointer-events-none absolute -right-40 bottom-0 h-[30rem] w-[30rem] rounded-full bg-mist/[0.04] blur-[120px]" aria-hidden />
+      <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-mist/15 to-transparent" aria-hidden />
     </>
   )
 
   if (success) {
     return (
-      <div className="relative flex min-h-dvh items-center justify-center overflow-hidden p-4" style={{ background: 'hsl(var(--ink-void))' }}>
+      <div className="theme-dark relative flex min-h-dvh items-center justify-center overflow-hidden p-4 text-foreground" style={{ background: 'hsl(var(--ink-void))' }}>
         {Backdrop}
         <motion.div
-          initial={{ opacity: 0, y: 16 }}
+          initial={reduced ? false : { opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}
-          className="relative w-full max-w-md overflow-hidden rounded-card border border-border bg-ink-surface text-center shadow-pop"
+          transition={{ duration: 0.5, ease: EASE_OUT }}
+          className="glass relative z-10 w-full max-w-md overflow-hidden rounded-card p-8 text-center shadow-pop"
         >
-          <div className="border-b border-border bg-ink-elevated/40 px-6 py-3">
-            <div className="flex items-center gap-2">
-              <span className="h-2.5 w-2.5 rounded-full bg-bone/30" />
-              <span className="h-2.5 w-2.5 rounded-full bg-bone/20" />
-              <span className="h-2.5 w-2.5 rounded-full bg-bone/15" />
-              <span className="ml-2 font-mono text-[11px] uppercase tracking-[0.2em] text-muted-foreground">evolve · auth</span>
-            </div>
+          <div className="mb-5 flex justify-center">
+            <span className="inline-flex h-14 w-14 items-center justify-center rounded-card bg-gain/12 text-gain shadow-glow">
+              <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6 9 17l-5-5" /></svg>
+            </span>
           </div>
-          <div className="p-8">
-            <div className="mb-4 font-mono text-3xl text-gain">✓</div>
-            <h2 className="mb-2 font-editorial text-xl font-bold tracking-tight text-foreground">Revisa tu correo</h2>
-            <p className="text-sm leading-relaxed text-muted-foreground">
-              Enviamos un enlace de confirmación a <strong className="text-foreground">{email}</strong>.
-              Haz clic en él para activar tu cuenta.
-            </p>
-            <Button
-              variant="terminal"
-              className="mt-6"
-              onClick={() => { setSuccess(false); setMode('login') }}
-            >
-              Volver a iniciar sesión
-            </Button>
-          </div>
+          <h2 className="font-editorial text-xl font-bold tracking-tight text-foreground">Revisa tu correo</h2>
+          <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
+            Enviamos un enlace de confirmación a <strong className="text-foreground">{email}</strong>. Haz clic en él para activar tu cuenta.
+          </p>
+          <Button variant="outline" className="mt-6 w-full" onClick={() => { setSuccess(false); setMode('login') }}>
+            Volver a iniciar sesión
+          </Button>
         </motion.div>
       </div>
     )
   }
 
   const titleCopy = mode === 'login' ? 'Iniciar sesión' : 'Crear cuenta'
-  const subCopy = mode === 'login' ? 'Accede a tu terminal de inversión.' : 'Crea tu cuenta en la plataforma Evolve.'
+  const subCopy = mode === 'login' ? 'Accede a tu inteligencia de mercado.' : 'Crea tu cuenta en la plataforma Evolve.'
 
   return (
-    <div className="relative flex min-h-dvh flex-col items-center justify-center overflow-hidden p-4 sm:p-6" style={{ background: 'hsl(var(--ink-void))' }}>
+    <div className="theme-dark relative min-h-dvh overflow-hidden text-foreground" style={{ background: 'hsl(var(--ink-void))' }}>
       {Backdrop}
 
-      <motion.div
-        initial={reduced ? false : { opacity: 0, y: 18 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.55, ease: [0.22, 1, 0.36, 1] }}
-        className="relative w-full max-w-md"
-      >
-        {/* Brand mark above the panel */}
-        <div className="mb-6 flex flex-col items-center gap-3 text-center">
-          <Image src="/icons/icon-192.png" alt="Evolve" width={52} height={52} className="rounded-card object-cover shadow-card" />
-          <div>
-            <p className="font-mono text-[11px] uppercase tracking-[0.32em] text-muted-foreground">Investment Terminal</p>
-            <h1 className="mt-1 font-editorial text-2xl font-bold tracking-tight text-foreground">Evolve</h1>
-          </div>
-        </div>
+      <div className="relative z-10 mx-auto flex min-h-dvh max-w-6xl flex-col justify-center gap-12 px-6 py-10 lg:grid lg:grid-cols-[1.1fr_minmax(0,420px)] lg:items-center lg:gap-20 lg:px-10">
+        {/* ── Left: brand + value statement ── */}
+        <motion.div
+          variants={reduced ? undefined : staggerContainer}
+          initial={reduced ? false : 'hidden'}
+          animate="show"
+          className="max-w-xl"
+        >
+          <motion.div variants={reduced ? undefined : fadeBlur} className="flex items-center gap-3">
+            <EvolveMark size={40} interactive className="text-mist" />
+            <span className="font-editorial text-xl font-bold tracking-tight">Evolve</span>
+          </motion.div>
 
-        {/* Terminal panel */}
-        <div className="overflow-hidden rounded-card border border-border bg-ink-surface shadow-pop">
-          {/* Window chrome strip */}
-          <div className="flex items-center justify-between border-b border-border bg-ink-elevated/40 px-5 py-3">
-            <div className="flex items-center gap-2">
-              <span className="h-2.5 w-2.5 rounded-full bg-bone/30" />
-              <span className="h-2.5 w-2.5 rounded-full bg-bone/20" />
-              <span className="h-2.5 w-2.5 rounded-full bg-bone/15" />
-            </div>
-            <span className="font-mono text-[11px] uppercase tracking-[0.2em] text-muted-foreground">
-              {mode === 'login' ? 'sign-in' : 'sign-up'}
-            </span>
-          </div>
+          <motion.h1
+            variants={reduced ? undefined : fadeBlur}
+            className="mt-8 font-editorial text-4xl font-bold leading-[1.05] tracking-tight text-foreground sm:text-5xl"
+          >
+            La inteligencia de tus<br className="hidden sm:block" /> inversiones, <span className="text-signal">viva</span>.
+          </motion.h1>
 
-          {/* Body */}
-          <div className="space-y-5 p-7 sm:p-8">
-            <div className="space-y-1">
-              <h2 className="font-editorial text-2xl font-bold tracking-tight text-foreground">{titleCopy}</h2>
-              <p className="text-sm text-muted-foreground">{subCopy}</p>
-            </div>
+          <motion.p variants={reduced ? undefined : fadeBlur} className="mt-5 max-w-md text-[15px] leading-7 text-muted-foreground">
+            Sigue tus activos en tiempo real, entiende qué los mueve y compáralos con sus pares — en un solo lugar, claro y elegante.
+          </motion.p>
 
-            <form onSubmit={handleSubmit} className="space-y-4">
-              {mode === 'register' && (
-                <div className="space-y-1.5">
-                  <Label htmlFor="fullName" className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
-                    Nombre completo
-                  </Label>
-                  <Input
-                    id="fullName"
-                    value={fullName}
-                    onChange={(e) => setFullName(e.target.value)}
-                    placeholder="Juan Pérez"
-                    required
-                    className="border-border bg-ink-elevated font-ui"
-                  />
+          <motion.ul variants={reduced ? undefined : staggerContainer} className="mt-10 space-y-4">
+            {VALUE_PROPS.map(({ icon: Icon, title, desc }) => (
+              <motion.li key={title} variants={reduced ? undefined : fadeBlur} className="flex items-start gap-3.5">
+                <span className="mt-0.5 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-pill border border-mist/15 bg-mist/[0.04] text-signal">
+                  <Icon className="h-4 w-4" strokeWidth={1.9} />
+                </span>
+                <div>
+                  <p className="text-sm font-semibold text-foreground">{title}</p>
+                  <p className="text-sm text-muted-foreground">{desc}</p>
                 </div>
-              )}
+              </motion.li>
+            ))}
+          </motion.ul>
+        </motion.div>
 
-              <div className="space-y-1.5">
-                <Label htmlFor="email" className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
-                  Correo
-                </Label>
-                <Input
-                  id="email"
-                  type="email"
-                  autoComplete="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="tú@empresa.com"
-                  required
-                  className="border-border bg-ink-elevated font-ui"
-                />
-              </div>
-
-              <div className="space-y-1.5">
-                <Label htmlFor="password" className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
-                  Contraseña
-                </Label>
-                <Input
-                  id="password"
-                  type="password"
-                  autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="••••••••"
-                  minLength={6}
-                  required
-                  className="border-border bg-ink-elevated font-mono"
-                />
-              </div>
-
-              {error && (
-                <p className="rounded-md border border-loss/30 bg-loss/10 px-3 py-2 text-sm text-loss">
-                  {error}
-                </p>
-              )}
-
-              <Button type="submit" className="w-full" disabled={loading}>
-                {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                {mode === 'login' ? 'Acceder' : 'Crear cuenta'}
-              </Button>
-            </form>
-
-            <p className="text-center text-xs text-muted-foreground">
-              {mode === 'login' ? '¿No tienes cuenta? ' : '¿Ya tienes cuenta? '}
-              <button
-                type="button"
-                className="focus-ring rounded font-medium text-foreground underline-offset-2 transition-colors hover:underline"
-                onClick={() => { setMode(mode === 'login' ? 'register' : 'login'); setError(null) }}
-              >
-                {mode === 'login' ? 'Crear una' : 'Inicia sesión'}
-              </button>
-            </p>
+        {/* ── Right: glass auth card ── */}
+        <motion.div
+          initial={reduced ? false : { opacity: 0, y: 18, filter: 'blur(6px)' }}
+          animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
+          transition={{ duration: 0.6, ease: EASE_OUT, delay: 0.1 }}
+          onMouseMove={(e) => {
+            const r = e.currentTarget.getBoundingClientRect()
+            e.currentTarget.style.setProperty('--mx', `${e.clientX - r.left}px`)
+            e.currentTarget.style.setProperty('--my', `${e.clientY - r.top}px`)
+          }}
+          className="glass spotlight-accent relative w-full rounded-card p-7 shadow-pop sm:p-8"
+        >
+          <div className="mb-6 space-y-1">
+            <h2 className="font-editorial text-2xl font-bold tracking-tight text-foreground">{titleCopy}</h2>
+            <p className="text-sm text-muted-foreground">{subCopy}</p>
           </div>
-        </div>
-      </motion.div>
 
-      {/* Decorative benchmark strip */}
-      <motion.div
-        initial={reduced ? false : { opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ delay: 0.5, duration: 0.6 }}
-        className="relative mt-8 flex max-w-md flex-wrap items-center justify-center gap-x-3 gap-y-1.5 px-4"
-        aria-hidden
-      >
-        {STRIP.map((label, i) => (
-          <span key={label} className="inline-flex items-center gap-3 font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground/50">
-            {label}
-            {i < STRIP.length - 1 && <span className="h-1 w-1 rounded-full bg-bone/20" />}
-          </span>
-        ))}
-      </motion.div>
+          <form onSubmit={handleSubmit} className="space-y-4">
+            {mode === 'register' && (
+              <div className="space-y-1.5">
+                <Label htmlFor="fullName" className="text-xs font-medium text-muted-foreground">Nombre completo</Label>
+                <Input
+                  id="fullName"
+                  value={fullName}
+                  onChange={(e) => setFullName(e.target.value)}
+                  placeholder="Juan Pérez"
+                  required
+                  autoComplete="name"
+                  className="border-input bg-ink-elevated/60 font-ui"
+                />
+              </div>
+            )}
+
+            <div className="space-y-1.5">
+              <Label htmlFor="email" className="text-xs font-medium text-muted-foreground">Correo</Label>
+              <Input
+                id="email"
+                type="email"
+                autoComplete="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="tú@empresa.com"
+                required
+                className="border-input bg-ink-elevated/60 font-ui"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="password" className="text-xs font-medium text-muted-foreground">Contraseña</Label>
+              <Input
+                id="password"
+                type="password"
+                autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="••••••••"
+                minLength={6}
+                required
+                className="border-input bg-ink-elevated/60 font-mono"
+              />
+            </div>
+
+            {error && (
+              <p className="rounded-md border border-loss/30 bg-loss/10 px-3 py-2 text-sm text-loss">{error}</p>
+            )}
+
+            <Button type="submit" size="lg" className="w-full" disabled={loading}>
+              {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              {mode === 'login' ? 'Acceder' : 'Crear cuenta'}
+            </Button>
+          </form>
+
+          <p className="mt-6 text-center text-xs text-muted-foreground">
+            {mode === 'login' ? '¿No tienes cuenta? ' : '¿Ya tienes cuenta? '}
+            <button
+              type="button"
+              className="focus-ring rounded font-medium text-foreground underline-offset-2 transition-colors hover:text-signal hover:underline"
+              onClick={() => { setMode(mode === 'login' ? 'register' : 'login'); setError(null) }}
+            >
+              {mode === 'login' ? 'Crear una' : 'Inicia sesión'}
+            </button>
+          </p>
+        </motion.div>
+      </div>
     </div>
   )
 }

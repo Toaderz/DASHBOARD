@@ -3,8 +3,7 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import { useRouter, usePathname } from 'next/navigation'
-import { LogOut, LayoutDashboard, Menu, X, TrendingUp, TrendingDown, Newspaper, Swords, GitCompare, type LucideIcon } from 'lucide-react'
-import Image from 'next/image'
+import { LogOut, LayoutDashboard, Menu, X, TrendingUp, TrendingDown, Newspaper, Swords, GitCompare, Search, type LucideIcon } from 'lucide-react'
 import type { User } from '@supabase/supabase-js'
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
 import { cn } from '@/lib/utils/cn'
@@ -12,6 +11,8 @@ import { DUR, EASE_OUT } from '@/lib/motion-tokens'
 import { createClient } from '@/lib/supabase/client'
 import { ThemeToggle } from '@/components/dashboard/ThemeToggle'
 import { Button } from '@/components/ui/button'
+import { EvolveMark } from '@/components/brand/EvolveMark'
+import { CommandPalette } from '@/components/dashboard/CommandPalette'
 import { useWatchlists } from '@/hooks/useWatchlistAssets'
 import { WatchlistManager } from '@/components/dashboard/WatchlistManager'
 import { PriceMarquee } from '@/components/dashboard/PriceMarquee'
@@ -39,6 +40,7 @@ export function DashboardShell({ user, children }: DashboardShellProps) {
   const { watchlists, ownerEmails, createWatchlist, deleteWatchlist, updateWatchlist, leaveWatchlist } = useWatchlists()
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [cmdOpen, setCmdOpen] = useState(false)
 
   const handleSignOut = async () => {
     await supabase.auth.signOut()
@@ -55,15 +57,23 @@ export function DashboardShell({ user, children }: DashboardShellProps) {
   const sidebarContent = (
     <>
       {/* Logo */}
-      <div className="flex h-14 items-center gap-3 border-b border-border px-4">
-        <div className="flex h-7 w-7 items-center justify-center">
-          <Image src="/icons/icon-192.png" alt="Evolve" width={28} height={28} className="object-cover brightness-0 dark:brightness-100" />
-        </div>
+      <div className="flex h-14 items-center gap-2.5 border-b border-border px-4">
+        <EvolveMark size={26} idle className="text-foreground" />
         <span className="font-editorial text-base font-bold tracking-tight">Evolve</span>
       </div>
 
       {/* Nav */}
       <nav className="flex-1 overflow-y-auto p-3 space-y-4">
+        {/* Global search trigger (⌘K) */}
+        <button
+          onClick={() => { setCmdOpen(true); setSidebarOpen(false) }}
+          className="focus-ring flex w-full items-center gap-2 rounded-md border border-border bg-card/50 px-3 py-2 text-sm text-muted-foreground transition-colors hover:border-bone/30 hover:text-foreground"
+        >
+          <Search className="h-4 w-4 shrink-0" />
+          <span className="flex-1 text-left">Buscar…</span>
+          <kbd className="rounded border border-border px-1.5 py-0.5 font-mono text-[10px]">⌘K</kbd>
+        </button>
+
         <div data-tour="nav-watchlists" className="space-y-0.5">
           <p className="px-3 pb-1.5 text-[10px] font-mono uppercase tracking-[0.15em] text-muted-foreground">
             Navigation
@@ -129,6 +139,8 @@ export function DashboardShell({ user, children }: DashboardShellProps) {
 
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-background">
+      <CommandPalette open={cmdOpen} onOpenChange={setCmdOpen} />
+
       {/* Mobile header — only visible below md */}
       <header className="md:hidden flex h-12 shrink-0 items-center justify-between px-4 border-b border-border bg-ink-void z-10">
         <button
@@ -140,12 +152,19 @@ export function DashboardShell({ user, children }: DashboardShellProps) {
           <Menu className="h-5 w-5" />
         </button>
         <div className="flex items-center gap-2">
-          <div className="flex h-6 w-6 items-center justify-center">
-            <Image src="/icons/icon-192.png" alt="Evolve" width={24} height={24} className="object-cover brightness-0 dark:brightness-100" />
-          </div>
+          <EvolveMark size={22} idle className="text-foreground" />
           <span className="font-editorial text-sm font-bold tracking-tight">Evolve</span>
         </div>
-        <ThemeToggle />
+        <div className="flex items-center gap-1">
+          <button
+            onClick={() => setCmdOpen(true)}
+            className="flex h-9 w-9 items-center justify-center rounded-sm text-muted-foreground transition-colors hover:bg-ink-elevated hover:text-foreground"
+            aria-label="Buscar"
+          >
+            <Search className="h-5 w-5" />
+          </button>
+          <ThemeToggle />
+        </div>
       </header>
 
       {/* Mobile sidebar overlay */}

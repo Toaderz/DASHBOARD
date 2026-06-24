@@ -9,6 +9,7 @@ import { useWatchlists, useWatchlistAssets } from '@/hooks/useWatchlistAssets'
 import { WeeklyBriefCard } from '@/components/dashboard/WeeklyBriefCard'
 import { NewsCard } from '@/components/dashboard/NewsCard'
 import { EmptyState } from '@/components/dashboard/EmptyState'
+import { LiveIndicator } from '@/components/dashboard/LiveIndicator'
 
 function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString('es-MX', { day: 'numeric', month: 'short', year: 'numeric' })
@@ -100,10 +101,7 @@ export function NewsBlock() {
               Hace {Math.floor((Date.now() - new Date(brief.created_at).getTime()) / 86400000)}d
             </span>
           ) : (
-            <span className="inline-flex shrink-0 items-center gap-1.5 rounded-pill border border-border px-2.5 py-1 font-mono text-[11px] text-foreground">
-              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-spark" />
-              Live
-            </span>
+            <LiveIndicator />
           )}
         </div>
       </header>

@@ -22,6 +22,7 @@ import { SpotlightCard } from '@/components/dashboard/SpotlightCard'
 import { NumberTicker } from '@/components/dashboard/NumberTicker'
 import { SegmentedControl } from '@/components/dashboard/SegmentedControl'
 import { EmptyState } from '@/components/dashboard/EmptyState'
+import { LiveIndicator } from '@/components/dashboard/LiveIndicator'
 import { Skeleton } from '@/components/ui/skeleton'
 import { motion, useReducedMotion } from 'framer-motion'
 import { fadeUp, staggerContainer, SPRING_SNAP } from '@/lib/motion-tokens'
@@ -170,10 +171,7 @@ function MarketSnapshot() {
         </p>
         <span className="h-px flex-1 bg-border" />
         <span className="inline-flex shrink-0 items-center gap-1.5 text-[10px] font-mono uppercase tracking-[0.14em] text-muted-foreground">
-          <span className="relative flex h-1.5 w-1.5">
-            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-spark/70" />
-            <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-spark" />
-          </span>
+          <LiveIndicator bare />
           En vivo
         </span>
       </div>

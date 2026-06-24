@@ -2,7 +2,7 @@
 
 import { usePathname } from 'next/navigation'
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
-import { DUR } from '@/lib/motion-tokens'
+import { DUR, EASE_OUT } from '@/lib/motion-tokens'
 
 // Lightweight route cross-fade for the dashboard shell. Lives INSIDE DashboardShell's
 // <main> (a client component) so we never touch the server layout. Opacity-only + a small
@@ -17,10 +17,10 @@ export function PageTransition({ children }: { children: React.ReactNode }) {
     <AnimatePresence mode="wait" initial={false}>
       <motion.div
         key={pathname}
-        initial={{ opacity: 0, y: 8 }}
+        initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0 }}
-        exit={{ opacity: 0, y: -4 }}
-        transition={{ duration: DUR.fast, ease: 'easeOut' }}
+        exit={{ opacity: 0, y: -6 }}
+        transition={{ duration: DUR.base, ease: EASE_OUT }}
       >
         {children}
       </motion.div>

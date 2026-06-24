@@ -63,10 +63,21 @@ const config: Config = {
           dim:     'hsl(var(--electric-dim))',
           bright:  'hsl(var(--electric-bright))',
         },
-        // Teal-spark alias (same token as electric) — readable name for the ~4 high-signal spots
+        // Brand accent aliases (same token as electric) — readable names for signal spots
         spark:   'hsl(var(--electric))',
-        // Bone — warm off-white CHROME accent (the default for borders/hover/active/focus)
+        signal: {
+          DEFAULT: 'hsl(var(--electric))',
+          dim:     'hsl(var(--electric-dim))',
+          bright:  'hsl(var(--electric-bright))',
+        },
+        // Mist — cool silver CHROME neutral (borders/hover/active/focus/hairlines).
+        // `bone` kept as alias to the same token so existing usages keep working.
         bone: {
+          DEFAULT: 'hsl(var(--bone))',
+          dim:     'hsl(var(--bone-dim))',
+          bright:  'hsl(var(--bone-bright))',
+        },
+        mist: {
           DEFAULT: 'hsl(var(--bone))',
           dim:     'hsl(var(--bone-dim))',
           bright:  'hsl(var(--bone-bright))',
@@ -140,6 +151,17 @@ const config: Config = {
           '70%':  { boxShadow: '0 0 0 8px hsl(var(--electric) / 0)' },
           '100%': { boxShadow: '0 0 0 0 hsl(var(--electric) / 0)' },
         },
+        shimmer: {
+          '100%': { transform: 'translateX(100%)' },
+        },
+        'live-pulse': {
+          '0%, 100%': { opacity: '1', transform: 'scale(1)' },
+          '50%':      { opacity: '0.45', transform: 'scale(0.82)' },
+        },
+        'draw-mark': {
+          '0%':   { strokeDashoffset: '1', opacity: '0.2' },
+          '100%': { strokeDashoffset: '0', opacity: '1' },
+        },
       },
       animation: {
         'flash-green':    'flash-green 1.5s ease-out forwards',
@@ -148,6 +170,8 @@ const config: Config = {
         'marquee-r':      'marquee-reverse 60s linear infinite',
         'fade-in-up':     'fade-in-up 0.4s ease-out both',
         'pulse-ring':     'pulse-ring 2s cubic-bezier(0.4,0,0.6,1) infinite',
+        'shimmer':        'shimmer 1.6s ease-in-out infinite',
+        'live-pulse':     'live-pulse 1.8s ease-in-out infinite',
       },
     },
   },

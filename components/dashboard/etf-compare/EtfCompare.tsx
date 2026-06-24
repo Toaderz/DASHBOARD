@@ -175,6 +175,8 @@ export function EtfCompare() {
     <div className="space-y-6 p-4 md:p-6">
       <PageHeader
         icon={GitCompare}
+        accent="signal"
+        eyebrow="Análisis · Lado a lado"
         title="Comparar"
         description="Compara ETFs, fondos, acciones o índices lado a lado."
         actions={

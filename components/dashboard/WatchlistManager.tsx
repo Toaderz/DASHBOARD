@@ -14,6 +14,7 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog'
 import { useWatchlistShares } from '@/hooks/useWatchlistAssets'
+import { useToast } from '@/components/ui/toast'
 import type { Watchlist } from '@/types'
 
 interface WatchlistManagerProps {
@@ -56,12 +57,14 @@ export function WatchlistManager({
   const [teamShareMsg, setTeamShareMsg] = useState<string | null>(null)
 
   const { shares, addShare, removeShare, addTeamShares } = useWatchlistShares(shareWatchlistId)
+  const { toast } = useToast()
 
   const handleCreate = async () => {
     if (!createName.trim()) return
     setCreating(true)
     setCreateError(null)
-    const { error } = await onCreate(createName.trim(), createDesc.trim() || undefined)
+    const name = createName.trim()
+    const { error } = await onCreate(name, createDesc.trim() || undefined)
     if (error) {
       const msg = (error as { message?: string })?.message ?? 'Error desconocido'
       setCreateError(msg)
@@ -72,6 +75,14 @@ export function WatchlistManager({
     setCreateDesc('')
     setCreating(false)
     setCreateOpen(false)
+    toast({ title: 'Watchlist creada', description: name, variant: 'success' })
+  }
+
+  const handleDelete = async (wl: Watchlist) => {
+    const { error } = await onDelete(wl.id)
+    toast(error
+      ? { title: 'No se pudo eliminar', description: wl.name, variant: 'error' }
+      : { title: 'Watchlist eliminada', description: wl.name, variant: 'success' })
   }
 
   const handleRename = async (id: string) => {
@@ -116,6 +127,7 @@ export function WatchlistManager({
       setShareError(error)
     } else {
       setShareEmail('')
+      toast({ title: 'Watchlist compartida', description: 'El usuario ya puede verla.', variant: 'success' })
     }
     setShareLoading(false)
   }
@@ -239,7 +251,7 @@ export function WatchlistManager({
                   variant="danger"
                   size="sm"
                   className="h-6 w-6 p-0"
-                  onClick={(e) => { e.stopPropagation(); onDelete(wl.id) }}
+                  onClick={(e) => { e.stopPropagation(); handleDelete(wl) }}
                 >
                   <Trash2 className="h-3 w-3" />
                 </Button>
@@ -281,7 +293,12 @@ export function WatchlistManager({
             <Button
               variant="destructive"
               onClick={async () => {
-                if (leaveConfirmId) await onLeave(leaveConfirmId)
+                if (leaveConfirmId) {
+                  const { error } = await onLeave(leaveConfirmId)
+                  toast(error
+                    ? { title: 'No se pudo completar', variant: 'error' }
+                    : { title: 'Dejaste de seguir la lista', variant: 'info' })
+                }
                 setLeaveConfirmId(null)
               }}
             >
