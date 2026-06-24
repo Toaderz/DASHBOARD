@@ -14,23 +14,28 @@ interface MetricsSelectorProps {
   onChange: (metrics: MetricKey[]) => void
 }
 
-export function MetricsSelector({ selected, onChange }: MetricsSelectorProps) {
-  const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const dragIndexRef = useRef<number | null>(null)
-  const [dragOver, setDragOver] = useState<number | null>(null)
+// Canonical rank of a metric within METRIC_DEFINITIONS (chronological/time order).
+const canonicalRank = (key: MetricKey) => METRIC_DEFINITIONS.findIndex((d) => d.key === key)
 
-  const emit = useCallback(
-    (next: MetricKey[]) => {
-      if (debounceTimer.current) clearTimeout(debounceTimer.current)
-      onChange(next)
-      debounceTimer.current = setTimeout(() => onChange(next), 500)
-    },
-    [onChange]
-  )
+export function MetricsSelector({ selected, onChange }: MetricsSelectorProps) {
+  const dragIndexRef = useRef<number | null>(null)
+  // Where the dragged item would land: the hovered row + whether it drops above or below it.
+  const [dropTarget, setDropTarget] = useState<{ index: number; position: 'before' | 'after' } | null>(null)
+
+  const emit = useCallback((next: MetricKey[]) => onChange(next), [onChange])
 
   const toggle = useCallback(
     (key: MetricKey, checked: boolean) => {
-      const next = checked ? [...selected, key] : selected.filter((k) => k !== key)
+      if (!checked) {
+        emit(selected.filter((k) => k !== key))
+        return
+      }
+      // Insert in canonical (time) order: before the first selected metric that ranks after it.
+      const rank = canonicalRank(key)
+      const insertAt = selected.findIndex((k) => canonicalRank(k) > rank)
+      const next = [...selected]
+      if (insertAt === -1) next.push(key)
+      else next.splice(insertAt, 0, key)
       emit(next)
     },
     [selected, emit]
@@ -48,29 +53,40 @@ export function MetricsSelector({ selected, onChange }: MetricsSelectorProps) {
     dragIndexRef.current = index
   }
 
-  const handleDragOver = (e: React.DragEvent, index: number) => {
+  const handleDragOver = (e: React.DragEvent<HTMLDivElement>, index: number) => {
     e.preventDefault()
-    setDragOver(index)
-  }
-
-  const handleDrop = (e: React.DragEvent, dropIndex: number) => {
-    e.preventDefault()
-    const from = dragIndexRef.current
-    if (from == null || from === dropIndex) {
-      setDragOver(null)
+    if (dragIndexRef.current == null || dragIndexRef.current === index) {
+      setDropTarget(null)
       return
     }
+    // Drop above or below the hovered row based on where the cursor sits within it.
+    const rect = e.currentTarget.getBoundingClientRect()
+    const position = e.clientY < rect.top + rect.height / 2 ? 'before' : 'after'
+    setDropTarget({ index, position })
+  }
+
+  const handleDrop = (e: React.DragEvent, index: number) => {
+    e.preventDefault()
+    const from = dragIndexRef.current
+    const dt = dropTarget
+    dragIndexRef.current = null
+    setDropTarget(null)
+    if (from == null || dt == null) return
+
+    // Insertion index in the original array, then adjusted for the removal shift.
+    let target = dt.position === 'before' ? dt.index : dt.index + 1
+    if (from < target) target -= 1
+    if (target === from) return
+
     const next = [...selected]
     const [moved] = next.splice(from, 1)
-    next.splice(dropIndex, 0, moved)
+    next.splice(target, 0, moved)
     emit(next)
-    dragIndexRef.current = null
-    setDragOver(null)
   }
 
   const handleDragEnd = () => {
     dragIndexRef.current = null
-    setDragOver(null)
+    setDropTarget(null)
   }
 
   return (
@@ -96,8 +112,12 @@ export function MetricsSelector({ selected, onChange }: MetricsSelectorProps) {
                   onDragOver={(e) => handleDragOver(e, i)}
                   onDrop={(e) => handleDrop(e, i)}
                   onDragEnd={handleDragEnd}
-                  className={`flex items-center gap-2 rounded px-1 py-1 cursor-grab transition-colors ${
-                    dragOver === i ? 'bg-bone/[0.08] border border-bone/30' : 'hover:bg-ink-elevated'
+                  className={`relative flex items-center gap-2 rounded px-1 py-1 cursor-grab transition-colors hover:bg-ink-elevated ${
+                    dropTarget?.index === i
+                      ? dropTarget.position === 'before'
+                        ? 'before:absolute before:inset-x-1 before:-top-0.5 before:h-0.5 before:rounded-full before:bg-spark'
+                        : 'after:absolute after:inset-x-1 after:-bottom-0.5 after:h-0.5 after:rounded-full after:bg-spark'
+                      : ''
                   }`}
                 >
                   <GripVertical className="h-3.5 w-3.5 text-muted-foreground/50 shrink-0" />
