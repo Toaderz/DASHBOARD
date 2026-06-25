@@ -1,7 +1,7 @@
 'use client'
 
-import { useCallback, useRef, useState } from 'react'
-import { SlidersHorizontal, GripVertical } from 'lucide-react'
+import { useCallback } from 'react'
+import { SlidersHorizontal, ChevronUp, ChevronDown } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -14,14 +14,10 @@ interface MetricsSelectorProps {
   onChange: (metrics: MetricKey[]) => void
 }
 
-// Canonical rank of a metric within METRIC_DEFINITIONS (chronological/time order).
+// Canonical rank of a metric within METRIC_DEFINITIONS (chronological / time order).
 const canonicalRank = (key: MetricKey) => METRIC_DEFINITIONS.findIndex((d) => d.key === key)
 
 export function MetricsSelector({ selected, onChange }: MetricsSelectorProps) {
-  const dragIndexRef = useRef<number | null>(null)
-  // Where the dragged item would land: the hovered row + whether it drops above or below it.
-  const [dropTarget, setDropTarget] = useState<{ index: number; position: 'before' | 'after' } | null>(null)
-
   const emit = useCallback((next: MetricKey[]) => onChange(next), [onChange])
 
   const toggle = useCallback(
@@ -44,6 +40,24 @@ export function MetricsSelector({ selected, onChange }: MetricsSelectorProps) {
     [selected, emit]
   )
 
+  // Move a selected metric one position up (dir = -1) or down (dir = +1).
+  const move = useCallback(
+    (index: number, dir: -1 | 1) => {
+      const target = index + dir
+      if (target < 0 || target >= selected.length) return
+      const next = [...selected]
+      ;[next[index], next[target]] = [next[target], next[index]]
+      emit(next)
+    },
+    [selected, emit]
+  )
+
+  // Sort the selected metrics back into canonical chronological order.
+  const sortChronological = useCallback(() => {
+    const next = [...selected].sort((a, b) => canonicalRank(a) - canonicalRank(b))
+    emit(next)
+  }, [selected, emit])
+
   // Selected metrics in their current order
   const selectedDefs = selected
     .map((k) => METRIC_DEFINITIONS.find((d) => d.key === k))
@@ -52,50 +66,9 @@ export function MetricsSelector({ selected, onChange }: MetricsSelectorProps) {
   // Unselected metrics in METRIC_DEFINITIONS order
   const unselectedDefs = METRIC_DEFINITIONS.filter((d) => !selected.includes(d.key))
 
-  const handleDragStart = (index: number) => {
-    dragIndexRef.current = index
-  }
-
-  const handleDragOver = (e: React.DragEvent<HTMLDivElement>, index: number) => {
-    e.preventDefault()
-    if (dragIndexRef.current == null || dragIndexRef.current === index) {
-      setDropTarget(null)
-      return
-    }
-    // Drop above or below the hovered row based on where the cursor sits within it.
-    const rect = e.currentTarget.getBoundingClientRect()
-    const position = e.clientY < rect.top + rect.height / 2 ? 'before' : 'after'
-    setDropTarget({ index, position })
-  }
-
-  const handleDrop = (e: React.DragEvent<HTMLDivElement>, index: number) => {
-    e.preventDefault()
-    const from = dragIndexRef.current
-    dragIndexRef.current = null
-    setDropTarget(null)
-    if (from == null) return
-
-    // Compute the drop position from the drop event itself — NOT from React state.
-    // The final dragover's setDropTarget may not have committed before drop fires,
-    // so reading `dropTarget` here would be one hover stale (item lands off-target).
-    const rect = e.currentTarget.getBoundingClientRect()
-    const position = e.clientY < rect.top + rect.height / 2 ? 'before' : 'after'
-
-    // Insertion index in the original array, then adjusted for the removal shift.
-    let target = position === 'before' ? index : index + 1
-    if (from < target) target -= 1
-    if (target === from) return
-
-    const next = [...selected]
-    const [moved] = next.splice(from, 1)
-    next.splice(target, 0, moved)
-    emit(next)
-  }
-
-  const handleDragEnd = () => {
-    dragIndexRef.current = null
-    setDropTarget(null)
-  }
+  const isSorted = selected.every(
+    (k, i) => i === 0 || canonicalRank(selected[i - 1]) <= canonicalRank(k)
+  )
 
   return (
     <Popover>
@@ -110,25 +83,44 @@ export function MetricsSelector({ selected, onChange }: MetricsSelectorProps) {
         <div className="overflow-y-auto max-h-80 pr-1">
         {selectedDefs.length > 0 && (
           <>
-            <p className="mb-2 text-[10px] uppercase tracking-wider text-muted-foreground">Drag to reorder</p>
+            <div className="mb-2 flex items-center justify-between">
+              <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Reorder</p>
+              {!isSorted && (
+                <button
+                  type="button"
+                  onClick={sortChronological}
+                  className="focus-ring rounded text-[10px] font-medium text-spark hover:underline"
+                >
+                  Sort by time
+                </button>
+              )}
+            </div>
             <div className="mb-3 space-y-1">
               {selectedDefs.map((def, i) => (
                 <div
                   key={def.key}
-                  draggable
-                  onDragStart={() => handleDragStart(i)}
-                  onDragOver={(e) => handleDragOver(e, i)}
-                  onDrop={(e) => handleDrop(e, i)}
-                  onDragEnd={handleDragEnd}
-                  className={`relative flex items-center gap-2 rounded px-1 py-1 cursor-grab transition-colors hover:bg-ink-elevated ${
-                    dropTarget?.index === i
-                      ? dropTarget.position === 'before'
-                        ? 'before:absolute before:inset-x-1 before:-top-0.5 before:h-0.5 before:rounded-full before:bg-spark'
-                        : 'after:absolute after:inset-x-1 after:-bottom-0.5 after:h-0.5 after:rounded-full after:bg-spark'
-                      : ''
-                  }`}
+                  className="flex items-center gap-2 rounded px-1 py-1 hover:bg-ink-elevated"
                 >
-                  <GripVertical className="h-3.5 w-3.5 text-muted-foreground/50 shrink-0" />
+                  <div className="flex flex-col shrink-0">
+                    <button
+                      type="button"
+                      aria-label={`Move ${def.label} up`}
+                      disabled={i === 0}
+                      onClick={() => move(i, -1)}
+                      className="focus-ring -my-0.5 rounded text-muted-foreground/60 hover:text-foreground disabled:opacity-25 disabled:hover:text-muted-foreground/60"
+                    >
+                      <ChevronUp className="h-3.5 w-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      aria-label={`Move ${def.label} down`}
+                      disabled={i === selectedDefs.length - 1}
+                      onClick={() => move(i, 1)}
+                      className="focus-ring -my-0.5 rounded text-muted-foreground/60 hover:text-foreground disabled:opacity-25 disabled:hover:text-muted-foreground/60"
+                    >
+                      <ChevronDown className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
                   <Checkbox
                     id={`metric-${def.key}`}
                     checked
