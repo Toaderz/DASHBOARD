@@ -272,9 +272,15 @@ export function AssetDetailModal({
   }, [removePeer])
 
   const togglePeerMetric = (period: PeerPeriod) => {
-    setPeerMetrics((prev) =>
-      prev.includes(period) ? prev.filter((p) => p !== period) : [...prev, period]
-    )
+    setPeerMetrics((prev) => {
+      const next = prev.includes(period)
+        ? prev.filter((p) => p !== period)
+        : [...prev, period]
+      // Keep the selected return columns in chronological (time) order automatically.
+      return next.sort(
+        (a, b) => PEER_PERIOD_OPTIONS.indexOf(a) - PEER_PERIOD_OPTIONS.indexOf(b)
+      )
+    })
   }
 
   if (!asset) return null
