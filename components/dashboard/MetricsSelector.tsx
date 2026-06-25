@@ -30,12 +30,15 @@ export function MetricsSelector({ selected, onChange }: MetricsSelectorProps) {
         emit(selected.filter((k) => k !== key))
         return
       }
-      // Insert in canonical (time) order: before the first selected metric that ranks after it.
+      // Insert in canonical (time) order: right after the last selected metric that
+      // comes before it in time (e.g. 1W lands just after 1D), else at the front.
       const rank = canonicalRank(key)
-      const insertAt = selected.findIndex((k) => canonicalRank(k) > rank)
+      let insertAt = 0
+      selected.forEach((k, j) => {
+        if (canonicalRank(k) < rank) insertAt = j + 1
+      })
       const next = [...selected]
-      if (insertAt === -1) next.push(key)
-      else next.splice(insertAt, 0, key)
+      next.splice(insertAt, 0, key)
       emit(next)
     },
     [selected, emit]
@@ -65,16 +68,21 @@ export function MetricsSelector({ selected, onChange }: MetricsSelectorProps) {
     setDropTarget({ index, position })
   }
 
-  const handleDrop = (e: React.DragEvent, index: number) => {
+  const handleDrop = (e: React.DragEvent<HTMLDivElement>, index: number) => {
     e.preventDefault()
     const from = dragIndexRef.current
-    const dt = dropTarget
     dragIndexRef.current = null
     setDropTarget(null)
-    if (from == null || dt == null) return
+    if (from == null) return
+
+    // Compute the drop position from the drop event itself — NOT from React state.
+    // The final dragover's setDropTarget may not have committed before drop fires,
+    // so reading `dropTarget` here would be one hover stale (item lands off-target).
+    const rect = e.currentTarget.getBoundingClientRect()
+    const position = e.clientY < rect.top + rect.height / 2 ? 'before' : 'after'
 
     // Insertion index in the original array, then adjusted for the removal shift.
-    let target = dt.position === 'before' ? dt.index : dt.index + 1
+    let target = position === 'before' ? index : index + 1
     if (from < target) target -= 1
     if (target === from) return
 
