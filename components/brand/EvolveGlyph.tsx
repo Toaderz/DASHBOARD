@@ -9,12 +9,13 @@
 
 import { cn } from '@/lib/utils/cn'
 
-// viewBox 0 0 120 120, center (60,60). Long-way arcs leave the gap at the top-right.
-// The inner loop opens generously at the top-right (the "e" aperture/mouth) and the spine
-// enters low-left and exits through that mouth — reading unmistakably as a lowercase "e".
-export const EVOLVE_OUTER_D = 'M98.3 27.9 A50 50 0 1 1 75.5 12.4' // outer ring, gap ~40°–72°
-export const EVOLVE_INNER_D = 'M85.1 53.3 A26 26 0 1 1 65.4 34.6' // inner loop, aperture ~15°–78°
-export const EVOLVE_BAR_D = 'M40 79 L80 40' // diagonal spine, terminates at the aperture
+// viewBox 0 0 120 120, center (60,60). Faithful to the official circle-"e" mark.
+// The outer ring is a FULL closed circle; the inner loop is closed across the top and opens
+// ONLY at the top-right (the "e" mouth) where the diagonal spine exits; the spine's lower end
+// sits exactly on the rim (no poke-out) — reading unmistakably as a lowercase "e", not a "ø".
+export const EVOLVE_OUTER_D = 'M60 10 A50 50 0 0 1 60 110 A50 50 0 0 1 60 10' // closed ring
+export const EVOLVE_INNER_D = 'M84.7 52 A26 26 0 1 1 77.4 40.7' // inner loop, mouth at top-right only
+export const EVOLVE_BAR_D = 'M43.3 79.9 L81.8 45.8' // diagonal spine, both ends on the rim
 export const EVOLVE_VIEWBOX = 120
 
 interface EvolveGlyphProps {
