@@ -114,7 +114,7 @@ app/
   manifest.ts                      # PWA manifest
   sw.ts                            # Service worker (Serwist)
   (auth)/
-    login/page.tsx                 # Login + registro dual-mode
+    login/page.tsx                 # Login + registro dual-mode — "Transforming Investments": wrapper .theme-dark (always-dark), MarketDepthField de fondo (FIXED), hero EvolveLogo3D + slogan, card glass STICKY siempre accesible, narrativa scroll (4 escenas en components/auth/scenes/); auth logic intacta
   (dashboard)/
     layout.tsx                     # Server — verifica auth + onboarding_seen, envuelve en TourProvider
     page.tsx                       # Overview agregado (OverviewDashboard) — ya NO redirige a watchlist
@@ -140,12 +140,20 @@ app/
     users/
       find/route.ts                # GET ?email= — resuelve email → user_id (service role)
 components/
-  providers.tsx                    # QueryClient + ThemeProvider (wrapper raíz)
+  providers.tsx                    # QueryClient + ThemeProvider + ToastProvider (wrapper raíz)
+  brand/
+    EvolveMark.tsx                 # Marca viva (nodos ascendentes): sidebar idle + motivo de EmptyState + EvolveLoader (loop). YA NO se usa en el login (lo reemplazó EvolveLogo3D)
+    EvolveLogo3D.tsx               # Hero del login: logo OFICIAL circle-"e" (anillo + círculo interior con slash) extruido en CSS 3D (≈16 capas en Z) girando en turntable inclinado + light-sweep; sin dep. Reduced-motion → frame estático 3/4; pausa rotación en tab oculto
+  auth/
+    MarketDepthField.tsx           # Fondo del login en Canvas 2D nativo (sin dep): barras de "profundidad de mercado" divergiendo de una baseline de retornos (gain/loss baja saturación), respiran lento; bajo el cursor crecen + se iluminan a teal. Reemplazó a IntelligenceField (constelación). 1 rAF, pausa en visibilitychange/oculto, frame estático en reduced-motion, dpr ≤2
+    scenes/                        # Escenas presentacionales de la narrativa del login (datos scripted, SIN hooks/red): NarrativeScene (shell eyebrow+título+reveal whileInView), LivePricesScene (filas mock con flash + LiveIndicator), PeersScene (barras won/lost), CompareScene (curvas growth-$10k), IntelligenceScene ("Inteligencia de mercado" — señal vs ruido, sin terminología "AI/brief")
   onboarding/
     TourProvider.tsx               # Context: running/stepIndex, start/next/prev/skip/finish; auto-start-once (onboarding_seen + localStorage)
     TourSpotlight.tsx              # Overlay con cutout getBoundingClientRect + Card tooltip; Escape/resize/motion
   dashboard/
-    DashboardShell.tsx             # Layout principal: sidebar + nav + PriceMarquee (data-tour attrs añadidos)
+    DashboardShell.tsx             # Layout principal: sidebar (EvolveMark + disparador ⌘K) + nav + PriceMarquee + CommandPalette montado; header móvil con icono de búsqueda (data-tour attrs)
+    CommandPalette.tsx             # Buscador global ⌘K/Ctrl+K (controlado): navega 6 páginas + busca tickers (/api/market/search, debounce 300ms) → /etf-compare?tickers=X; teclado; modal glass
+    LiveIndicator.tsx              # Pill "● Live" (o bare dot) con halo animate-ping + dot bg-signal — único componente "Live" (Overview/MarketSnapshot, NewsBlock)
     OverviewDashboard.tsx          # Dashboard agregado: KPIs, MarketSnapshot, mini-leaderboards, brief teaser
     WatchlistView.tsx              # Bridge server→client: recibe props del server, renderiza tabla
     WatchlistTable.tsx             # TanStack Table: columnas (incl. 6M), filtro inline, sort, modal, toggle auto-peers
@@ -154,13 +162,13 @@ components/
     FundamentalsPanel.tsx          # Panel premium bento: métricas animadas con NumberTicker (importado)
     NumberTicker.tsx               # Contador animado Framer Motion (extraído de FundamentalsPanel)
     SegmentedControl.tsx           # Selector pill multi-opción (rounded-pill, size sm/md)
-    PageHeader.tsx                 # Cabecera de página: título editorial + descripción + icon + actions slot
-    EmptyState.tsx                 # Estado vacío: icono, título, descripción, CTA, variante compact
+    PageHeader.tsx                 # Cabecera de página: título editorial + descripción + icon + actions slot + eyebrow/accent ('signal'|'gain'|'loss'|'mist') para identidad por vista
+    EmptyState.tsx                 # Estado vacío: icono (o EvolveMark si no se pasa icono), título, descripción, CTA, variante compact
     StatCard.tsx                   # Tarjeta de KPI: label, value, delta, sub, icon, hint (Tooltip)
     PriceCell.tsx                  # Celda tabla con flash CSS verde/rojo
     AnimatedPrice.tsx              # Precio animado con Framer Motion (slide up/down)
     PriceMarquee.tsx               # Ticker marquee header (tickers globales fijos de BENCHMARK_TICKERS)
-    MetricsSelector.tsx            # Checkbox toggle columnas (persiste en JSONB watchlists)
+    MetricsSelector.tsx            # Popover de columnas: toggle (checkbox), reordenar visibles con flechas ↑↓ (mueve por KEY, no por índice de render), "Sort by time" (orden cronológico) y add cronológico (cada métrica entra en su lugar temporal); auto-repara selected_metrics (descarta keys inválidas/duplicadas). Persiste en JSONB watchlists
     TickerSearch.tsx               # Búsqueda con debounce 300ms; usa typeBadgeClass/typeLabel de asset-style
     TopPerformers.tsx              # Vista top 10 performers — PageHeader + SegmentedControl + Card
     BottomPerformers.tsx           # Vista bottom 10 performers — PageHeader + SegmentedControl + Card
@@ -186,7 +194,9 @@ components/
     card.tsx                       # Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter
     tabs.tsx                       # Tabs in-house (sin @radix-ui/react-tabs): teclado ArrowLeft/Right/Home/End
     tooltip.tsx                    # Tooltip sobre Radix Popover (sin @radix-ui/react-tooltip); hover+focus
-                                   # shadcn/ui: badge, button, checkbox, dialog, input, label, popover, skeleton
+    toast.tsx                      # ToastProvider + useToast(): cola con auto-dismiss, aria-live, cards glass (AnimatePresence), variantes success/error/info
+    skeleton.tsx                   # Skeleton con shimmer (gradiente que recorre, animate-shimmer, motion-reduce:hidden)
+                                   # shadcn/ui: badge, button, checkbox, dialog, input, label, popover
 hooks/
   useWatchlistAssets.ts            # useWatchlists + useWatchlistAssets (incluye source/peer_of) + useWatchlistShares
   useRealtimePrices.ts             # Polling 5s + flashStates (useRef para prev prices)
@@ -282,26 +292,39 @@ node scripts/manage-team-evolve.mjs  # Alta de cuentas Supabase + flag is_team_e
 
 ## Notas de arquitectura
 
-### Sistema de diseño (Fase 3 → identidad V2 "warm bone + rare teal spark")
-- **Paleta de charts**: `CHART_SERIES` (8 tonos navy→teal→sky, `--chart-1..8`). Consumir siempre vía `useChartTheme()` (`lib/chart-theme.ts`) — resuelve CSS vars a hex/hsl concretos para Recharts; es reactivo a `resolvedTheme`. NUNCA hardcodear colores en charts. Las **series `--chart-1..8` son dato → NO se tocan**; V2 solo calentó los neutrales que las rodean (grid/axis/tooltip + `FALLBACK`).
-- **Semánticos**: `text-gain`/`text-loss` (no `text-green-500`/`text-red-500`). `percentColor()` en `formatters.ts` ya los emite.
-- **Badges de tipo de activo**: siempre vía `typeBadgeClass(type)` / `typeLabel(type)` de `lib/asset-style.ts`. **V2 (postura estricta "color escaso = caro")**: `stock`/`etf`/`fund` → **bone neutro** (`bg-foreground/10 text-foreground`), diferenciados por el TEXTO (`typeLabel()`), NO por color — una watchlist con 5 ETFs no debe pintar 5 chips de color. `index`/`crypto` mantienen su ámbar/naranja (son raros).
-- **Primitivos reutilizables**: `Card` (rounded-card + shadow-card), `Tabs` (in-house, sin nueva dep), `Tooltip` (sobre Radix Popover, sin nueva dep). Usar en toda vista nueva.
-- **`no purple` invariant**: `purple-*`/`a855f7`/`168,85,247` no deben existir en componentes (excepto badge editorial de riesgo Alta en `WeeklyBriefCard` que es rojo, no purple). Verificar con grep.
-- **AreaChart en AssetDetailModal**: stroke/gradients → `chartTheme.gain/loss`; grid/axes → `chartTheme.grid/axis`; tooltip → `chartTooltipStyle(chartTheme)`. Se actualiza automáticamente al cambiar tema.
-- **Tailwind tokens nuevos**: `rounded-card`, `rounded-pill`, `shadow-card`, `shadow-pop`, `shadow-glow`, `colors.brand.navy/teal`, `colors.chart.1..8`, **`colors.bone {DEFAULT,dim,bright}`** y **`colors.spark` (alias de `hsl(var(--electric))`)**. Definidos en `tailwind.config.ts`.
+### Sistema de diseño (identidad actual: "Evolve Signal" — inteligencia financiera, viva)
+> ⚠️ Reemplaza la identidad anterior "warm bone + rare teal spark" (V2). Si ves referencias a warm-bone, near-black cálido (hue 40°) o "teal reservado a 4 puntos" en código/docs, son **históricas** — verifica contra `app/globals.css` antes de asumir colores.
+- **Postura**: SaaS de inteligencia financiera moderno/institucional/elegante (vibe Stripe/Linear/Mercury/Lovable), **NO una terminal de trading**. Ligero, aireado y por capas; nada de superficie negra plana. **Light y dark son co-protagonistas** (mismo nivel de detalle/contraste/AA en ambos).
+- **Base = grafito frío por capas** (hue ~220°). Escalera de elevación visible: `--ink-base` 11% → `--ink-surface` 15% → `--ink-elevated` 19% → `--ink-overlay` 22% (dark). Light = "cool paper" (`--background` 210 24% 98%, cards a blanco levantadas por sombra suave + hairline). La profundidad se lee por tono+sombra+hairline, no por oscuridad.
+- **Acento de marca "signal" = cian-teal `--electric`** (`184 80% 50%` dark · `188 88% 31%` light para AA). Es la señal de *vivo / inteligente / interactivo*: acciones primarias, Live, focus/ring, glow del logo, highlights. Menos escaso que el teal de V2 pero sigue siendo señal, no decoración.
+- **Cromo neutro "mist" = `--bone`** (plata/grafito frío `210 22% 88%` dark; invierte a charcoal frío `222 22% 24%` en light). Bordes, hover, hairlines, texto secundario. `--ring` → acento (no bone). Sombras de hue frío 220°.
+- **Aliases Tailwind**: `signal` (=`electric`, `{DEFAULT,dim,bright}`) y `mist` (=`bone`). Se conservan `spark` y `bone` como aliases del MISMO token → los ~64 usos previos siguen funcionando sin migración.
+- **Paleta de charts**: `CHART_SERIES` (8 tonos navy→teal→sky, `--chart-1..8`). Consumir siempre vía `useChartTheme()` (`lib/chart-theme.ts`) — resuelve CSS vars a hex/hsl para Recharts; reactivo a `resolvedTheme`. NUNCA hardcodear colores. Las **series `--chart-1..8` son dato → NO se tocan**; solo se recolorearon a frío los neutrales que las rodean (grid/axis/tooltip).
+- **Semánticos PRESERVADOS**: `text-gain`/`text-loss` (no `text-green-500`/`text-red-500`); `percentColor()` los emite. `--gain`/`--loss`, flash `animate-flash-green/red` y el heartbeat realtime intactos.
+- **Badges de tipo de activo**: siempre vía `typeBadgeClass(type)` / `typeLabel(type)` de `lib/asset-style.ts`. `stock`/`etf`/`fund` → neutro (`bg-foreground/10 text-foreground`), diferenciados por el TEXTO, NO por color; `index`/`crypto` mantienen ámbar/naranja (raros).
+- **Identidad por vista**: `PageHeader` acepta `eyebrow?` (kicker) y `accent?: 'signal'|'gain'|'loss'|'mist'` (default `mist`) → cada pantalla tiene un acento/kicker propio coherente con el sistema (Top=`gain`, Bottom=`loss`, Peers/Comparar=`signal`).
+- **Primitivos reutilizables**: `Card` (rounded-card + shadow-card), `Tabs` (in-house), `Tooltip` (sobre Radix Popover). Usar en toda vista nueva.
+- **`no purple` invariant**: `purple-*`/`a855f7`/`168,85,247` no deben existir en componentes (excepto badge de riesgo Alta en `WeeklyBriefCard`, que es rojo). Verificar con grep.
+- **Tailwind tokens**: `rounded-card`, `rounded-pill`, `shadow-card`/`pop`/`glow` (glow basado en el acento), `colors.signal`/`mist`/`spark`/`bone`/`electric`, `colors.chart.1..8`. Keyframes nuevos: `shimmer` (skeleton), `live-pulse`, `draw-mark`. Definidos en `tailwind.config.ts`.
+- **Utilidades CSS nuevas** (`app/globals.css`): `.glass` (superficie translúcida + backdrop-blur + hairline; variante `.light .glass`), `.ambient-grid` (rejilla de precisión tenue), `.spotlight-accent` (glow de acento que sigue al cursor vía `--mx/--my`). Se conservan `.spotlight`/`.gradient-border`/`.card-lift`/`.grain` (recoloreados a mist). Todo gateado en el bloque `prefers-reduced-motion`.
+- **`.theme-dark`**: clase de scope que fuerza el tema dark en cualquier subárbol (p.ej. el login always-dark), sobreponiéndose a un `.light` heredado por proximidad de custom-properties. `:root, .theme-dark { … }` comparten los valores dark.
 - **`.focus-ring`**: usar en todos los `<button>`/`<input>` crudos (no shadcn) para a11y.
 
-#### Identidad V2 — "warm bone + rare teal spark"
-- **Mantra: "el color escaso = caro".** El cromo (bordes, hover, activos, focus, selección, spotlight, monograma, toggles, badges de tipo, links de noticias) es **off-white cálido neutro = `--bone`**, NO color. El color es escaso y con significado.
-- **Teal spark (`--electric` → `175 62% 45%`, alias `spark`/`--bone`-vecino) reservado a SOLO 4 puntos de alta señal**: (1) botón CTA `default`, (2) badge 🎯 de `NewsCard`, (3) pulso "● Live"/Activity de mercado, (4) barra `border-l-2 border-spark` del **nav activo** en `DashboardShell`. Fuera de esos 4 + `gain`/`loss`, NADA es teal. Verificar con grep `electric`/`spark` en `components/`.
-- **Dark = warm near-black** (hue ~40°, sat 3-6%), por capas/elevación — NO el slate-azul anterior. **Light = "papel cálido / daylight terminal"**, diseñado aparte (papel ~`#F4F1EA`, cards levantadas por sombra suave, hairlines cálidos, `--primary/electric` teal oscurecido AA). Ambos temas de primera clase. Tokens en `app/globals.css` (`:root` dark + `.light`).
-- **`--bone`** `40 30% 90%` (+`--bone-dim`, `--bone-bright`); `--ring` → bone. Sombras warm (hue 40°). En light el cromo bone invierte a warm-charcoal.
-- **Monograma**: chip bone único (`AssetMonogram.tsx`, `MONO_STYLE`) — se eliminó el hash arcoíris por ticker.
-- **Layout Overview** = panel de instrumento (grilla estricta alineada, banda héroe + paneles iguales), NO bento decorativo.
+#### Marca viva — `components/brand/EvolveMark.tsx`
+- **Un solo origen reutilizado** como logo del login (interactivo: parallax/tilt + glow al cursor), marca del sidebar (`idle` pulse leve), motivo de empty states (`EmptyState` sin icono) y loader.
+- `EvolveMark({size, interactive, idle, withGlow, strokeWidth})` — SVG path (`currentColor`) + nodos + ápice con glow de acento (`hsl(var(--electric))`). `EvolveLoader({size,label})` — dibuja el mark en loop (`pathLength`) + pop del ápice; reduced-motion → estático.
 
-#### Sistema de movimiento V2 (Framer Motion, sin deps nuevas)
-- **`lib/motion-tokens.ts` (PURO, sin `'use client'`)**: `EASE_OUT [.22,1,.36,1]`, `DUR{fast .18,base .28,slow .5}`, `SPRING_SOFT/SNAP`, `TICKER_SPRING`, `STAGGER/STAGGER_FAST`, variants `fadeUp`/`staggerContainer`, `assetLayoutId(t)=>`asset-${t}``, `morphTransition`. **Debe quedar puro** para importarse desde Server Components (marcarlo `'use client'` rompería el build de App Router).
+#### Signature moments (nuevos)
+- **Command palette ⌘K** (`components/dashboard/CommandPalette.tsx`, controlado `{open,onOpenChange}`): listener global ⌘K/Ctrl+K; navega entre las 6 páginas + busca tickers (`/api/market/search`, debounce 300ms) → `/etf-compare?tickers=X`; teclado arriba/abajo/enter; modal glass. Disparador (faux-input con kbd ⌘K) en el sidebar de `DashboardShell` + icono en el header móvil.
+- **`LiveIndicator`** (`components/dashboard/LiveIndicator.tsx`): pill "● Live" (o `bare` dot) con halo `animate-ping` + dot `bg-signal`. Usado en `OverviewDashboard` (MarketSnapshot) y `NewsBlock`. Un solo componente para todo "Live".
+- **Toasts** (`components/ui/toast.tsx` + `ToastProvider` en `components/providers.tsx`): `useToast()`, cola con auto-dismiss, `aria-live="polite"`, cards glass con `AnimatePresence`, variantes success/error/info. Cableado en `WatchlistManager` (crear/borrar/compartir/dejar de seguir).
+- **`MarketDepthField`** (`components/auth/MarketDepthField.tsx`): fondo del login en **Canvas 2D nativo** (sin dep) — reemplazó a `IntelligenceField` (constelación, eliminado). Barras de "profundidad de mercado" que divergen arriba/abajo de una **baseline de retornos** (gain/loss a baja saturación → lee como dato de mercado, no ecualizador de audio), respiran lento; bajo el cursor crecen y se **iluminan a teal** (el capital se concentra donde va la atención) + glow radial bajo el puntero. Lee `--gain`/`--loss`/`--electric`/`--bone` por `getComputedStyle`. Un solo `requestAnimationFrame`, pausa en `visibilitychange`, frame estático en reduced-motion, densidad menor en móvil, dpr ≤2.
+- **`EvolveLogo3D`** (`components/brand/EvolveLogo3D.tsx`): tratamiento 3D del logo OFICIAL circle-"e" como hero del login. Geometría recreada en SVG (anillo + círculo interior + slash), extruida en **CSS 3D** apilando ~16 copias en Z (sin motor 3D / sin dep) → lee como medallón metálico sólido; gira en turntable con `rotateX` inclinado fijo + light-sweep estacionario; caras con gradiente bone→teal, rim oscuro. Reduced-motion → vista 3/4 estática; pausa la rotación cuando la pestaña está oculta. `EvolveMark` (nodos) ya NO se usa en el login.
+- **Login** (`app/(auth)/login/page.tsx`): reescrito a "Transforming Investments", wrapper `.theme-dark` (always-dark). Backdrop **FIXED** = `MarketDepthField` + ambient-grid + blobs de glow + hairline (se queda fijo mientras la narrativa hace scroll). Grid desktop: col1 = hero (`EvolveLogo3D` + wordmark + slogan "Transforming Investments" + statement) en row1 y la **narrativa scroll** en row2 (4 `NarrativeScene` con escenas presentacionales scripted + cierre); col2 = card `glass spotlight-accent` **STICKY** (`lg:sticky lg:top-0 lg:h-dvh`, centrada) siempre accesible. Orden DOM = hero → card → escenas ⇒ en móvil queda hero compacto → **form primero** → escenas (auth nunca se entierra). **Lógica de auth 100% preservada** (`signInWithPassword`/`signUp`, redirect, success screen, toggle de modo).
+- **Skeleton** (`components/ui/skeleton.tsx`): shimmer (gradiente que recorre, `animate-shimmer`, `motion-reduce:hidden`).
+
+#### Sistema de movimiento (Framer Motion, sin deps nuevas)
+- **`lib/motion-tokens.ts` (PURO, sin `'use client'`)**: `EASE_OUT [.22,1,.36,1]`, `DUR{fast .18,base .28,slow .5,ambient .9}`, `SPRING_SOFT/SNAP`, `SPRING_CURSOR` (parallax del logo), `TICKER_SPRING`, `STAGGER/STAGGER_FAST`, variants `fadeUp`/`fadeBlur`/`scaleIn`/`staggerContainer`, `assetLayoutId(t)=>`asset-${t}``, `morphTransition`. **Debe quedar puro** para importarse desde Server Components (marcarlo `'use client'` rompería el build de App Router).
 - **`lib/motion-client.ts` (`'use client'`)**: `usePulseOnChange(value)` + `<ValuePulse>` — pulso one-shot (scale + ring `gain/loss/electric`) cuando un precio live cambia; `useReducedMotion` → estático. Construido con `createElement` (para que el archivo `.ts` sea válido).
 - **Las dos apuestas de motion**: (1) **shared-element fila→modal** — la fila de `WatchlistTable` "crece" al `AssetDetailModal` vía `layoutId={assetLayoutId(ticker)}` + `<LayoutGroup>` a través del portal Radix (Plan A confirmado en uso; Plan B ghost-FLIP en reserva si glitchea). (2) **"el tablero late con el mercado"** — `<ValuePulse>` vive donde HAY dato live a 5s (`useRealtimePrices`): precios de la tabla, benchmarks de `MarketSnapshot`, precio del modal. El héroe del Overview pulsa solo en período `1D` o al cambiar ranking (su dato no es live a 5s).
 - **`NumberTicker.tsx`**: count-up spring (`TICKER_SPRING`) + `useReducedMotion` (valor final instantáneo) + `startOnView` (`useInView`).
@@ -322,6 +345,7 @@ node scripts/manage-team-evolve.mjs  # Alta de cuentas Supabase + flag is_team_e
 - **CT funds tickers**: `0P0000NCAC` (Global Tech), `0P00000R12.L` (Japan), `0P00000R0U.L` (European), `0P0001CZXM.L` (Global Focus), `0P00000XBQ.L` (North American) — tickers internos Yahoo Finance para fondos sin cotización directa
 - **Peer taxonomy** (`lib/market/peer-taxonomy.ts`): mapa estático `STATIC_PEERS` curado para todos los activos de las 3 watchlists. `computeInitialPeers(selectedAsset, allAssets, { categories })` lo consulta primero (override exacto); si no hay entrada, cae al scoring algorítmico (`scorePeerSimilarity`) sobre el catálogo `TAXONOMY`. El scoring suma un **boost por categoría Morningstar** (misma `morningstarCategory` +25, misma `globalCategory` +12) cuando ambos lados la conocen; `classifyFromMetadata` usa la categoría Morningstar como señal primaria. El mapa `MS_CATEGORY_TO_CLASSIFICATION` (en `peer-taxonomy.ts`) traduce categoría→strategy/universe/etc. Las `categories` (ticker→{morningstar,global}) se inyectan desde `price_cache`. Tie-breaker estable en sort final: `b.score - a.score || (a.ticker < b.ticker ? -1 : 1)` — mismo `price_cache` → mismo set siempre. Constantes `MIN_PEER_SCORE=60`, `MAX_AUTO_PEERS=8`. **NUNCA** recomputa ni sobreescribe entradas `STATIC_PEERS`.
 - **Filtro inline de watchlist**: input "Filter list…" en toolbar de `WatchlistTable` — filtra por ticker/nombre en tiempo real sin afectar precios ni modal
+- **Orden de columnas (MetricsSelector)**: el popover "Columns" reordena las columnas visibles con flechas ↑↓ (reemplazó al drag, que era frágil). `move()` resuelve la posición **por KEY** contra la lista limpia, nunca por el índice de render → la fila visible siempre mapea al elemento correcto. Al **añadir** una métrica, entra en su lugar **cronológico** (`canonicalRank` por `METRIC_DEFINITIONS`; p.ej. 1W cae justo tras 1D). Botón "Sort by time" reordena todo a cronológico. El array `selected_metrics` se **auto-repara** en cada interacción (descarta keys inválidas/legacy y duplicados que antes desincronizaban filas). En `AssetDetailModal` (tab Peers), añadir/quitar columnas de retorno también las ordena solas cronológicamente (mismo `PEER_PERIOD_OPTIONS`).
 - **Ordenar por métrica**: columnas numéricas tienen `sortingFn` personalizado que extrae el valor numérico respetando toggles USD/Ann. `numSort` envía nulls al fondo. Columnas `helper.display()` necesitan `sortingFn` explícito; CCY y actions tienen `enableSorting: false`
 - **Compartir watchlists**: `WatchlistManager` muestra Share2 (hover). Dialog resuelve email → `user_id` vía `/api/users/find`, inserta en `watchlist_shares`. El destinatario ve la lista con icono `Users` + subtexto `de @username`. Puede dejar de seguir (DELETE donde `shared_with_user_id = currentUserId`). PostgREST devuelve join de `profiles` como array — usar `share.profiles?.[0]?.email`. El dialog también ofrece **"Team Evolve"** (`addTeamShares` en `useWatchlistShares`): comparte de un golpe con todos los `profiles` con `is_team_evolve=true`. La gestión del equipo (alta de cuentas + flag `is_team_evolve`) se hace fuera de la app con `scripts/manage-team-evolve.mjs` (listas `NEW_MEMBERS`/`REMOVED_MEMBERS`).
 - **Top/Bottom performers** (`useTopPerformers.ts`): `useAllWatchlistTickers` carga todos los tickers del usuario vía Supabase (join `watchlist_assets` + `assets_metadata`). Luego `/api/market/history` por período para calcular retornos y ordenar. **Anualización (toggle "Ann.") con años NOMINALES fijos** (`NOMINAL_YEARS = { '1Y':1, '3Y':3, '5Y':5, '10Y':10 }`, idénticos para todos los activos): el CAGR `(1+R)^(1/años)−1` es monótono en R con `años` constante, así el orden del ranking con Ann. = orden sin Ann. para esos períodos. ⚠️ Antes se usaba `entry.years` (duración real del histórico por-activo de `calculateReturn`), lo que daba exponentes distintos entre activos y rompía la monotonía del orden. `MAX` conserva los años reales por-activo (no tiene período nominal). Sub-anuales (1D/1W/1M/6M/YTD) no se anualizan.
