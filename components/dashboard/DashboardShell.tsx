@@ -11,7 +11,7 @@ import { DUR, EASE_OUT } from '@/lib/motion-tokens'
 import { createClient } from '@/lib/supabase/client'
 import { ThemeToggle } from '@/components/dashboard/ThemeToggle'
 import { Button } from '@/components/ui/button'
-import { EvolveMark } from '@/components/brand/EvolveMark'
+import { EvolveGlyph } from '@/components/brand/EvolveGlyph'
 import { CommandPalette } from '@/components/dashboard/CommandPalette'
 import { useWatchlists } from '@/hooks/useWatchlistAssets'
 import { WatchlistManager } from '@/components/dashboard/WatchlistManager'
@@ -58,7 +58,7 @@ export function DashboardShell({ user, children }: DashboardShellProps) {
     <>
       {/* Logo */}
       <div className="flex h-14 items-center gap-2.5 border-b border-border px-4">
-        <EvolveMark size={26} idle className="text-foreground" />
+        <EvolveGlyph size={26} className="text-foreground" />
         <span className="font-editorial text-base font-bold tracking-tight">Evolve</span>
       </div>
 
@@ -152,7 +152,7 @@ export function DashboardShell({ user, children }: DashboardShellProps) {
           <Menu className="h-5 w-5" />
         </button>
         <div className="flex items-center gap-2">
-          <EvolveMark size={22} idle className="text-foreground" />
+          <EvolveGlyph size={22} className="text-foreground" />
           <span className="font-editorial text-sm font-bold tracking-tight">Evolve</span>
         </div>
         <div className="flex items-center gap-1">
