@@ -24,7 +24,7 @@ Dashboard financiero multiusuario SaaS para monitoreo de portafolios globales en
 - **Watchlists** por usuario con categorías y orden personalizable
 - **Precios en tiempo real** con flash verde/rojo al cambio (polling 5s)
 - **Marquee header** con índices y commodities globales (SPY, QQQ, BTC, GLD, etc.)
-- **Columnas configurables**: precio, retornos (1D/1W/1M/6M/YTD/1Y/3Y/5Y/10Y/MAX), market cap, P/E, beta, AUM, expense ratio, dividend yield
+- **Columnas configurables**: precio, retornos (1D/1W/1M/6M/YTD/1Y/3Y/5Y/10Y/MAX), market cap, P/E, beta, AUM, expense ratio, dividend yield. Reordénalas con flechas ↑↓ desde el popover "Columns"; al añadir una métrica entra en su lugar cronológico y "Sort by time" reordena todo. El orden persiste por watchlist
 - **Anualizar retornos** (toggle "Ann.") — CAGR para períodos ≥1Y con años nominales fijos (el orden del ranking no cambia al anualizar)
 - **Convertir a USD** (toggle "USD") — precio, AUM, mkt cap y retornos usando FX en tiempo real
 - **Columna CCY** — moneda nativa de cada activo
@@ -36,8 +36,10 @@ Dashboard financiero multiusuario SaaS para monitoreo de portafolios globales en
 - **Beating Peers** — por cada activo de tus watchlists, en cuántas de 6 métricas (1D/1W/1M/6M/YTD/1Y) le gana a sus peers (gana un periodo si supera al ≥75% de los peers con dato), con detalle de a cuántos y a cuáles. Al expandir un período se ve el retorno (en USD) del activo y de cada peer, por cuántos puntos porcentuales le gana o le pierde a cada uno, y una mini-barra de contexto que ubica cada retorno dentro del rango del grupo. El denominador mostrado es siempre el total de peers asignados (constante entre períodos). Incluye filtro de relevancia (mostrar solo activos que ganan ≥N de 6 períodos) y buscador por ticker/nombre. Retornos en USD. Peers auto-sugeridos deterministas (STATIC_PEERS exactos como override + scoring con categoría Morningstar/sector/geo), editables desde el modal y persistidos por usuario. **Display por tipo**: fondos (mutual funds) muestran nombre en el header y en filas (sin ISIN/ticker críptico); ETFs muestran ticker + nombre real (backfilled automáticamente desde Yahoo Finance)
 - **Comparar (ETF Comparison)** — comparador de activos lado a lado inspirado en ETF.com: agrega hasta varios ETFs/fondos/acciones/índices (el primero fija el grupo; ETFs e índices se comparan entre sí, fondos y acciones por separado) y compáralos en Overview (emisor, expense ratio, AUM, inception, categoría), Performance (gráfico "Crecimiento de $10,000", retornos acumulados 1M/6M/YTD/1Y/3Y/5Y y retornos por año calendario), Holdings (donut de top-10 + barras por sector) y Risk & Dividends (beta, std dev, sharpe, alpha, dividend yield). Estado compartible en la URL (`?tickers=...`), toggle "Resaltar diferencias" que marca el mejor valor por métrica, y fetch optimizado (2 llamadas batched + N series, con cola de concurrencia) para no saturar Yahoo
 - **Market Brief (noticias)** — brief de mercado generado por IA dos veces por semana: resumen semanal (tema dominante, riesgo clave, qué vigilar) + tarjetas de noticias con señal (STRONG/MODERATE/WEAK), score 0–25, análisis y artículo completo legible. Foco geográfico EE.UU./México, sin redundancia temática, y badge 🎯 cuando la noticia toca un activo de tu watchlist
-- **Tema oscuro** por defecto con toggle dark/light — identidad "warm bone + rare teal spark" (warm near-black en dark, papel cálido en light); paleta de charts adaptativa (navy→teal→sky)
-- **Movimiento premium** — shared-element al abrir el modal, pulso de valor cuando un precio live cambia, contadores count-up, transiciones de página y reveals escalonados; todo respeta `prefers-reduced-motion`
+- **Buscador global ⌘K** — command palette (⌘K / Ctrl+K) para navegar entre páginas y buscar tickers desde cualquier pantalla
+- **Login "Transforming Investments"** — fondo vivo de "profundidad de mercado" en Canvas 2D (barras que divergen de una baseline de retornos y se iluminan bajo el cursor) + logo oficial circle-"e" como medallón 3D girando (EvolveLogo3D) + narrativa scroll que cuenta el producto. Top bar minimalista (estilo Lovable) con botones que abren el formulario en un dialog; siempre en tema oscuro
+- **Tema claro/oscuro co-protagonistas** con toggle — identidad **"Evolve Signal"**: grafito frío aireado por capas en dark, "cool paper" institucional en light (ambos AA); acento de marca cian-teal; paleta de charts adaptativa (navy→teal→sky)
+- **Movimiento premium** — shared-element al abrir el modal, pulso de valor cuando un precio live cambia, contadores count-up, transiciones de página, reveals escalonados, indicador "● Live", toasts y skeletons con shimmer; todo respeta `prefers-reduced-motion`
 
 ## Watchlists por defecto
 
@@ -130,7 +132,7 @@ useEtfComparison.ts         → orquesta quotes (useRealtimePrices) + N series 5
 
 ```
 OverviewDashboard.tsx  → dashboard agregado (KPIs, snapshot, leaderboards, brief)
-DashboardShell.tsx     → layout: sidebar, nav, PriceMarquee (data-tour attrs)
+DashboardShell.tsx     → layout: sidebar (EvolveGlyph oficial + disparador ⌘K), nav, PriceMarquee, CommandPalette (data-tour attrs)
 WatchlistTable.tsx     → TanStack Table: sort, filter, flash, modal, toggle auto-peers
 AssetDetailModal.tsx   → Tabs: Summary (AreaChart) · Calendar Years · Peers
 FundamentalsPanel.tsx  → bento grid con NumberTicker animado (import externo)
@@ -146,23 +148,35 @@ etf-compare/           → módulo Comparar: EtfCompare (orquesta tabs + type-lo
 
 ### Sistema de diseño
 
-Identidad **"warm bone + rare teal spark"**: el cromo (bordes, hover, activos, focus, selección, monograma, badges de tipo) es off-white cálido neutro (`--bone`); el color es escaso — **teal spark** reservado a solo 4 puntos de alta señal (CTA, badge 🎯, pulso "● Live", barra del nav activo) + `gain`/`loss`. Dark = warm near-black; light = papel cálido (ambos diseñados aparte). Charts: las series (`--chart-1..8`) son dato e intocables; solo los neutrales que las rodean se calientan.
+Identidad **"Evolve Signal" — inteligencia financiera, viva**: SaaS financiero moderno/institucional/elegante (vibe Stripe/Linear/Mercury), **no una terminal de trading**. Ligero, aireado y por capas; **light y dark son co-protagonistas** (mismo nivel de detalle y AA en ambos). Base de grafito frío por capas (dark) o "cool paper" institucional (light), con escalera de elevación visible (fondo ≠ card ≠ elevado). Acento de marca **cian-teal "signal"** (`--electric`) para lo vivo/interactivo (acciones primarias, Live, focus, glow del logo). Cromo neutro **"mist"** (`--bone`, plata fría) para bordes/hover/hairlines. Aliases Tailwind `signal`/`mist` (se conservan `spark`/`bone` apuntando al mismo token). Charts: las series (`--chart-1..8`) son dato e intocables; solo se recolorearon a frío los neutrales que las rodean. Capa de verdad financiera preservada (`gain`/`loss`, flash, heartbeat realtime).
+
+La identidad se aplica redefiniendo los **valores** de las CSS vars (mismos nombres → cascada a toda la app). Cada vista tiene un acento/kicker propio vía `PageHeader` (`eyebrow` + `accent`). La marca oficial circle-"e" (`EvolveGlyph`, geometría compartida) vive en sidebar/header y se extruye en 3D para el hero del login (`EvolveLogo3D`); `EvolveMark` (nodos) queda para empty states y loader. `.theme-dark` es una clase de scope que fuerza dark (login always-dark; también re-scopea el dialog de auth que portalea fuera del wrapper).
 
 ```
+app/globals.css           → tokens CSS (:root/.theme-dark dark + .light); utilidades .glass/.ambient-grid/.spotlight-accent
 lib/chart-theme.ts        → useChartTheme(): paleta reactiva al tema para Recharts
-lib/asset-style.ts        → typeBadgeClass()/typeLabel(): badges centralizados (stock/etf/fund → bone neutro)
+lib/asset-style.ts        → typeBadgeClass()/typeLabel(): badges centralizados (stock/etf/fund → neutro)
 lib/market/benchmarks.ts  → BENCHMARK_TICKERS/LABELS para marquee y Overview
-lib/motion-tokens.ts      → constantes/variants de motion PURAS (importables desde Server Components)
+lib/motion-tokens.ts      → constantes/variants de motion PURAS (fadeUp/fadeBlur/scaleIn/stagger, SPRING_CURSOR; importables desde Server Components)
 lib/motion-client.ts      → 'use client': usePulseOnChange + <ValuePulse> (pulso al cambiar precio live)
 lib/watchlist-table-style.ts → helpers de estilo de tabla (colClass/pillClass/min-widths anti-jitter)
+components/brand/EvolveGlyph.tsx    → marca oficial circle-"e" plana; FUENTE ÚNICA de la geometría (sidebar/header + base del hero 3D)
+components/brand/EvolveLogo3D.tsx   → logo oficial extruido en CSS 3D (medallón girando) — hero del login
+components/brand/EvolveMark.tsx     → marca viva de nodos (logo + EvolveLoader), para empty states/loader
+components/auth/MarketDepthField.tsx → fondo vivo del login (Canvas 2D nativo: profundidad de mercado, reactivo al cursor)
+components/auth/scenes/             → escenas presentacionales de la narrativa del login (datos scripted, sin red)
+components/dashboard/CommandPalette.tsx → buscador global ⌘K (navegar + buscar tickers)
+components/dashboard/LiveIndicator.tsx  → indicador "● Live" único
 components/ui/card.tsx    → Card, CardHeader, CardTitle, CardContent, CardFooter
 components/ui/tabs.tsx    → Tabs in-house con teclado (sin @radix-ui/react-tabs)
 components/ui/tooltip.tsx → Tooltip sobre Radix Popover (sin nueva dep)
+components/ui/toast.tsx   → ToastProvider + useToast() (aria-live, auto-dismiss, glass)
+components/ui/skeleton.tsx → Skeleton con shimmer
 components/dashboard/PageTransition.tsx → cross-fade de ruta dentro de <main>
 components/onboarding/    → TourProvider + TourSpotlight (tour guiado)
 ```
 
-**Movimiento** (Framer Motion, sin deps nuevas, todo gateado por `prefers-reduced-motion`): shared-element fila→modal (`layoutId`), "el tablero late con el mercado" (`<ValuePulse>` en precios live a 5s de tabla/snapshot/modal), count-up `NumberTicker` (`startOnView`), transición de página y reveals con stagger. El flash CSS verde/rojo (`PriceCell`/`AnimatedPrice`) permanece intacto.
+**Movimiento** (Framer Motion, sin deps nuevas, todo gateado por `prefers-reduced-motion`): shared-element fila→modal (`layoutId`), "el tablero late con el mercado" (`<ValuePulse>` en precios live a 5s de tabla/snapshot/modal), count-up `NumberTicker` (`startOnView`), transición de página, reveals con stagger, hero 3D del logo en turntable (CSS 3D, sin dep) y el fondo de profundidad de mercado del login (Canvas 2D, 1 rAF con pausa fuera de viewport). El flash CSS verde/rojo (`PriceCell`/`AnimatedPrice`) permanece intacto.
 
 ### Pipeline de noticias (Market Brief)
 
