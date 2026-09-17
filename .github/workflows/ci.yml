@@ -1,0 +1,109 @@
+# ============================================================
+# ci — compuerta de calidad de cada PR (PR7)
+# ============================================================
+# Cadena: npm ci → lint → typecheck → tests → build.
+# Es la primera vez que este repo tiene CI. Hasta ahora la única verificación era
+# el build de Vercel/Netlify, que corre DESPUÉS del merge y con credenciales reales.
+#
+# ------------------------------------------------------------
+# SEGURIDAD
+# ------------------------------------------------------------
+# · `permissions: contents: read` en todos los jobs.
+# · Actions pineadas por SHA de commit, con el tag anotado al lado para que se
+#   pueda leer. Un tag es mutable; un SHA no.
+# · `persist-credentials: false` — `actions/checkout` deja por defecto el
+#   GITHUB_TOKEN en `.git/config`. Este job corre `npm ci` (scripts de ciclo de
+#   vida de terceros) y `next build` (plugins de terceros): no hay motivo para
+#   dejarles un token del repositorio al alcance.
+# · CERO secrets. Ninguno de los pasos de este workflow recibe un secret del
+#   repositorio, ni a nivel de workflow ni de job ni de paso. Ver la nota de
+#   `NEXT_PUBLIC_SUPABASE_*` más abajo.
+# · Corre en `pull_request` (no `pull_request_target`): el código del PR se ejecuta
+#   sin acceso a los secrets del repositorio, que es justo lo que se quiere cuando
+#   `npm ci` puede ejecutar código arbitrario de una dependencia nueva.
+# ============================================================
+name: ci
+
+on:
+  pull_request: {}
+  push:
+    branches:
+      - master
+      - main
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    env:
+      # ------------------------------------------------------------
+      # PLACEHOLDERS — NO son secrets y NO deben serlo.
+      # ------------------------------------------------------------
+      # `next build` FALLA sin estas dos variables con
+      #   "@supabase/ssr: Your project's URL and API key are required"
+      # porque `/login` se prerenderiza estáticamente y, al hacerlo, construye un
+      # cliente de Supabase en tiempo de build. Esto ya pasaba antes de la
+      # remediación: no es una regresión, es una propiedad del árbol.
+      #
+      # Por qué usar placeholders literales aquí es SEGURO y además preferible:
+      #   1. Nada en el build hace una petición de red a Supabase. El cliente se
+      #      construye, no se usa: solo necesita dos strings no vacíos.
+      #   2. Estas dos variables llevan prefijo NEXT_PUBLIC_, o sea que Next las
+      #      INLINEA en el bundle de cliente. Inyectar aquí las reales significaría
+      #      escribir credenciales de producción en un artefacto de CI que se
+      #      descarta — coste sin ningún beneficio.
+      #   3. El artefacto de este build no se despliega. El despliegue real lo
+      #      hacen Vercel/Netlify con sus propias variables de entorno.
+      NEXT_PUBLIC_SUPABASE_URL: https://ci-placeholder.supabase.co
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ci-placeholder-anon-key-not-a-real-credential
+    steps:
+      # actions/checkout v4.2.2
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+
+      # Barato y sin dependencias: se corre antes de instalar nada, para que un PR
+      # que filtre la clave de servicio falle en segundos y no tras el build.
+      - name: No service-role key outside the allowlist
+        run: |
+          if git grep -n --untracked 'SUPABASE_SERVICE_ROLE_KEY' -- \
+               ':!lib/supabase/service-role.ts' \
+               ':!scripts/' \
+               ':!.github/workflows/' \
+               ':!*.test.ts' \
+               ':!*.md' \
+               ':!.env.local.example'; then
+            echo "::error::SUPABASE_SERVICE_ROLE_KEY referenced outside lib/supabase/service-role.ts and scripts/**"
+            exit 1
+          fi
+
+      # actions/setup-node v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install (lockfile exacto)
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Tests
+        run: npm test
+
+      - name: Build
+        run: npm run build

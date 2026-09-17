@@ -3,10 +3,34 @@ name: news-pipeline
 # Trigger automático del brief de mercado. Reemplaza al Vercel Cron (que moría a los
 # 60s en el plan Hobby). GitHub Actions no tiene ese límite, así que el pipeline
 # (Tavily + Firecrawl + cadena LLM) completa sin cortarse.
+#
+# ------------------------------------------------------------
+# SEGURIDAD (PR7)
+# ------------------------------------------------------------
+# · `permissions: contents: read` — antes el job heredaba los permisos por defecto
+#   del repositorio, que en muchos repos siguen siendo de ESCRITURA. Este workflow
+#   solo necesita leer el código: no abre PRs, no publica releases, no toca el git.
+# · Actions pineadas por SHA de commit, no por tag. Un tag es una referencia mutable:
+#   quien controle el repositorio de la action puede reapuntar `v4` a otro commit y
+#   ese código correría aquí CON los secrets de abajo, sin que este archivo cambie.
+#   El tag correspondiente queda anotado en el comentario para que siga siendo legible.
+# · `persist-credentials: false` — por defecto `actions/checkout` deja el
+#   GITHUB_TOKEN escrito en `.git/config`. Este job ejecuta `npm ci`, que corre
+#   scripts de ciclo de vida de terceros; sin credenciales persistidas, ese código
+#   no tiene un token del repo a mano.
+# · Los secrets se inyectan SOLO en el paso que los usa (`Run news pipeline`), no a
+#   nivel de job: `checkout`, `setup-node` y `npm ci` corren sin ninguno.
+#   Verificado con grep que los 14 valores de abajo los lee código real
+#   (`lib/ai/llm.ts`, `lib/ai/news-pipeline.ts`, `scripts/run-news-pipeline.ts`);
+#   no hay ninguno huérfano que quitar.
+# ------------------------------------------------------------
 on:
   schedule:
     - cron: '0 13 * * 1,5' # Lun/Vie 13:00 UTC (07:00 MX) — mismo horario que antes
   workflow_dispatch: {} # disparo manual desde la pestaña Actions
+
+permissions:
+  contents: read
 
 # Evita que dos ejecuciones del pipeline corran a la vez.
 concurrency:
@@ -17,10 +41,16 @@ jobs:
   run:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    permissions:
+      contents: read
     steps:
-      - uses: actions/checkout@v4
+      # actions/checkout v4.2.2
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
 
-      - uses: actions/setup-node@v4
+      # actions/setup-node v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: 22
           cache: npm
@@ -30,11 +60,19 @@ jobs:
       - name: Run news pipeline
         run: npx tsx scripts/run-news-pipeline.ts
         env:
+          # Supabase: el runner escribe `market_briefs` / `market_news` con el
+          # service role. Es el único job del repo que lo necesita.
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          # Búsqueda y extracción de artículos.
           TAVILY_API_KEY: ${{ secrets.TAVILY_API_KEY }}
           FIRECRAWL_API_KEY: ${{ secrets.FIRECRAWL_API_KEY }}
           FIRECRAWL_API_KEY_2: ${{ secrets.FIRECRAWL_API_KEY_2 }}
+          # Cadena LLM (lib/ai/llm.ts). Las claves son credenciales; los *_MODEL y
+          # NEWS_LLM_CHAIN son configuración con default en código y estarían mejor
+          # como repo *variables* que como secrets — se dejan como secrets porque
+          # cambiarlos a `vars.` haría que un repo sin esas variables definidas
+          # cayera en silencio a los modelos por defecto.
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GEMINI_ANALYSIS_MODEL: ${{ secrets.GEMINI_ANALYSIS_MODEL }}
           GEMINI_SELECTION_MODEL: ${{ secrets.GEMINI_SELECTION_MODEL }}
