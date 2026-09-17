@@ -1,0 +1,146 @@
+# ============================================================
+# db-migrations — reconstruye la base desde cero en cada PR que toque `supabase/**`
+# ============================================================
+# Qué prueba: que `001_baseline.sql` + los deltas 002..006 aplican limpio sobre
+# una base VACÍA, y que después de aplicarlos la cadena de alta de usuarios sigue
+# sembrando 3 watchlists (invariante I-5) y las políticas RLS siguen aislando a
+# los usuarios entre sí.
+#
+# ------------------------------------------------------------
+# SEGURIDAD
+# ------------------------------------------------------------
+# · `permissions: contents: read` — el token del job solo puede leer el repo.
+# · Todas las actions pineadas por SHA, no por tag: un tag es mutable y puede
+#   reapuntarse a código distinto sin que el workflow cambie.
+# · CERO secrets de producción. El job trabaja contra la base LOCAL que levanta
+#   el CLI en un contenedor del runner. Nunca se conecta al proyecto real.
+# · Por eso mismo corre en `pull_request` (no en `pull_request_target`): no
+#   necesita credenciales, así que no hay motivo para exponerlas a código de un
+#   fork.
+#
+# ------------------------------------------------------------
+# LIMITACIONES CONOCIDAS (deliberadas, no pendientes)
+# ------------------------------------------------------------
+# 1. Este workflow NO valida contra producción. `supabase db pull`,
+#    `db diff --linked` y `db push` exigen `SUPABASE_ACCESS_TOKEN` + el project
+#    ref, es decir credenciales con permiso de ESCRITURA sobre la base real. No
+#    se añaden aquí: ese paso lo hace una persona, a mano, siguiendo
+#    `docs/security/RUNBOOK-SUPABASE.md`. Un CI que puede escribir en la base de
+#    producción es un vector, no una red de seguridad.
+# 2. El job SE SALTA (exit 0, con aviso) mientras `supabase/migrations/001_baseline.sql`
+#    no exista. Ese archivo lo genera el usuario con `supabase db pull` (paso 1
+#    del runbook); sin él no hay nada sobre lo que aplicar los deltas.
+# 3. `006_profiles_email_unique.sql` sí se aplica aquí, porque una base recién
+#    creada no tiene duplicados de email. En producción su precondición es el
+#    paso 0.3 del runbook, que este workflow NO puede comprobar.
+# ============================================================
+name: db-migrations
+
+on:
+  pull_request:
+    paths:
+      - 'supabase/**'
+      - 'scripts/verify-seed.sql'
+      - 'scripts/verify-rls.sql'
+      - '.github/workflows/db-migrations.yml'
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: db-migrations-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  reset-and-verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      # URL fija de la base local que levanta el CLI de Supabase. No es un secreto:
+      # solo existe dentro del runner y muere con el job.
+      LOCAL_DB_URL: postgresql://postgres:postgres@127.0.0.1:54322/postgres
+    steps:
+      # actions/checkout v4.2.2
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+
+      - name: ¿Hay baseline sobre el que aplicar deltas?
+        id: guard
+        run: |
+          if [ ! -f supabase/migrations/001_baseline.sql ]; then
+            echo "::notice::supabase/migrations/001_baseline.sql no existe todavía."
+            echo "::notice::Lo genera el usuario con 'supabase db pull' (paso 1 de docs/security/RUNBOOK-SUPABASE.md)."
+            echo "::notice::Saltando la verificación de migraciones."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      # supabase/setup-cli v1.7.1
+      - uses: supabase/setup-cli@ab058987d8d6c725971f6cf9d0b5c98467e30bd1
+        if: steps.guard.outputs.skip == 'false'
+        with:
+          version: latest
+
+      - name: Inicializar config local si falta
+        if: steps.guard.outputs.skip == 'false'
+        run: |
+          # `supabase start` necesita supabase/config.toml. El repo no lo commitea
+          # (el proyecto se administra desde el dashboard), así que se genera uno
+          # por defecto solo para este job.
+          if [ ! -f supabase/config.toml ]; then
+            # `--force` no existe en todas las versiones del CLI; se intenta y se
+            # cae al `init` normal. Si al final sigue sin config.toml, el job para.
+            supabase init --force || supabase init || true
+          fi
+          test -f supabase/config.toml
+
+      - name: Levantar la base local
+        if: steps.guard.outputs.skip == 'false'
+        run: supabase start
+
+      - name: Reconstruir desde cero (baseline + deltas)
+        if: steps.guard.outputs.skip == 'false'
+        run: supabase db reset
+
+      - name: Lint del schema
+        if: steps.guard.outputs.skip == 'false'
+        # Informativo: `db lint` marca cosas legítimas de este schema (p.ej.
+        # funciones SECURITY DEFINER, que aquí son deliberadas). No bloquea.
+        continue-on-error: true
+        run: supabase db lint
+
+      - name: verify-seed — la cadena de alta siembra 3 watchlists (I-5)
+        if: steps.guard.outputs.skip == 'false'
+        run: |
+          # ⚠️ El script termina SIEMPRE en RAISE EXCEPTION (es cómo hace ROLLBACK
+          # y cómo imprime el resultado), así que psql SIEMPRE sale con código != 0.
+          # El veredicto está en el TEXTO, no en el exit code.
+          set +e
+          out="$(psql "$LOCAL_DB_URL" -f scripts/verify-seed.sql 2>&1)"
+          set -e
+          echo "$out"
+          if echo "$out" | grep -q 'VERIFY-SEED OK'; then
+            echo "::notice::verify-seed OK"
+          else
+            echo "::error::verify-seed FAIL — la cadena de alta de usuarios está rota. Diagnóstico en la cabecera de scripts/verify-seed.sql"
+            exit 1
+          fi
+
+      - name: verify-rls — aislamiento entre usuarios
+        if: steps.guard.outputs.skip == 'false'
+        run: |
+          set +e
+          out="$(psql "$LOCAL_DB_URL" -f scripts/verify-rls.sql 2>&1)"
+          set -e
+          echo "$out"
+          if echo "$out" | grep -q 'VERIFY-RLS OK'; then
+            echo "::notice::verify-rls OK"
+          else
+            echo "::error::verify-rls FAIL — una política RLS no aísla lo que debería. El reporte de arriba lista cada caso."
+            exit 1
+          fi
+
+      - name: Apagar la base local
+        if: always() && steps.guard.outputs.skip == 'false'
+        run: supabase stop --no-backup || true

@@ -1,6 +1,28 @@
 -- ============================================================
 -- Evolve Dashboard — Supabase Schema
--- Run this in the Supabase SQL Editor
+-- ============================================================
+-- ⚠️ ESTE ARCHIVO YA NO ES LA FUENTE DE VERDAD DEL SCHEMA.
+--
+-- A partir de la remediación de seguridad, la fuente de verdad es
+-- **`supabase/migrations/**`**: `001_baseline.sql` (generado por introspección
+-- con `supabase db pull`, refleja producción tal cual es) más los deltas
+-- forward-only 002..006. Se aplican con el CLI siguiendo
+-- `docs/security/RUNBOOK-SUPABASE.md`. **No pegues este archivo entero en el SQL
+-- Editor de una base existente.**
+--
+-- Qué sigue siendo este archivo:
+--   1. **Referencia de los cuerpos correctos de las funciones seed.** Es de donde
+--      se copian cuando se corrompen en la base (modo de fallo real, ya vivido:
+--      cuerpo sin `DECLARE v_watchlist_id` → FK 23503, y `42P13` al intentar
+--      repararlas con CREATE OR REPLACE si el parámetro quedó mal nombrado).
+--   2. Un artefacto **regenerable**: `supabase db dump --schema public -f <archivo>`
+--      produce el equivalente actualizado desde la base real.
+--
+-- Qué NO refleja: el bloque de "MIGRATION + BACKFILL" del final está COMENTADO y
+-- nunca se ejecutó como migración; el drift de columnas que documenta lo cierra
+-- `002_add_missing_columns.sql`. Y los cambios de 003..006 (grants, políticas
+-- acotadas, trigger de normalización, índice único de email) **no** están aquí:
+-- si necesitas el estado real, míralo en `supabase/migrations/**` o haz un dump.
 -- ============================================================
 
 -- 1. PROFILES
