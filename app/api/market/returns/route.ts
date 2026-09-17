@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
 import { calculateMultiReturns, type MultiReturns } from '@/lib/market/history'
+import { createCacheClient } from '@/lib/supabase/service-role'
+import { mapWithConcurrency } from '@/lib/utils/concurrency'
+import { MAX_TICKERS, parseTickerList } from '@/lib/market/validation'
+import { OBS, newCorrelationId, obsInfo, obsError, obsWarn, startTimer } from '@/lib/utils/obs'
 
 // The full Beating-Peers union (several hundred tickers) can need many cold Yahoo fetches on a
 // cache miss; allow headroom over Vercel's default so a partial-cold load completes instead of
@@ -11,38 +14,15 @@ export const maxDuration = 60
 const RETURNS_TTL_MS = 6 * 60 * 60_000
 // Cap concurrent Yahoo fetches to avoid rate limiting on cold loads.
 const FETCH_CONCURRENCY = 8
-// Upper bound on tickers per request — purely an abuse guard. Beating-Peers sends the full
-// union (assets ∪ all peers) which is legitimately several hundred for a real portfolio
-// (~475 observed). The old 400 cap silently TRUNCATED that union, so any peer that landed
-// past position 400 rendered "— sin dato" forever. Set well above realistic unions; truncation
-// is logged (never silent) so a future overflow surfaces instead of dropping data quietly.
-const MAX_TICKERS = 1500
-
-function getAdminClient() {
-  return createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-  )
-}
-
-async function mapWithConcurrency<T, R>(
-  items: T[],
-  limit: number,
-  fn: (item: T) => Promise<R>
-): Promise<R[]> {
-  const results: R[] = new Array(items.length)
-  let cursor = 0
-  async function worker() {
-    while (cursor < items.length) {
-      const i = cursor++
-      results[i] = await fn(items[i])
-    }
-  }
-  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker))
-  return results
-}
+// MAX_TICKERS (1500) and the ticker grammar now live in lib/market/validation.ts — one definition
+// shared with /api/market/quote. The cap is purely an abuse guard: Beating-Peers legitimately sends
+// the full union (assets ∪ all peers), ~475 for a real portfolio, and an older 400 cap silently
+// TRUNCATED it so any peer past position 400 rendered "— sin dato" forever. Truncation is logged.
 
 export async function POST(request: NextRequest) {
+  const cid = newCorrelationId()
+  const elapsed = startTimer()
+
   let body: { tickers?: unknown }
   try {
     body = await request.json()
@@ -50,29 +30,37 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
   }
 
-  const raw = Array.isArray(body.tickers) ? body.tickers : []
-  // Dedup + normalize. Cap is an abuse guard, not a functional limit — log if we ever hit it
-  // so truncation is never silent (a truncated union = peers silently showing "— sin dato").
-  const deduped = [...new Set(raw.filter((t): t is string => typeof t === 'string' && t.length > 0))]
-  if (deduped.length > MAX_TICKERS) {
-    console.warn(`[returns] ticker union ${deduped.length} exceeds MAX_TICKERS ${MAX_TICKERS} — truncating; some peers will be missing`)
+  // ⚠️ `uppercase: false` is LOAD-BEARING, do not "fix" it. The response is keyed by the exact
+  // string the client sent and PostgREST's `.in('ticker', …)` is case-sensitive; upper-casing here
+  // would make the response keys stop matching what the client looks up → blank returns app-wide.
+  const { tickers, truncated, rejected } = parseTickerList(body.tickers, {
+    max: MAX_TICKERS,
+    uppercase: false,
+  })
+  if (truncated) {
+    obsWarn({ event: OBS.BUDGET_EXHAUSTED, cid, endpoint: 'returns', count: MAX_TICKERS, reason: 'ticker_union_truncated' })
   }
-  const tickers = deduped.slice(0, MAX_TICKERS)
+  if (rejected > 0) {
+    obsWarn({ event: OBS.PARSE_ERROR, cid, endpoint: 'returns', count: rejected, reason: 'malformed_tickers' })
+  }
 
   if (tickers.length === 0) {
     return NextResponse.json({})
   }
 
-  const supabaseAdmin = getAdminClient()
+  const { client: supabaseAdmin, canWrite } = createCacheClient('returns')
   const now = Date.now()
   const out: Record<string, MultiReturns> = {}
   const staleOrMissing: string[] = []
 
   // 1. Read cache
-  const { data: cached } = await supabaseAdmin
+  const { data: cached, error: cacheReadErr } = await supabaseAdmin
     .from('returns_cache')
     .select('ticker, returns, years, fetched_at')
     .in('ticker', tickers)
+  if (cacheReadErr) {
+    obsError({ event: OBS.UNHANDLED_ERROR, cid, endpoint: 'returns', reason: `returns_cache read: ${cacheReadErr.message}` })
+  }
 
   const cacheByTicker = new Map<string, { returns: MultiReturns['returns']; years: MultiReturns['years']; fetched_at: string }>()
   for (const row of (cached ?? []) as Array<{ ticker: string; returns: MultiReturns['returns']; years: MultiReturns['years']; fetched_at: string }>) {
@@ -94,10 +82,16 @@ export async function POST(request: NextRequest) {
     }
   }
 
+  // Dedicated counter events only when something missed; the summary line below always has both.
+  if (staleOrMissing.length > 0) {
+    obsInfo({ event: OBS.CACHE_HIT, cid, endpoint: 'returns', count: tickers.length - staleOrMissing.length })
+    obsInfo({ event: OBS.CACHE_MISS, cid, endpoint: 'returns', count: staleOrMissing.length })
+  }
+
   // 2. Fetch stale/missing from Yahoo (bounded concurrency), upsert into cache
   if (staleOrMissing.length > 0) {
     const fetched = await mapWithConcurrency(staleOrMissing, FETCH_CONCURRENCY, async (ticker) => {
-      const data = await calculateMultiReturns(ticker)
+      const data = await calculateMultiReturns(ticker, { cid })
       return { ticker, data }
     })
 
@@ -129,15 +123,33 @@ export async function POST(request: NextRequest) {
         fetched_at: new Date(now).toISOString(),
       }))
 
-    // Best-effort cache write; failure must not break the response.
+    // Best-effort cache write; failure must not break the response — but it MUST be visible.
+    // The old `try/catch` here caught nothing: supabase-js RESOLVES with `{ error }`, it does not
+    // throw, so every RLS rejection and every PGRST error was swallowed in complete silence.
     if (upsertRows.length > 0) {
-      try {
-        await supabaseAdmin.from('returns_cache').upsert(upsertRows, { onConflict: 'ticker' })
-      } catch {
-        /* ignore cache write errors */
+      if (!canWrite) {
+        obsWarn({ event: OBS.CACHE_WRITE_SKIPPED, cid, endpoint: 'returns', count: upsertRows.length, reason: 'no_service_role' })
+      } else {
+        const { error: upsertErr } = await supabaseAdmin
+          .from('returns_cache')
+          .upsert(upsertRows, { onConflict: 'ticker' })
+        if (upsertErr) {
+          obsError({ event: OBS.CACHE_WRITE_ERROR, cid, endpoint: 'returns', count: upsertRows.length, reason: upsertErr.message })
+        }
       }
     }
   }
+
+  obsInfo({
+    event: OBS.MARKET_API_REQUEST,
+    cid,
+    endpoint: 'returns',
+    status: 200,
+    latency_ms: elapsed(),
+    count: tickers.length,
+    cache_hit: tickers.length - staleOrMissing.length,
+    cache_miss: staleOrMissing.length,
+  })
 
   return NextResponse.json(out)
 }

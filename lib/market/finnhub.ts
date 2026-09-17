@@ -2,6 +2,9 @@ import type { QuoteData, SearchResult, AssetType, SectorWeight, Holding } from '
 // yahoo-finance2 handles Yahoo Finance auth (crumb/cookies) automatically
 import YahooFinanceLib from 'yahoo-finance2'
 import { toGlobalCategory } from './morningstar-categories'
+import { mapSettledWithConcurrency } from '@/lib/utils/concurrency'
+import { parseSearchQuery } from './validation'
+import { OBS, errMessage, obsWarn } from '@/lib/utils/obs'
 
 const yf = new YahooFinanceLib({
   suppressNotices: ['yahooSurvey'],
@@ -13,15 +16,33 @@ const YAHOO_BASE = 'https://query1.finance.yahoo.com'
 const UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
 
+/** No Yahoo call may hang a serverless invocation. `AbortSignal.timeout`'s timer is `unref`'d. */
+const REQUEST_TIMEOUT_MS = 8_000
+
+/**
+ * Bound on concurrent quote fetches inside ONE `fetchBatchQuotes` call.
+ *
+ * This is the primitive fix for the batch fan-out: the previous implementation ran
+ * `Promise.allSettled(tickers.map(fetchQuoteV8Chart))`, so a cold 475-ticker Beating-Peers union
+ * opened 475 sockets at once — a self-inflicted DoS that reliably earns a Yahoo 429 for the whole
+ * batch. Bounding it here means EVERY caller of `fetchBatchQuotes` is bounded, present and future.
+ */
+const BATCH_QUOTE_CONCURRENCY = 16
+
 // ─── v8/finance/chart (no auth required) ─────────────────────────────────────
 async function fetchQuoteV8Chart(ticker: string): Promise<QuoteData | null> {
   try {
     const url = `${YAHOO_BASE}/v8/finance/chart/${encodeURIComponent(ticker)}?range=1d&interval=1d&includePrePost=false`
     const res = await fetch(url, {
       headers: { 'User-Agent': UA },
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
       next: { revalidate: 0 },
     })
-    if (!res.ok) return null
+    if (!res.ok) {
+      if (res.status === 429) obsWarn({ event: OBS.YAHOO_429, ticker, provider: 'yahoo', status: res.status })
+      else if (res.status >= 500) obsWarn({ event: OBS.YAHOO_5XX, ticker, provider: 'yahoo', status: res.status })
+      return null
+    }
 
     const data = await res.json()
     const meta = data.chart?.result?.[0]?.meta
@@ -46,7 +67,12 @@ async function fetchQuoteV8Chart(ticker: string): Promise<QuoteData | null> {
       currency: meta.currency ?? null,
       last_updated: new Date().toISOString(),
     }
-  } catch {
+  } catch (err) {
+    const aborted = err instanceof Error && (err.name === 'AbortError' || err.name === 'TimeoutError')
+    obsWarn({
+      event: aborted ? OBS.TIMEOUT : OBS.PARSE_ERROR,
+      ticker, provider: 'yahoo', reason: errMessage(err),
+    })
     return null
   }
 }
@@ -230,15 +256,47 @@ export async function fetchFundamentals(ticker: string): Promise<Fundamentals> {
       global_category:      toGlobalCategory(eqCategory),
     }
   } catch (err) {
-    console.error('[fetchFundamentals] error for', ticker, ':', err instanceof Error ? err.message : err)
+    const aborted = err instanceof Error && (err.name === 'AbortError' || err.name === 'TimeoutError')
+    obsWarn({
+      event: aborted ? OBS.TIMEOUT : OBS.FUNDAMENTALS_FAILURE,
+      ticker, provider: 'yahoo-finance2', reason: errMessage(err),
+    })
     return EMPTY_FUNDAMENTALS
   }
 }
 
-export async function fetchBatchQuotes(tickers: string[]): Promise<Map<string, QuoteData>> {
+/**
+ * Does this bundle carry ANY real signal, or is it the `EMPTY_FUNDAMENTALS` shape returned by the
+ * catch above?
+ *
+ * Callers need this because `fetchFundamentals` never throws: on a Yahoo hiccup it returns an
+ * all-null bundle that looks like a legitimate answer. Upserting that bundle unconditionally wipes
+ * `morningstar_category` / `sector_weightings` / `aum` for 24 h — precisely the columns
+ * `/api/peers/init` depends on. Check this before writing data columns.
+ */
+export function hasFundamentalsSignal(f: Fundamentals): boolean {
+  return Object.values(f).some((value) => {
+    if (value == null) return false
+    if (Array.isArray(value)) return value.length > 0
+    if (typeof value === 'string') return value.trim().length > 0
+    return true
+  })
+}
+
+export type { Fundamentals }
+
+export async function fetchBatchQuotes(
+  tickers: string[],
+  options: { concurrency?: number } = {}
+): Promise<Map<string, QuoteData>> {
   if (tickers.length === 0) return new Map()
 
-  const settled = await Promise.allSettled(tickers.map((t) => fetchQuoteV8Chart(t)))
+  // Bounded at the PRIMITIVE, not at the call site: every caller inherits the cap.
+  const settled = await mapSettledWithConcurrency(
+    tickers,
+    options.concurrency ?? BATCH_QUOTE_CONCURRENCY,
+    (t) => fetchQuoteV8Chart(t)
+  )
   const map = new Map<string, QuoteData>()
   settled.forEach((result, i) => {
     if (result.status === 'fulfilled' && result.value) {
@@ -273,10 +331,16 @@ interface YahooSearchQuote {
 }
 
 export async function searchTickers(query: string): Promise<SearchResult[]> {
-  const url = `${YAHOO_BASE}/v1/finance/search?q=${encodeURIComponent(query)}&quotesCount=10&newsCount=0&listsCount=0`
+  // Length cap applied in the primitive so no route can forward an unbounded string into an
+  // outbound URL. `MAX_SEARCH_QUERY_LENGTH` chars is far more than Yahoo's search uses.
+  const q = parseSearchQuery(query)
+  if (!q) return []
+
+  const url = `${YAHOO_BASE}/v1/finance/search?q=${encodeURIComponent(q)}&quotesCount=10&newsCount=0&listsCount=0`
 
   const res = await fetch(url, {
     headers: { 'User-Agent': UA },
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
   })
 
   if (!res.ok) throw new Error(`Yahoo Finance search error: ${res.status}`)

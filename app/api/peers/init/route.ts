@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { createClient as createAdminClient } from '@supabase/supabase-js'
+import { createServiceRoleClient } from '@/lib/supabase/service-role'
+import { OBS, errMessage, obsError, obsWarn } from '@/lib/utils/obs'
 import {
   computeInitialPeers,
   STATIC_PEERS,
@@ -8,6 +9,7 @@ import {
   type PeerSignalsMap,
 } from '@/lib/market/peer-taxonomy'
 import { fetchFundamentals } from '@/lib/market/finnhub'
+import { mapWithConcurrency } from '@/lib/utils/concurrency'
 import type { AssetMetadata } from '@/types'
 
 /**
@@ -40,23 +42,21 @@ interface PeerRow {
   engine_version: number | null
 }
 
-// Service-role client SOLO para escribir price_cache (RLS: escritura solo service role).
+/**
+ * Service-role client SOLO para escribir price_cache (RLS: escritura solo service role).
+ *
+ * Fail-closed via `createServiceRoleClient()`: it NEVER falls back to the anon key. The throw is
+ * caught here (rather than 500-ing the route) because this write is genuinely best-effort — the
+ * peer set is still computed and returned without it, exactly as before. What changed is that the
+ * degradation is now LOUD instead of a silent `return null`.
+ */
 function getAdminClient() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY
-  if (!url || !key) return null
-  return createAdminClient(url, key)
-}
-
-async function mapWithConcurrency<T>(items: T[], limit: number, fn: (item: T) => Promise<void>): Promise<void> {
-  let i = 0
-  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
-    while (i < items.length) {
-      const idx = i++
-      await fn(items[idx])
-    }
-  })
-  await Promise.all(workers)
+  try {
+    return createServiceRoleClient()
+  } catch (err) {
+    obsWarn({ event: OBS.SERVICE_ROLE_MISSING, endpoint: 'peers/init', reason: errMessage(err) })
+    return null
+  }
 }
 
 // Dedupe preservando orden; tickers en MAYÚSCULAS.
@@ -225,11 +225,13 @@ export async function POST(request: NextRequest) {
           if (admin) {
             await admin.from('price_cache')
               .upsert({ ticker: t, ...f, fundamentals_fetched_at: new Date().toISOString() }, { onConflict: 'ticker' })
-              .then(({ error }) => { if (error) console.error('[peers/init] price_cache upsert', t, error.message) })
+              .then(({ error }) => {
+                if (error) obsError({ event: OBS.CACHE_WRITE_ERROR, endpoint: 'peers/init', ticker: t, reason: error.message })
+              })
           }
         }
       } catch (err) {
-        console.error('[peers/init] fetchFundamentals failed', t, err instanceof Error ? err.message : err)
+        obsWarn({ event: OBS.FUNDAMENTALS_FAILURE, endpoint: 'peers/init', ticker: t, reason: errMessage(err) })
       }
     })
   }
@@ -307,19 +309,40 @@ export async function POST(request: NextRequest) {
   if (peerRowsToUpsert.length > 0) {
     const { error } = await supabase.from('user_asset_peers').upsert(peerRowsToUpsert, { onConflict: 'user_id,asset_ticker' })
     if (error) {
-      console.error('[peers/init] user_asset_peers upsert error:', error.message)
+      obsError({ event: OBS.UNHANDLED_ERROR, endpoint: 'peers/init', reason: `user_asset_peers upsert: ${error.message}` })
       return NextResponse.json(out) // devolvemos computados; no quedó persistido → reintenta luego
     }
   }
 
   // 5b. Asegurar peers en assets_metadata (FK) — un batch.
+  //
+  // A-14: esta escritura toca campos CURADOS (sector/region/industry/benchmark/manager), que
+  // `005_restrict_assets_metadata.sql` prohíbe escribir a un cliente ligado a RLS. Con el cliente
+  // de usuario el WITH CHECK rechazaría la fila, el peer no quedaría en assets_metadata y el paso
+  // 5c reventaría con FK 23503 `watchlist_assets_asset_ticker_fkey`: la materialización de
+  // auto-peers se rompería entera.
+  //
+  // Por eso el batch va con el service role, que salta RLS. Si no hay service role, se degrada al
+  // subconjunto que un cliente SÍ puede escribir ({ticker,name,type}, con los curados en null):
+  // basta para satisfacer la FK de 5c, así que los auto-peers siguen funcionando aunque sin la
+  // metadata curada, y la degradación queda registrada en vez de romper en silencio.
   if (metaToEnsure.size > 0) {
-    const metaRows = [...metaToEnsure.values()].map((m) => ({
-      ticker: m.ticker, name: m.name ?? m.ticker, type: m.type ?? 'stock',
-      sector: m.sector ?? null, region: m.region ?? null, industry: m.industry ?? null,
-      benchmark: m.benchmark ?? null, manager: m.manager ?? null,
-    }))
-    await supabase.from('assets_metadata').upsert(metaRows, { onConflict: 'ticker', ignoreDuplicates: true })
+    const admin = getAdminClient()
+    const metaRows = [...metaToEnsure.values()].map((m) => (
+      admin
+        ? {
+            ticker: m.ticker, name: m.name ?? m.ticker, type: m.type ?? 'stock',
+            sector: m.sector ?? null, region: m.region ?? null, industry: m.industry ?? null,
+            benchmark: m.benchmark ?? null, manager: m.manager ?? null,
+          }
+        : { ticker: m.ticker, name: m.name ?? m.ticker, type: m.type ?? 'stock' }
+    ))
+    const { error: metaErr } = await (admin ?? supabase)
+      .from('assets_metadata')
+      .upsert(metaRows, { onConflict: 'ticker', ignoreDuplicates: true })
+    if (metaErr) {
+      obsError({ event: OBS.CACHE_WRITE_ERROR, endpoint: 'peers/init', reason: `assets_metadata upsert: ${metaErr.message}` })
+    }
   }
 
   // 5c. Insertar auto-peers en la watchlist (reset idempotente por peer_of, luego insert).
