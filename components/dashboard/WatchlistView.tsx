@@ -18,12 +18,21 @@ export function WatchlistView({ watchlist: initialWatchlist, allAssets }: Watchl
 
   const handleAddAsset = useCallback(
     async (ticker: string, name: string, type: AssetType) => {
+      // Normalización de ticker — cinturón y tirantes con el trigger
+      // `assets_metadata_normalize_ticker` de 005_restrict_assets_metadata.sql.
+      // El WITH CHECK de RLS exige el ticker en MAYÚSCULAS sin espacios. Sin
+      // esto, un ticker en minúsculas (a) fallaría el check, (b) el error se
+      // descarta aquí abajo y (c) `addAsset` acabaría en FK 23503 → "añadir
+      // activo" roto en silencio. Además garantiza que el ticker que se inserta
+      // en watchlist_assets sea EL MISMO que el trigger dejó en assets_metadata.
+      const normalizedTicker = ticker.trim().toUpperCase()
+
       // Upsert into assets_metadata first
       await supabase.from('assets_metadata').upsert(
-        { ticker, name, type },
+        { ticker: normalizedTicker, name, type },
         { onConflict: 'ticker', ignoreDuplicates: true }
       )
-      await addAsset(ticker)
+      await addAsset(normalizedTicker)
     },
     [addAsset, supabase]
   )

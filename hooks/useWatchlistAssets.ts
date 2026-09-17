@@ -222,26 +222,28 @@ export function useWatchlistShares(watchlistId: string | null) {
     return { error: error ? error.message : null }
   }
 
+  // El roster de Team Evolve ya NO se lee desde el navegador: `004_narrow_profiles.sql`
+  // acota la lectura de `profiles` a contrapartes de share, y el equipo no lo es.
+  // El write completo (propiedad de la watchlist + insert idempotente) vive en
+  // POST /api/watchlists/[id]/share-team, que devuelve solo `{ count }`.
+  // La firma `{ error, count }` se conserva tal cual para WatchlistManager.
   const addTeamShares = async (): Promise<{ error: string | null; count: number }> => {
-    const { data: { user } } = await supabase.auth.getUser()
-    const { data: teamMembers, error: fetchError } = await supabase
-      .from('profiles')
-      .select('id')
-      .eq('is_team_evolve', true)
-      .neq('id', user?.id ?? '')
-    if (fetchError) return { error: fetchError.message, count: 0 }
-    if (!teamMembers?.length) return { error: null, count: 0 }
-
-    const existingIds = new Set(shares.map((s) => s.shared_with_user_id))
-    const toAdd = teamMembers.filter((m) => !existingIds.has(m.id))
-    if (!toAdd.length) return { error: null, count: 0 }
-
-    const { error } = await supabase
-      .from('watchlist_shares')
-      .insert(toAdd.map((m) => ({ watchlist_id: watchlistId, shared_with_user_id: m.id })))
-    if (error) return { error: error.message, count: 0 }
-    await fetchShares()
-    return { error: null, count: toAdd.length }
+    if (!watchlistId) return { error: 'Watchlist no válida', count: 0 }
+    try {
+      const res = await fetch(
+        `/api/watchlists/${encodeURIComponent(watchlistId)}/share-team`,
+        { method: 'POST' }
+      )
+      const body = await res.json().catch(() => ({} as { error?: string; count?: number }))
+      if (!res.ok) {
+        return { error: body?.error ?? 'Error al compartir con el equipo', count: 0 }
+      }
+      const count = typeof body?.count === 'number' ? body.count : 0
+      if (count > 0) await fetchShares()
+      return { error: null, count }
+    } catch {
+      return { error: 'Error de red al compartir con el equipo', count: 0 }
+    }
   }
 
   return { shares, loading, addShare, removeShare, addTeamShares, refetch: fetchShares }
