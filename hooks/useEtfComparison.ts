@@ -4,6 +4,7 @@ import { useMemo } from 'react'
 import { useQueries } from '@tanstack/react-query'
 import { useRealtimePrices } from '@/hooks/useRealtimePrices'
 import type { HistoricalDataPoint } from '@/types'
+import { marketFetch } from '@/lib/auth/market-fetch'
 
 // Trailing windows shown in the Performance matrix (ETF.com-style, mapped to what we
 // can derive from a single 5Y daily series). 1M/6M/YTD/1Y/3Y/5Y.
@@ -32,7 +33,7 @@ async function withLimit<T>(fn: () => Promise<T>): Promise<T> {
 
 async function fetchSeries(ticker: string): Promise<HistoricalDataPoint[]> {
   return withLimit(async () => {
-    const res = await fetch(`/api/market/history?ticker=${encodeURIComponent(ticker)}&period=5Y`)
+    const res = await marketFetch(`/api/market/history?ticker=${encodeURIComponent(ticker)}&period=5Y`)
     if (!res.ok) throw new Error(`history ${res.status}`)
     const json = (await res.json()) as { data?: HistoricalDataPoint[] }
     return json.data ?? []

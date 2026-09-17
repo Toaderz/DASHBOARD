@@ -46,6 +46,17 @@ function getAdminClient() {
 }
 ```
 
+### Autorización de `/api/market/*` — CRÍTICO
+`lib/supabase/middleware.ts` **exime `/api`** del gate de rutas y `proxy.ts` solo refresca la sesión → **no hay red de seguridad en el middleware**: cada route handler se protege a sí mismo.
+- **`requireUser()` va PRIMERO** en las 4 rutas (`quote`, `returns`, `history`, `search`): antes de parsear, antes de Yahoo y antes de cualquier lectura/escritura de caché. Un 401 debe costar **cero** peticiones upstream y **cero** escrituras en DB. Invariante cubierto por tests (`app/api/market/auth.test.ts`) que espían `fetchBatchQuotes`/`fetchHistoricalData`/`calculateMultiReturns`/`searchTickers` y `createCacheClient`.
+- En `returns` el check va **antes de `request.json()`**.
+- Coste aceptado: `updateSession` ya llama a `auth.getUser()` en cada request (incluidas `/api/*`), así que `requireUser()` añade un segundo round-trip a GoTrue en una ruta que se sondea cada 5s. **No optimizar** confiando en la cookie/JWT sin verificar.
+- Rama `Bearer CRON_SECRET` (callers máquina) **guardada**: con el secret ausente o vacío la rama es inalcanzable — `"Bearer undefined"` nunca autentica (mismo bug ya corregido en el cron). Comparación constante vía digests sha256 + `timingSafeEqual`, igual que `app/api/cron/news-pipeline/route.ts`.
+- 401 **genérico** (`{error:'Unauthorized'}`): nunca dice qué falló.
+- **Cliente**: los 13 call sites usan `marketFetch()` (`lib/auth/market-fetch.ts`) en vez de `fetch()`. Sin esto una sesión revocada **congela el dashboard con precios viejos y sin aviso**, porque el `redirect()` del server solo corre al navegar y la app no navega: sondea cada 5s. Un 401 → `signOut()` → `location.replace('/login')`. **Anti-bucle**: latch de módulo de un solo disparo (una render tiene ~13 requests en vuelo que devuelven 401 a la vez → un solo signOut/redirect) + nunca dispara desde `/login`.
+- ⚠️ `/api/market/export` **fue eliminado** (cero llamadores, sin UI de CSV). No reintroducir sin gate de auth.
+- ⚠️ `scripts/diagnose.mjs` (CAPA 3) llama a `/api/market/quote` por HTTP **sin credenciales** → ahora devuelve **401**. Es el comportamiento correcto, no un bug: las CAPAS 1-2 (Supabase + Yahoo directo) siguen funcionando igual.
+
 ### RLS (Row Level Security)
 | Tabla | Política |
 |---|---|
@@ -126,11 +137,10 @@ app/
     watchlist/[id]/page.tsx        # Server — carga watchlist + assets por ID
   api/
     market/
-      quote/route.ts               # Precios + fundamentals; cache en price_cache (TTL 60s / 24h); backfill de assets_metadata con name+type desde Yahoo (ignoreDuplicates → nunca pisa nombres curados); sirve a peers STATIC que no están en watchlist
-      history/route.ts             # Yahoo Finance v8 históricos + FX period returns + mode=calYear (año calendario)
-      returns/route.ts             # POST batch — retornos multi-periodo (1W/1M/6M/YTD/1Y) + caché returns_cache (TTL 6h); fallback a último-bueno si el fetch fresco vuelve degradado
-      search/route.ts              # Búsqueda de tickers (Finnhub)
-      export/route.ts              # Export de watchlist a CSV
+      quote/route.ts               # 🔒 requireUser() — Precios + fundamentals; cache en price_cache (TTL 60s / 24h); backfill de assets_metadata con name+type desde Yahoo (ignoreDuplicates → nunca pisa nombres curados); sirve a peers STATIC que no están en watchlist
+      history/route.ts             # 🔒 requireUser() — Yahoo v8 históricos + FX period returns + mode=calYear. parsePeriod/parseCalendarYear/parseTickerList: periodo inválido → 400 (antes caía en silencio a '1Y' en modo chart), año inválido → 400 (antes parseInt aceptaba '2024junk')
+      returns/route.ts             # 🔒 requireUser() (antes de leer el body) — POST batch — retornos multi-periodo (1W/1M/6M/YTD/1Y) + caché returns_cache (TTL 6h); fallback a último-bueno si el fetch fresco vuelve degradado
+      search/route.ts              # 🔒 requireUser() — Búsqueda de tickers (Finnhub) + parseSearchQuery (tope de longitud en la ruta)
     peers/
       init/route.ts                # POST — materializa (determinista) el set inicial de peers por usuario/activo
     news/
@@ -217,6 +227,9 @@ lib/
     article-clean.ts               # Limpieza determinista del full_text_md
     llm.ts                         # callLLM provider-agnostic (cadena Gemini→Groq→Cerebras) + extractJson robusto
     source-authority.ts            # Mapa dominio→autoridad (0..1) para pre-ranking determinista
+  auth/
+    require-user.ts                # 🔒 requireUser(request,{endpoint,cid}) → usuario | 401 genérico. Gate de las 4 rutas de /api/market. Rama Bearer CRON_SECRET GUARDADA (secret ausente/vacío ⇒ rama inalcanzable). Falla cerrado si el cliente lanza
+    market-fetch.ts                # 'use client' — marketFetch(): wrapper de fetch para /api/market/*. 401 → signOut() + redirect a /login. Latch de un solo disparo (anti-bucle). Passthrough exacto: misma Response, mismos errores
   supabase/
     client.ts                      # Browser Supabase client (createBrowserClient)
     server.ts                      # Server Supabase client (cookies async)

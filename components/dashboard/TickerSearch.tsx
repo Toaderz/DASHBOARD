@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { typeBadgeClass, typeLabel } from '@/lib/asset-style'
 import type { SearchResult, AssetType } from '@/types'
+import { marketFetch } from '@/lib/auth/market-fetch'
 
 interface TickerSearchProps {
   onAdd: (ticker: string, name: string, type: AssetType) => Promise<void>
@@ -29,7 +30,7 @@ export function TickerSearch({ onAdd, existingTickers, placeholder, disabledFor 
     if (q.length < 1) { setResults([]); setOpen(false); return }
     setIsSearching(true)
     try {
-      const res = await fetch(`/api/market/search?q=${encodeURIComponent(q)}`)
+      const res = await marketFetch(`/api/market/search?q=${encodeURIComponent(q)}`)
       const data = await res.json()
       setResults(data.results ?? [])
       setOpen(true)

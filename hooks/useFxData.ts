@@ -2,6 +2,7 @@
 
 import { useQuery } from '@tanstack/react-query'
 import type { MetricKey, QuoteData } from '@/types'
+import { marketFetch } from '@/lib/auth/market-fetch'
 
 const FX_TICKER: Record<string, string> = {
   GBP: 'GBPUSD=X',
@@ -27,18 +28,14 @@ export interface FxSpotRate {
 }
 
 async function fetchFxReturn(ticker: string, period: string): Promise<number | null> {
-  const res = await fetch(
-    `/api/market/history?ticker=${encodeURIComponent(ticker)}&period=${period}&mode=return`
-  )
+  const res = await marketFetch(`/api/market/history?ticker=${encodeURIComponent(ticker)}&period=${period}&mode=return`)
   if (!res.ok) return null
   const json = await res.json()
   return json.return ?? null
 }
 
 async function fetchFxCalendarYear(ticker: string, year: number): Promise<number | null> {
-  const res = await fetch(
-    `/api/market/history?ticker=${encodeURIComponent(ticker)}&year=${year}&mode=calYear`
-  )
+  const res = await marketFetch(`/api/market/history?ticker=${encodeURIComponent(ticker)}&year=${year}&mode=calYear`)
   if (!res.ok) return null
   const json = await res.json()
   return json.return ?? null
@@ -61,7 +58,7 @@ export function useFxData(
   const { data: spotQuotes, isLoading: spotLoading } = useQuery<Record<string, QuoteData>>({
     queryKey: ['fxSpot', fxTickers.sort().join(',')],
     queryFn: async () => {
-      const res = await fetch(`/api/market/quote?tickers=${fxTickers.join(',')}`)
+      const res = await marketFetch(`/api/market/quote?tickers=${fxTickers.join(',')}`)
       if (!res.ok) return {}
       return res.json()
     },

@@ -3,6 +3,7 @@
 import { useCallback, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import type { MetricKey } from '@/types'
+import { marketFetch } from '@/lib/auth/market-fetch'
 
 type ReturnMap = Partial<Record<MetricKey, number | null>>
 
@@ -16,18 +17,14 @@ async function fetchReturn(
   ticker: string,
   period: string,
 ): Promise<{ value: number | null; years: number | null }> {
-  const res = await fetch(
-    `/api/market/history?ticker=${encodeURIComponent(ticker)}&period=${period}&mode=return`
-  )
+  const res = await marketFetch(`/api/market/history?ticker=${encodeURIComponent(ticker)}&period=${period}&mode=return`)
   if (!res.ok) return { value: null, years: null }
   const json = await res.json()
   return { value: json.return ?? null, years: json.years ?? null }
 }
 
 async function fetchCalendarYear(ticker: string, year: number): Promise<number | null> {
-  const res = await fetch(
-    `/api/market/history?ticker=${encodeURIComponent(ticker)}&year=${year}&mode=calYear`
-  )
+  const res = await marketFetch(`/api/market/history?ticker=${encodeURIComponent(ticker)}&year=${year}&mode=calYear`)
   if (!res.ok) return null
   const json = await res.json()
   return json.return ?? null

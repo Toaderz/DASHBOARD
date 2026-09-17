@@ -38,6 +38,7 @@ import { useFxData } from '@/hooks/useFxData'
 import { usePeerSet } from '@/hooks/usePeerSet'
 import { useCalendarYearReturns } from '@/hooks/useCalendarYearReturns'
 import type { AssetMetadata, HistoricalDataPoint, QuoteData, AssetType, MetricKey } from '@/types'
+import { marketFetch } from '@/lib/auth/market-fetch'
 
 const PEER_PERIOD_OPTIONS = ['1W', '1M', 'YTD', '1Y', '3Y', '5Y', '10Y', 'MAX'] as const
 type PeerPeriod = typeof PEER_PERIOD_OPTIONS[number]
@@ -118,7 +119,7 @@ export function AssetDetailModal({
     if (!open || !asset) return
     const needsLookup = !asset.name || asset.name === asset.ticker
     if (!needsLookup) { setAssetDisplayName(null); return }
-    fetch(`/api/market/search?q=${encodeURIComponent(asset.ticker)}`)
+    marketFetch(`/api/market/search?q=${encodeURIComponent(asset.ticker)}`)
       .then((r) => r.json())
       .then((data: { results: Array<{ ticker: string; name: string }> }) => {
         const match = (data?.results ?? []).find(
@@ -136,7 +137,7 @@ export function AssetDetailModal({
     if (!asset || !open) return
     setLoadingChart(true)
     setHistory([])
-    fetch(`/api/market/history?ticker=${encodeURIComponent(asset.ticker)}&period=${chartPeriod}`)
+    marketFetch(`/api/market/history?ticker=${encodeURIComponent(asset.ticker)}&period=${chartPeriod}`)
       .then((r) => r.json())
       .then((d) => setHistory(d.data ?? []))
       .finally(() => setLoadingChart(false))
@@ -147,7 +148,7 @@ export function AssetDetailModal({
     if (!asset || !open) return
     setChartPeriodReturn(null)
     setChartYears(null)
-    fetch(`/api/market/history?ticker=${encodeURIComponent(asset.ticker)}&period=${chartPeriod}&mode=return`)
+    marketFetch(`/api/market/history?ticker=${encodeURIComponent(asset.ticker)}&period=${chartPeriod}&mode=return`)
       .then((r) => r.json())
       .then((d) => {
         setChartPeriodReturn(d.return ?? null)
@@ -203,7 +204,7 @@ export function AssetDetailModal({
     if (unknown.length === 0) return
     Promise.allSettled(
       unknown.map((p) =>
-        fetch(`/api/market/search?q=${encodeURIComponent(p.ticker)}`)
+        marketFetch(`/api/market/search?q=${encodeURIComponent(p.ticker)}`)
           .then((r) => r.json())
           .then((data: { results: Array<{ ticker: string; name: string }> }) => {
             const list = data?.results ?? []
@@ -225,7 +226,7 @@ export function AssetDetailModal({
   useEffect(() => {
     if (!open || !asset) return
     const tickers = [asset.ticker, ...allPeers.map((p) => p.ticker)].join(',')
-    fetch(`/api/market/quote?tickers=${encodeURIComponent(tickers)}`)
+    marketFetch(`/api/market/quote?tickers=${encodeURIComponent(tickers)}`)
       .then((r) => r.json())
       .then((data) => setPeerQuotes(data))
   }, [open, allPeers, asset])
@@ -239,9 +240,7 @@ export function AssetDetailModal({
     )
     Promise.allSettled(
       pairs.map(({ ticker, period }) =>
-        fetch(
-          `/api/market/history?ticker=${encodeURIComponent(ticker)}&period=${period}&mode=return`
-        )
+        marketFetch(`/api/market/history?ticker=${encodeURIComponent(ticker)}&period=${period}&mode=return`)
           .then((r) => r.json())
           .then((d) => ({ ticker, period, value: (d.return ?? null) as number | null, years: (d.years ?? null) as number | null }))
       )

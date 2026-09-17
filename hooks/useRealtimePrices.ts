@@ -3,10 +3,11 @@
 import { useRef, useState, useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import type { QuoteData, FlashState } from '@/types'
+import { marketFetch } from '@/lib/auth/market-fetch'
 
 async function fetchPrices(tickers: string[]): Promise<Record<string, QuoteData>> {
   if (tickers.length === 0) return {}
-  const res = await fetch(`/api/market/quote?tickers=${tickers.join(',')}`)
+  const res = await marketFetch(`/api/market/quote?tickers=${tickers.join(',')}`)
   if (!res.ok) throw new Error('Failed to fetch prices')
   return res.json()
 }

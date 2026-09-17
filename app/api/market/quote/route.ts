@@ -4,6 +4,7 @@ import { fetchHistoricalData } from '@/lib/market/history'
 import { createCacheClient } from '@/lib/supabase/service-role'
 import { mapWithConcurrency } from '@/lib/utils/concurrency'
 import { MAX_TICKERS, parseTickerList } from '@/lib/market/validation'
+import { requireUser } from '@/lib/auth/require-user'
 import { OBS, errMessage, newCorrelationId, obsError, obsInfo, obsWarn, startTimer } from '@/lib/utils/obs'
 
 const CACHE_TTL_MS = 60_000
@@ -78,6 +79,13 @@ function rowToQuote(row: Record<string, unknown>) {
 export async function GET(request: NextRequest) {
   const cid = newCorrelationId()
   const elapsed = startTimer()
+
+  // AUTH FIRST — before parsing, before Yahoo, before any cache read/write. `/api` is exempt from
+  // the middleware gate, so this is the only thing standing between an anonymous caller and a
+  // Yahoo proxy that also writes to `price_cache`. A 401 must cost zero upstream work.
+  const auth = await requireUser(request, { endpoint: 'quote', cid })
+  if (!auth.ok) return auth.response
+
   const { searchParams } = request.nextUrl
   const tickersParam = searchParams.get('tickers')
 

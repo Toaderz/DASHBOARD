@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import type { AssetType, MetricKey, QuoteData } from '@/types'
 import type { FxSpotRate } from '@/hooks/useFxData'
+import { marketFetch } from '@/lib/auth/market-fetch'
 
 export interface TopEntry {
   ticker: string
@@ -124,9 +125,7 @@ export function useTopPerformers(
     const fetched = await Promise.all(
       tickers.map(async (t) => {
         try {
-          const res = await fetch(
-            `/api/market/history?ticker=${encodeURIComponent(t.ticker)}&period=${period}&mode=return`
-          )
+          const res = await marketFetch(`/api/market/history?ticker=${encodeURIComponent(t.ticker)}&period=${period}&mode=return`)
           if (!res.ok) return null
           const json = await res.json()
           if (json.return == null) return null

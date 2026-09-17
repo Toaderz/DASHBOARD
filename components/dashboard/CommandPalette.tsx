@@ -12,6 +12,7 @@ import { cn } from '@/lib/utils/cn'
 import { EASE_OUT } from '@/lib/motion-tokens'
 import { typeBadgeClass, typeLabel } from '@/lib/asset-style'
 import type { SearchResult } from '@/types'
+import { marketFetch } from '@/lib/auth/market-fetch'
 
 const NAV: { label: string; href: string; icon: LucideIcon; hint?: string }[] = [
   { label: 'Overview', href: '/', icon: LayoutDashboard, hint: 'Resumen agregado' },
@@ -69,7 +70,7 @@ export function CommandPalette({ open, onOpenChange }: Props) {
     if (q.trim().length < 1) { setResults([]); return }
     setSearching(true)
     try {
-      const res = await fetch(`/api/market/search?q=${encodeURIComponent(q)}`)
+      const res = await marketFetch(`/api/market/search?q=${encodeURIComponent(q)}`)
       const data = await res.json()
       setResults((data.results ?? []).slice(0, 6))
     } catch {

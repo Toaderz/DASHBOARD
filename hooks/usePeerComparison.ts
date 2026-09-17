@@ -6,6 +6,7 @@ import { useAllWatchlistTickers } from './useTopPerformers'
 import { useRealtimePrices } from './useRealtimePrices'
 import { useFxData } from './useFxData'
 import type { AssetType, MetricKey } from '@/types'
+import { marketFetch } from '@/lib/auth/market-fetch'
 
 // The 6 periods of the Beating-Peers block.
 export const PEER_CMP_PERIODS: MetricKey[] = ['1D', '1W', '1M', '6M', 'YTD', '1Y']
@@ -103,7 +104,7 @@ export function usePeerComparison() {
     if (unionTickers.length === 0) { setReturnsData({}); setLoadingReturns(false); return }
     let cancelled = false
     setLoadingReturns(true)
-    fetch('/api/market/returns', {
+    marketFetch('/api/market/returns', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ tickers: unionTickers }),

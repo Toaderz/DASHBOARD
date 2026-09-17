@@ -3,6 +3,7 @@ import { calculateMultiReturns, type MultiReturns } from '@/lib/market/history'
 import { createCacheClient } from '@/lib/supabase/service-role'
 import { mapWithConcurrency } from '@/lib/utils/concurrency'
 import { MAX_TICKERS, parseTickerList } from '@/lib/market/validation'
+import { requireUser } from '@/lib/auth/require-user'
 import { OBS, newCorrelationId, obsInfo, obsError, obsWarn, startTimer } from '@/lib/utils/obs'
 
 // The full Beating-Peers union (several hundred tickers) can need many cold Yahoo fetches on a
@@ -22,6 +23,12 @@ const FETCH_CONCURRENCY = 8
 export async function POST(request: NextRequest) {
   const cid = newCorrelationId()
   const elapsed = startTimer()
+
+  // AUTH FIRST — before the body is even read, so an anonymous POST never reaches Yahoo and never
+  // touches `returns_cache`. This endpoint accepts the full Beating-Peers union (~475 tickers);
+  // unauthenticated it was the cheapest way to make us hammer Yahoo on someone else's behalf.
+  const auth = await requireUser(request, { endpoint: 'returns', cid })
+  if (!auth.ok) return auth.response
 
   let body: { tickers?: unknown }
   try {

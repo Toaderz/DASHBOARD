@@ -1,6 +1,7 @@
 'use client'
 
 import { useQuery } from '@tanstack/react-query'
+import { marketFetch } from '@/lib/auth/market-fetch'
 
 export interface CalendarYearReturn {
   year: number
@@ -10,9 +11,7 @@ export interface CalendarYearReturn {
 const SIX_HOURS = 6 * 60 * 60 * 1000
 
 async function fetchCalendarYear(ticker: string, year: number): Promise<number | null> {
-  const res = await fetch(
-    `/api/market/history?ticker=${encodeURIComponent(ticker)}&year=${year}&mode=calYear`
-  )
+  const res = await marketFetch(`/api/market/history?ticker=${encodeURIComponent(ticker)}&year=${year}&mode=calYear`)
   if (!res.ok) return null
   const json = await res.json()
   return json.return ?? null
