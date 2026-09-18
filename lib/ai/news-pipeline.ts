@@ -8,6 +8,14 @@ import { callLLM, extractJson } from './llm'
 import { sourceAuthority } from './source-authority'
 import { buildCleanMarkdown, type ExtractedJson } from './article-clean'
 import {
+  RATINGS,
+  SIGNALS,
+  deriveScoring,
+  type Rating,
+  type ScoreBreakdown,
+  type Signal,
+} from './scoring'
+import {
   enrichAssetProfiles,
   loadUniverseAssets,
   matchAffectedSymbols,
@@ -61,19 +69,15 @@ export interface AnalyzedArticle {
   // deben compartirla → dedup semántica dura en selectFinalArticles. Siempre string
   // tras analyzeAndSynthesize (se normaliza el output del LLM; '' si no la devolvió).
   core_event_tag: string
+  // `score`/`rating`/`signal` los RE-DERIVA el servidor del `score_breakdown` que reportó el
+  // modelo, con el rubric que el propio prompt declara (ver lib/ai/scoring.ts). El modelo ya
+  // no tiene autoridad sobre ellos: antes los emitía sueltos y nadie los cruzaba, de donde
+  // salían filas incoherentes tipo «rating A con score 4».
   score: number
-  rating: 'A' | 'B' | 'C' | 'D'
-  signal: 'STRONG' | 'MODERATE' | 'WEAK'
+  rating: Rating
+  signal: Signal
   actionability: 'MONITOR' | 'REVIEW' | 'CONFIRMS' | 'CONTRADICTS' | null
-  score_breakdown: {
-    macro: number
-    surprise: number
-    market_rel: number
-    forward: number
-    structural: number
-    portfolio: number
-    time_decay: number
-  }
+  score_breakdown: ScoreBreakdown
   // El LLM ya NO emite esto: affected_symbols se calcula de forma determinista (Fase B)
   // tras el análisis. Se mantiene opcional por compatibilidad.
   affected_tickers?: string[]
@@ -98,6 +102,10 @@ export interface AnalysisStats {
   articles_valid: number
   articles_discarded: number
   discard_reasons: Record<string, number>
+  /** Artículos cuyo rating/señal re-derivados NO coinciden con lo que afirmó el modelo. */
+  articles_rescored: number
+  /** Artículos con `score_breakdown` ilegible → score de respaldo del modelo (ver scoring.ts). */
+  breakdown_degraded: number
 }
 
 export interface PipelineResult {
@@ -781,13 +789,7 @@ export async function extractContent(urls: string[], opts: ExtractOptions = {}):
 // scrapeado hostil) no llega a existir. La autoridad no está "validada": es estructuralmente
 // inexistente.
 
-const RATINGS = ['A', 'B', 'C', 'D'] as const
-const SIGNALS = ['STRONG', 'MODERATE', 'WEAK'] as const
 const ACTIONABILITIES = ['MONITOR', 'REVIEW', 'CONFIRMS', 'CONTRADICTS'] as const
-
-const ZERO_BREAKDOWN: AnalyzedArticle['score_breakdown'] = {
-  macro: 0, surprise: 0, market_rel: 0, forward: 0, structural: 0, portfolio: 0, time_decay: 0,
-}
 
 // Texto OBLIGATORIO: se recorta y se trunca; vacío ⇒ el artículo se DESCARTA.
 const requiredText = (max: number) =>
@@ -801,22 +803,18 @@ const optionalText = (max: number) =>
 
 const numberOrZero = z.coerce.number().catch(0).transform((n) => (Number.isFinite(n) ? n : 0))
 
-// `score` alimenta aritmética de ordenación (dedupeByEvent, núcleo A/B, garantía de
-// portafolio). Antes no se validaba en absoluto: un NaN o un 9e9 del modelo reordenaba
-// el brief entero. Se CLAMPEA a 0..25 (el techo del rubric).
+// `score` del modelo. Ya NO es lo que se persiste: el servidor re-deriva el total del
+// `score_breakdown` (ver lib/ai/scoring.ts). Se conserva porque sigue siendo el RESPALDO
+// cuando el breakdown llega ilegible. Se CLAMPEA a 0..25 (el techo del rubric) para que un
+// NaN o un 9e9 del modelo no pueda reordenar el brief ni por esa vía.
 const ScoreSchema = z.coerce.number().catch(0)
   .transform((n) => (Number.isFinite(n) ? Math.min(25, Math.max(0, n)) : 0))
 
-// score_breakdown basura → ceros, CONSERVANDO el artículo (es informativo, no decide nada).
-const ScoreBreakdownSchema = z.object({
-  macro: numberOrZero,
-  surprise: numberOrZero,
-  market_rel: numberOrZero,
-  forward: numberOrZero,
-  structural: numberOrZero,
-  portfolio: numberOrZero,
-  time_decay: numberOrZero,
-}).catch(ZERO_BREAKDOWN)
+// El breakdown se normaliza en `readBreakdown` (scoring.ts), que además distingue
+// «reportó 0» de «no reportó» — una distinción que `z.object(...).catch(ceros)` borraba y que
+// ahora decide si el score se re-deriva o cae al respaldo. Aquí sólo se acepta el valor
+// crudo (`.optional()`: en zod 4 un `z.unknown()` dentro de un objeto NO es opcional, y un
+// `score_breakdown` ausente no debe descartar el artículo).
 
 // actionability inválido → null (la columna lo admite).
 const ActionabilitySchema = z.unknown().transform((v) =>
@@ -824,6 +822,15 @@ const ActionabilitySchema = z.unknown().transform((v) =>
     ? (v as AnalyzedArticle['actionability'])
     : null
 )
+
+// rating/signal del modelo: SOLO telemetría (¿cuántas veces el servidor lo corrige?).
+// Ya NO son obligatorios ni descartan el artículo: el servidor los deriva, así que un
+// `rating: 'A+'` del modelo ya no puede producir un insert fallido contra el CHECK de la DB
+// — y descartar un artículo bien analizado por un campo que ignoramos sería gratuito.
+const optionalEnum = <T extends string>(values: readonly T[]) =>
+  z.unknown().transform((v) =>
+    typeof v === 'string' && (values as readonly string[]).includes(v) ? (v as T) : undefined
+  )
 
 export const LlmArticleSchema = z.object({
   // Único identificador que el modelo puede emitir. Opaco y aleatorio por corrida.
@@ -835,12 +842,10 @@ export const LlmArticleSchema = z.object({
   insight: requiredText(6000),
   core_event_tag: optionalText(200),
   score: ScoreSchema,
-  // rating/signal tienen CHECK en la DB: un valor fuera del enum es un insert fallido,
-  // así que aquí se DESCARTA el artículo en vez de arrastrar el fallo hasta Postgres.
-  rating: z.enum(RATINGS),
-  signal: z.enum(SIGNALS),
+  rating: optionalEnum(RATINGS),
+  signal: optionalEnum(SIGNALS),
   actionability: ActionabilitySchema,
-  score_breakdown: ScoreBreakdownSchema,
+  score_breakdown: z.unknown().optional(),
 })
 
 export type LlmArticle = z.infer<typeof LlmArticleSchema>
@@ -1065,6 +1070,8 @@ ${articleBlocks}`
 
   const analyzed: AnalyzedArticle[] = []
   const usedCandidates = new Set<string>()
+  let rescored = 0
+  let degraded = 0
 
   for (const entry of rawArticles) {
     const parsed = LlmArticleSchema.safeParse(entry)
@@ -1089,6 +1096,16 @@ ${articleBlocks}`
     }
     usedCandidates.add(candidate.candidate_id)
 
+    // RE-DERIVACIÓN del scoring (server-authoritative). El total sale del breakdown que
+    // reportó el modelo con el rubric del prompt; rating y señal, de las bandas. Ver scoring.ts.
+    const scoring = deriveScoring(parsed.data.score_breakdown, {
+      score: parsed.data.score,
+      rating: parsed.data.rating,
+      signal: parsed.data.signal,
+    })
+    if (scoring.overridden) rescored++
+    if (scoring.breakdown_degraded) degraded++
+
     const src = candidate.article
     analyzed.push({
       candidate_id: candidate.candidate_id,
@@ -1102,11 +1119,11 @@ ${articleBlocks}`
       summary: parsed.data.summary,
       insight: parsed.data.insight,
       core_event_tag: parsed.data.core_event_tag,
-      score: parsed.data.score,
-      rating: parsed.data.rating,
-      signal: parsed.data.signal,
+      score: scoring.score,
+      rating: scoring.rating,
+      signal: scoring.signal,
       actionability: parsed.data.actionability,
-      score_breakdown: parsed.data.score_breakdown,
+      score_breakdown: scoring.breakdown,
     })
   }
 
@@ -1115,6 +1132,8 @@ ${articleBlocks}`
     articles_valid: analyzed.length,
     articles_discarded: rawArticles.length - analyzed.length,
     discard_reasons: discardReasons,
+    articles_rescored: rescored,
+    breakdown_degraded: degraded,
   }
 
   // No guardes un brief vacío: si hubo artículos de entrada pero no sobrevivió ninguno,
@@ -1142,9 +1161,15 @@ ${articleBlocks}`
 // Nota: la fecha ya NO viene del LLM (el servidor la resuelve desde RawArticle.published_date).
 export function toValidDate(d: string | null | undefined): string | null {
   if (!d || typeof d !== 'string') return null
-  const m = d.match(/^\d{4}-\d{2}-\d{2}/)
+  const trimmed = d.trim()
+  const m = trimmed.match(/^\d{4}-\d{2}-\d{2}/)
   if (m) return m[0]
-  const parsed = new Date(d)
+  // Fecha PARCIAL ('2026-05', '2026-5', '2026'): `new Date()` la acepta y la completa al
+  // día 1 en silencio, o sea INVENTA un día que la fuente nunca dio — justo lo que el resto
+  // del pipeline prohíbe. El comentario de esta función ya decía que '2026-05' debe dar
+  // null; sin esta guarda devolvía '2026-05-01'.
+  if (/^\d{4}(-\d{1,2})?$/.test(trimmed)) return null
+  const parsed = new Date(trimmed)
   return isNaN(parsed.getTime()) ? null : parsed.toISOString().slice(0, 10)
 }
 
@@ -1326,7 +1351,7 @@ export async function runNewsPipeline(
     }
 
     const result = await analyzeAndSynthesize(topArticles, contentMap, tickers, tickerCatalog, { deadline })
-    console.log(`[news-cron] análisis: recibidos=${result.stats.articles_received} válidos=${result.stats.articles_valid} descartados=${result.stats.articles_discarded} ${JSON.stringify(result.stats.discard_reasons)}`)
+    console.log(`[news-cron] análisis: recibidos=${result.stats.articles_received} válidos=${result.stats.articles_valid} descartados=${result.stats.articles_discarded} ${JSON.stringify(result.stats.discard_reasons)} rescored=${result.stats.articles_rescored} breakdown_degraded=${result.stats.breakdown_degraded}`)
 
     // Fase B — matching DETERMINISTA definitivo por noticia (sobre el cuerpo extraído completo).
     const rawByUrl = new Map(rawArticles.map((a) => [a.url, a]))
@@ -1412,6 +1437,10 @@ export async function runNewsPipeline(
             articles_valid: result.stats.articles_valid,
             articles_discarded: result.stats.articles_discarded,
             discard_reasons: result.stats.discard_reasons,
+            // Magnitud de la re-derivación de scoring: cuántas veces el servidor corrigió al
+            // modelo y cuántas cayó al respaldo por un breakdown ilegible (ver scoring.ts).
+            articles_rescored: result.stats.articles_rescored,
+            breakdown_degraded: result.stats.breakdown_degraded,
             articles_selected: finalArticles.length,
             articles_inserted: inserted.length,
             articles_insert_failed: insertReport.failed,
