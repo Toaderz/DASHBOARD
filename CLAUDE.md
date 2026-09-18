@@ -60,7 +60,7 @@ function getAdminClient() {
 ### RLS (Row Level Security)
 | Tabla | Política |
 |---|---|
-| `profiles` | Solo el propio usuario (select/insert/update) + `authenticated_read_profiles` (cualquier autenticado puede SELECT para share dialog) |
+| `profiles` | Solo el propio usuario (select/insert/update) + `share_counterpart_read_profiles` (SELECT solo de las **contrapartes de share**, vía `get_share_counterpart_ids()`; migración 004 sustituyó al `authenticated_read_profiles` que dejaba leer a TODO el mundo). ⚠️ **UPDATE acotado por columna** (007): `authenticated` solo escribe `full_name`/`avatar_url`/`onboarding_seen` de su propia fila — **nunca** `email` ni `is_team_evolve` |
 | `watchlists` | Solo el propio usuario (`user_id = auth.uid()`) + `shared_read_watchlists` (destinatarios de shares pueden SELECT) |
 | `watchlist_assets` | Via join con watchlists del usuario + `shared_read_assets` (destinatarios pueden SELECT) |
 | `watchlist_shares` | `owner_manage_shares` (dueño gestiona) + `recipient_view_shares` (destinatario puede SELECT) |
@@ -68,6 +68,19 @@ function getAdminClient() {
 | `price_cache` | SELECT público, escritura solo vía service role |
 | `user_asset_peers` | Solo el propio usuario (`user_id = auth.uid()`, `for all`) — set de peers curado |
 | `returns_cache` | SELECT público, escritura solo vía service role |
+
+### `profiles` — columnas que el cliente NO puede escribir (007) — CRÍTICO
+`own profile update` es `for update using (auth.uid() = id)` **sin `with check`**, así que Postgres reutiliza el `using`: la fila resultante solo tiene que seguir siendo la del propio usuario, y **qué columnas cambian no se restringe**. Con el `update` a nivel de TABLA que Supabase concede a `authenticated`, eso era una **escalada de privilegios real** (la encontró el pase de `security-review` sobre esta remediación):
+```js
+// desde la consola del navegador, sesión normal, fila propia → RLS lo permitía
+await supabase.from('profiles').update({ is_team_evolve: true }).eq('id', myUserId)
+```
+El atacante entraba en el grupo de confianza interno y, desde entonces, **cada** vez que un empleado real usaba "Team Evolve" el endpoint le insertaba un share y podía leer esa watchlist vía `shared_read_watchlists`/`shared_read_assets`. Invisible para el dueño, cuyo diálogo solo informa de un conteo. El mismo agujero hacía `email` escribible → ocupar la dirección de un compañero **sin cuenta** desvía a su atacante los shares por email, y el alta real del compañero luego **aborta** contra el índice único de 006.
+- `007_lock_profile_columns.sql` lo cierra con **grants de columna**, no con la política: `revoke update on profiles from authenticated, anon, public` y después `grant update (full_name, avatar_url, onboarding_seen) to authenticated`. ⚠️ El orden es obligatorio: en PostgreSQL los ACL de tabla y de columna se guardan aparte, así que un `revoke update (col)` contra un grant de TABLA **no hace nada**.
+- Se eligió el grant y no un `with check` porque anclar las columnas en la política exige una subconsulta a `profiles` dentro de la política de `profiles` (recursión de RLS que habría que romper con otro SECURITY DEFINER), y porque un privilegio ausente no se puede eludir con una política mal escrita más adelante.
+- **Al tocar `profiles`**: si añades una columna que el usuario deba editar, hay que concederla explícitamente en una migración nueva. Si no, el UPDATE falla en silencio (0 filas). Casos 18–20 de `scripts/verify-rls.sql` cubren los dos negativos y el positivo (`onboarding_seen`, que es el único UPDATE de navegador que existe hoy — `TourProvider.tsx:117`).
+- **`POST /api/watchlists/[id]/share-team` exige que el LLAMANTE sea miembro** (`is_team_evolve`), no solo dueño de la watchlist. Sin ese chequeo la ruta era **auto-otorgable**: un usuario de fuera pulsaba el botón sobre su propia watchlist, el insert le convertía en contraparte de share de todos los miembros y `share_counterpart_read_profiles` le abría el roster — exactamente la enumeración que 004 cierra. Responde el mismo **404** que cuando la watchlist no es tuya (un 403 confirmaría que el equipo existe y que no estás en él).
+- ⚠️ **Residuo aceptado y conocido**: la rama 2 de `get_share_counterpart_ids()` (destinatarios de MIS shares) se deriva de `watchlist_shares`, y el `with check` de `owner_manage_shares` solo acota `watchlist_id` — `shared_with_user_id` lo elige quien inserta. O sea: quien **ya conoce** el email de alguien (para resolver su id con `/api/users/find`) puede insertarse un share y con eso leer su `full_name`/`avatar_url`/`is_team_evolve`. Es inherente a que compartir sea **unilateral** en este producto (no hay paso de aceptación) y la rama 2 es justo lo que necesita el diálogo para listar a los destinatarios (`useWatchlistAssets.ts:227`). Cerrarlo de verdad son dos cambios de producto: un `accepted_at` en `watchlist_shares`, o mover esa lectura a una ruta de servidor que devuelva solo el email (el patrón de `share-team`). **No** se hizo aquí: enumerar el roster ya está cerrado y el residuo exige conocer el email de antemano.
 
 ### Columnas de schema añadidas (migraciones)
 ```sql

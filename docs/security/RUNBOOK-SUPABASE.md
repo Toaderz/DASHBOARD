@@ -144,6 +144,7 @@ Orden y condición de cada delta:
 | `004_narrow_profiles.sql` | **Después** de desplegar el endpoint `share-team` de PR4 | Si lo aplicas antes, "compartir con Team Evolve" se rompe |
 | `005_restrict_assets_metadata.sql` | **Después** de desplegar la normalización de ticker y el cambio de `peers/init` | Si lo aplicas antes, "añadir activo" falla en silencio con FK 23503 |
 | `006_profiles_email_unique.sql` | Solo si el paso 0.3 devolvió **cero filas** | Va en su propio despliegue: toca `handle_new_user()`, que es crítico para el signup |
+| `007_lock_profile_columns.sql` | Tras 004 (y tras desplegar el chequeo de pertenencia de `share-team`) | Cierra una **escalada de privilegios**: sin ella `authenticated` escribe `profiles.is_team_evolve` y `profiles.email`. Verifica después que el tour de onboarding sigue guardando (`onboarding_seen`) — casos 18–20 de `verify-rls.sql` |
 
 Tras cada delta en remoto:
 

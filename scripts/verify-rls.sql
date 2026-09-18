@@ -10,7 +10,7 @@
 --   ⚠️ Debe ejecutarse como un rol que pueda `SET ROLE authenticated` e insertar
 --   en `auth.users` (en Supabase, `postgres`). NO corras esto desde PostgREST.
 --
--- CUÁNDO: después de aplicar 003, 004 y 005. Algunos casos FALLAN a propósito
+-- CUÁNDO: después de aplicar 003, 004, 005 y 007. Algunos casos FALLAN a propósito
 -- si esos deltas aún no están aplicados — el reporte lo dice caso por caso.
 --
 -- SALIDA: igual que verify-seed.sql, termina SIEMPRE en `RAISE EXCEPTION` para
@@ -233,6 +233,61 @@ begin
   if v_n = 0 then v_report := v_report || E'\n[ok]  17. B solo ve la watchlist compartida, no el resto de A';
   else v_fails := v_fails + 1;
        v_report := v_report || format(E'\n[FAIL] 17. B ve %s watchlists NO compartidas de A', v_n); end if;
+
+  -- ==========================================================
+  -- Columnas blindadas de `profiles`  [requiere 007]
+  -- ==========================================================
+  -- Hallazgo del pase de security-review: `own profile update` no lleva
+  -- `with check`, así que Postgres reutiliza el `using` y la fila solo tiene que
+  -- seguir siendo la del propio usuario — las COLUMNAS no se restringían. Con el
+  -- `update` de TABLA que Supabase concede a `authenticated`, un usuario se
+  -- auto-promovía a Team Evolve con una sola sentencia y a partir de ahí recibía
+  -- cada share del equipo. 007 retira el update de tabla y concede solo columnas.
+  perform set_config('request.jwt.claims', json_build_object('sub', v_a::text, 'role', 'authenticated')::text, true);
+  perform set_config('role', 'authenticated', true);
+
+  -- ---- Caso 18: A no se auto-promociona a Team Evolve ----------------------
+  v_total := v_total + 1; v_denied := false;
+  begin
+    update profiles set is_team_evolve = true where id = v_a;
+  exception when others then v_denied := true; end;
+  if v_denied then v_report := v_report || E'\n[ok]  18. A no escribe su propio is_team_evolve (¡escalada!) [007]';
+  else
+    select count(*) into v_n from profiles where id = v_a and is_team_evolve;
+    if v_n = 0 then v_report := v_report || E'\n[ok]  18. A no escribe su propio is_team_evolve (0 filas afectadas) [007]';
+    else v_fails := v_fails + 1;
+         v_report := v_report || E'\n[FAIL] 18. A se auto-promocionó a Team Evolve → falta aplicar 007_lock_profile_columns.sql'; end if;
+  end if;
+
+  -- ---- Caso 19: A no se apropia del email de otra persona ------------------
+  -- Con el email escribible, A puede ocupar la dirección de un compañero SIN
+  -- cuenta: /api/users/find la resolvería al id de A, así que los shares por
+  -- email a ese compañero se entregarían a A. Y el alta real del compañero
+  -- abortaría luego contra el índice único de 006.
+  v_total := v_total + 1; v_denied := false;
+  begin
+    update profiles set email = 'squatted-by-a@verify.invalid' where id = v_a;
+  exception when others then v_denied := true; end;
+  if v_denied then v_report := v_report || E'\n[ok]  19. A no reescribe su propio email [007]';
+  else
+    select count(*) into v_n from profiles where id = v_a and email = 'squatted-by-a@verify.invalid';
+    if v_n = 0 then v_report := v_report || E'\n[ok]  19. A no reescribe su propio email (0 filas afectadas) [007]';
+    else v_fails := v_fails + 1;
+         v_report := v_report || E'\n[FAIL] 19. A reescribió su email → falta aplicar 007_lock_profile_columns.sql'; end if;
+  end if;
+
+  -- ---- Caso 20: control POSITIVO — A sí marca su onboarding ----------------
+  -- Si este falla, 007 se pasó de frenada y rompió
+  -- components/onboarding/TourProvider.tsx:117 → el tour se repetiría siempre.
+  v_total := v_total + 1; v_denied := false;
+  begin
+    update profiles set onboarding_seen = true where id = v_a;
+  exception when others then v_denied := true; end;
+  select count(*) into v_n from profiles where id = v_a and onboarding_seen;
+  if not v_denied and v_n = 1
+  then v_report := v_report || E'\n[ok]  20. A sí escribe su propio onboarding_seen (TourProvider intacto)';
+  else v_fails := v_fails + 1;
+       v_report := v_report || E'\n[FAIL] 20. A NO puede marcar onboarding_seen → 007 revocó de más: el tour se repetirá en cada carga'; end if;
 
   execute 'reset role';
 

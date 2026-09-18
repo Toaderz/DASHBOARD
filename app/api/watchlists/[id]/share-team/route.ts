@@ -15,9 +15,14 @@ import { createServiceRoleClient } from '@/lib/supabase/service-role'
  *
  * Tres propiedades que el cliente no podía dar:
  *
- *  1. **Chequeo explícito de propiedad.** Se usa el service role, que salta RLS.
- *     Sin comprobar `watchlists.user_id === user.id` a mano, cualquier usuario
- *     autenticado podría compartir la watchlist de otro con todo el equipo.
+ *  1. **Chequeo explícito de propiedad Y de pertenencia al equipo.** Se usa el
+ *     service role, que salta RLS. Sin comprobar `watchlists.user_id === user.id`
+ *     a mano, cualquier usuario autenticado podría compartir la watchlist de otro
+ *     con todo el equipo. Y sin comprobar `is_team_evolve` del LLAMANTE, esta ruta
+ *     era auto-otorgable: un usuario de fuera pulsaba el botón sobre su propia
+ *     watchlist, el insert le convertía en contraparte de share de todos los
+ *     miembros y `share_counterpart_read_profiles` (004) le abría el roster —
+ *     justo la enumeración que 004 cierra. Hallazgo del pase de security-review.
  *  2. **404 en vez de 403** cuando la watchlist no existe o no es tuya. Un 403
  *     confirmaría que ese id existe y es de alguien; el 404 no distingue los
  *     dos casos, así que no filtra existencia.
@@ -64,7 +69,30 @@ export async function POST(
     return NextResponse.json({ error: 'Watchlist no encontrada' }, { status: 404 })
   }
 
-  // 2. Roster del equipo. Se resuelve y se consume aquí dentro; nunca sale.
+  // 2. Pertenencia del LLAMANTE al equipo. Compartir con Team Evolve es una
+  //    operación DE miembro del equipo: no basta con ser dueño de una watchlist.
+  //    Sin esto la ruta se auto-otorga acceso — el insert convierte al llamante en
+  //    contraparte de share de todos los miembros y, vía la política
+  //    `share_counterpart_read_profiles` de 004, le deja leer sus perfiles
+  //    (emails incluidos). Se responde el MISMO 404 que arriba: un 403 confirmaría
+  //    que el equipo existe y que el llamante no está en él.
+  const { data: me, error: meError } = await admin
+    .from('profiles')
+    .select('is_team_evolve')
+    .eq('id', user.id)
+    .maybeSingle()
+
+  if (meError) {
+    console.error('[share-team] caller profile lookup error:', meError)
+    return NextResponse.json({ error: 'Error al compartir' }, { status: 500 })
+  }
+
+  // Falla CERRADO: sin perfil o sin el flag no se toca el roster.
+  if (!me?.is_team_evolve) {
+    return NextResponse.json({ error: 'Watchlist no encontrada' }, { status: 404 })
+  }
+
+  // 3. Roster del equipo. Se resuelve y se consume aquí dentro; nunca sale.
   const { data: teamMembers, error: teamError } = await admin
     .from('profiles')
     .select('id')
@@ -80,7 +108,7 @@ export async function POST(
     return NextResponse.json({ count: 0 })
   }
 
-  // 3. Insert idempotente. `ignoreDuplicates` → INSERT ... ON CONFLICT DO NOTHING,
+  // 4. Insert idempotente. `ignoreDuplicates` → INSERT ... ON CONFLICT DO NOTHING,
   //    y el `.select()` devuelve SOLO las filas realmente insertadas, que es
   //    justo el conteo que la UI necesita ("Compartida con N miembros").
   const { data: inserted, error: insertError } = await admin
