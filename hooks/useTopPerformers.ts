@@ -4,7 +4,7 @@ import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import type { AssetType, MetricKey, QuoteData } from '@/types'
 import type { FxSpotRate } from '@/hooks/useFxData'
-import { marketFetch } from '@/lib/auth/market-fetch'
+import { perfKey, planReturnRequests, runReturnPlan } from '@/hooks/usePerformanceMetrics'
 
 export interface TopEntry {
   ticker: string
@@ -122,23 +122,23 @@ export function useTopPerformers(
     inFlight.current.add(period)
     setLoadingPeriods(prev => new Set([...prev, period]))
 
-    const fetched = await Promise.all(
-      tickers.map(async (t) => {
-        try {
-          const res = await marketFetch(`/api/market/history?ticker=${encodeURIComponent(t.ticker)}&period=${period}&mode=return`)
-          if (!res.ok) return null
-          const json = await res.json()
-          if (json.return == null) return null
-          return {
-            ...t,
-            localReturn: json.return as number,
-            years: (json.years as number | null) ?? null,
-          }
-        } catch { return null }
-      })
+    // ONE bulk POST (chunked) instead of one GET per ticker. The values are still produced by
+    // `calculateReturn` server-side — the SAME primitive `/api/market/history?mode=return` used —
+    // so the ranking is computed on byte-identical numbers. Reading the DERIVED bundle instead
+    // (the `1W`/`6M`/`YTD` keys Beating Peers uses) would have moved every figure: those are
+    // sliced out of a single 1Y series and differ by ~0.08–0.12 pp. Hence the `perf:` namespace.
+    const bundles = await runReturnPlan(
+      planReturnRequests(tickers.map((t) => t.ticker), [{ kind: 'period', period }])
     )
 
-    const valid = fetched.filter(Boolean) as RawEntry[]
+    const key = perfKey(period)
+    const valid: RawEntry[] = []
+    for (const t of tickers) {
+      // A null return is dropped from the ranking, exactly as the per-ticker path did.
+      const value = bundles[t.ticker]?.returns?.[key]
+      if (value == null) continue
+      valid.push({ ...t, localReturn: value, years: bundles[t.ticker]?.years?.[key] ?? null })
+    }
     historyCache.current[period] = valid
     inFlight.current.delete(period)
     setRawResults(prev => ({ ...prev, [period]: valid }))

@@ -34,6 +34,41 @@ const YAHOO_INTERVAL_MAP: Record<PeriodKey, string> = {
 }
 
 /**
+ * ── Explicit result state (REL-08) ──────────────────────────────────────────
+ *
+ * Every failure path in this module used to return `[]`, so "Yahoo has no bars for this symbol"
+ * and "Yahoo 503'd / timed out" were the same value. Callers therefore could not tell a genuine
+ * empty result (safe to cache as a known null, so we stop asking) from a provider failure (must
+ * NOT be cached, must fall back to last-good). That single ambiguity is what made a transient
+ * hiccup turn into a permanent "— sin dato".
+ *
+ * The state is INTERNAL: no route exposes it to the UI. It exists so the caching layer can make
+ * that decision, and so the logs say which of the two happened.
+ *
+ *   ok             → at least one usable bar came back
+ *   no_data        → a structurally valid response with nothing usable in it (or an unknown period)
+ *   provider_error → HTTP error, timeout, abort, unparseable body, or the deadline hit first
+ *   stale          → never produced here; the value was substituted from cache by a caller
+ */
+export type SeriesStatus = 'ok' | 'no_data' | 'provider_error' | 'stale'
+
+export type SeriesProvider = 'yahoo' | 'yahoo-finance2' | 'cache' | 'none'
+
+export interface SeriesResult {
+  data: HistoricalDataPoint[]
+  status: SeriesStatus
+  provider: SeriesProvider
+  /** Attempts actually spent — lets callers run a shared network budget. */
+  attempts: number
+}
+
+/**
+ * Structured-log event for the explicit state. Not in `OBS` because `lib/utils/obs.ts` belongs to
+ * another change set; `ObsFields.event` accepts a plain string for exactly this case.
+ */
+const OBS_SERIES_STATUS = 'series_status'
+
+/**
  * Availability control: no Yahoo request may hang a serverless invocation forever.
  * Before this there was NO timeout at all — a stalled socket burned the whole function budget
  * (and on Netlify the ~10 s synchronous ceiling isn't extended by `maxDuration`).
@@ -125,30 +160,35 @@ function parseChart(data: YahooChartResult): HistoricalDataPoint[] {
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
-interface FetchHistoryResult {
-  points: HistoricalDataPoint[]
-  /** Attempts actually spent — lets callers run a shared network budget. */
-  attempts: number
-}
-
 /**
- * Internal variant that reports how much of the retry budget it burned.
- * Retry policy is UNCHANGED (429/5xx/empty body, 3 attempts, 250 ms × attempt backoff); the only
- * additions are the per-request timeout, an optional deadline and an optional attempt cap.
+ * Fetches one Yahoo range and reports WHAT happened, not just what came back.
+ *
+ * Retry policy is UNCHANGED (429/5xx/empty body, 3 attempts, 250 ms × attempt backoff) and the
+ * parsed values are untouched; the only additions over the original are the per-request timeout,
+ * an optional deadline, an optional attempt cap and the explicit `status`.
  */
-async function fetchHistoryWithMeta(
+export async function fetchHistorySeries(
   ticker: string,
   period: PeriodKey,
   options: FetchHistoryOptions = {}
-): Promise<FetchHistoryResult> {
+): Promise<SeriesResult> {
   const range = YAHOO_RANGE_MAP[period]
   const interval = YAHOO_INTERVAL_MAP[period]
-  if (!range || !interval) return { points: [], attempts: 0 }
+  // An unknown period is not a provider failure: we never asked anyone.
+  if (!range || !interval) return { data: [], status: 'no_data', provider: 'none', attempts: 0 }
 
   const maxAttempts = Math.max(1, Math.min(options.maxAttempts ?? MAX_ATTEMPTS, MAX_ATTEMPTS))
   const { deadlineMs, cid } = options
 
   const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?range=${range}&interval=${interval}&includePrePost=false`
+
+  /** One place to attach the summary log, so no early return can skip it. */
+  const done = (status: SeriesStatus, data: HistoricalDataPoint[], attempts: number): SeriesResult => {
+    if (status !== 'ok') {
+      obsWarn({ event: OBS_SERIES_STATUS, cid, ticker, period, provider: 'yahoo', status, attempts })
+    }
+    return { data, status, provider: 'yahoo', attempts }
+  }
 
   // Resilience: Yahoo intermittently returns 429/5xx or an empty body under concurrent load
   // (the Beating-Peers batch fires dozens of tickers at once). A single failed attempt used to
@@ -177,7 +217,7 @@ async function fetchHistoryWithMeta(
           await sleep(250 * attempt)
           continue
         }
-        return { points: [], attempts }
+        return done('provider_error', [], attempts)
       }
 
       const data = (await res.json()) as YahooChartResult
@@ -188,8 +228,10 @@ async function fetchHistoryWithMeta(
           await sleep(250 * attempt)
           continue
         }
+        // Structurally valid response, nothing usable in it: a genuine empty, not a failure.
+        return done('no_data', [], attempts)
       }
-      return { points, attempts }
+      return done('ok', points, attempts)
     } catch (err) {
       const aborted = err instanceof Error && (err.name === 'AbortError' || err.name === 'TimeoutError')
       obsWarn({
@@ -200,25 +242,35 @@ async function fetchHistoryWithMeta(
         await sleep(250 * attempt)
         continue
       }
-      return { points: [], attempts }
+      return done('provider_error', [], attempts)
     }
   }
-  return { points: [], attempts }
+  // Only reachable via the deadline break: we never got an answer at all.
+  return done('provider_error', [], attempts)
 }
 
+/**
+ * Back-compatible view of `fetchHistorySeries`: just the bars.
+ *
+ * Kept with the EXACT original signature so the chart route, the inception-date backfill in
+ * `/api/market/quote` and the golden tests are untouched by the introduction of the explicit
+ * state. Callers that need to distinguish "no data" from "provider failed" call
+ * `fetchHistorySeries` directly.
+ */
 export async function fetchHistoricalData(
   ticker: string,
   period: PeriodKey,
   options: FetchHistoryOptions = {}
 ): Promise<HistoricalDataPoint[]> {
-  const { points } = await fetchHistoryWithMeta(ticker, period, options)
-  return points
+  const { data } = await fetchHistorySeries(ticker, period, options)
+  return data
 }
 
 async function fetchCalendarYearReturnFromPrice(
   ticker: string,
-  year: number
-): Promise<{ value: number | null }> {
+  year: number,
+  options: FetchHistoryOptions = {}
+): Promise<CalendarYearReturn> {
   const period1 = Math.floor(new Date(`${year}-01-01T00:00:00Z`).getTime() / 1000)
   const period2 = Math.floor(new Date(`${year + 1}-01-01T00:00:00Z`).getTime() / 1000) - 1
 
@@ -227,29 +279,35 @@ async function fetchCalendarYearReturnFromPrice(
   try {
     const res = await fetch(url, {
       headers: { 'User-Agent': 'Mozilla/5.0' },
-      signal: requestSignal(),
+      signal: requestSignal(options.signal),
       next: { revalidate: 3600 },
     })
-    if (!res.ok) return { value: null }
+    // An HTTP error is the provider failing, NOT the year being empty. The distinction decides
+    // whether the caller may cache this null.
+    if (!res.ok) return { value: null, status: 'provider_error', provider: 'yahoo' }
 
     const data = (await res.json()) as YahooChartResult
     const result = data?.chart?.result?.[0]
-    if (!result) return { value: null }
+    if (!result) return { value: null, status: 'no_data', provider: 'yahoo' }
 
     // Optional-chained throughout: a degraded response with no `indicators.quote` used to throw.
     const adjClose = result.indicators?.adjclose?.[0]?.adjclose
     const closes = adjClose ?? result.indicators?.quote?.[0]?.close
 
-    if (!closes || closes.length < 2) return { value: null }
+    if (!closes || closes.length < 2) return { value: null, status: 'no_data', provider: 'yahoo' }
 
     const valid = closes.filter((c): c is number => c != null && c > 0)
-    if (valid.length < 2) return { value: null }
+    if (valid.length < 2) return { value: null, status: 'no_data', provider: 'yahoo' }
 
     const first = valid[0]
     const last = valid[valid.length - 1]
-    return { value: ((last - first) / first) * 100 }
-  } catch {
-    return { value: null }
+    return { value: ((last - first) / first) * 100, status: 'ok', provider: 'yahoo' }
+  } catch (err) {
+    obsWarn({
+      event: OBS_SERIES_STATUS, cid: options.cid, ticker, provider: 'yahoo',
+      status: 'provider_error', year, reason: errMessage(err),
+    })
+    return { value: null, status: 'provider_error', provider: 'yahoo' }
   }
 }
 
@@ -262,13 +320,22 @@ function isSaneCalendarYear(year: number): boolean {
   return Number.isInteger(year) && year >= 1900 && year <= new Date().getUTCFullYear() + 1
 }
 
-export async function fetchCalendarYearReturn(
+export interface CalendarYearReturn {
+  value: number | null
+  status: SeriesStatus
+  provider: SeriesProvider
+}
+
+/** Calendar-year return WITH the explicit state. Same two-stage lookup as before. */
+export async function fetchCalendarYearReturnDetailed(
   ticker: string,
-  year: number
-): Promise<{ value: number | null }> {
+  year: number,
+  options: FetchHistoryOptions = {}
+): Promise<CalendarYearReturn> {
   if (!isSaneCalendarYear(year)) {
     obsWarn({ event: OBS.PARSE_ERROR, ticker, provider: 'yahoo', reason: 'year_out_of_range', year })
-    return { value: null }
+    // We never asked anyone, so this is not a provider failure.
+    return { value: null, status: 'no_data', provider: 'none' }
   }
 
   // For ETFs/funds: use Morningstar NAV-based total returns (matches Yahoo Finance fund pages exactly)
@@ -279,7 +346,7 @@ export async function fetchCalendarYearReturn(
     if (Array.isArray(annualReturns)) {
       const match = annualReturns.find((r) => String(r.year) === String(year))
       if (match?.annualValue != null) {
-        return { value: match.annualValue * 100 }
+        return { value: match.annualValue * 100, status: 'ok', provider: 'yahoo-finance2' }
       }
     }
   } catch (err) {
@@ -287,16 +354,55 @@ export async function fetchCalendarYearReturn(
   }
 
   // For stocks: calculate from adjusted close price history
-  return fetchCalendarYearReturnFromPrice(ticker, year)
+  return fetchCalendarYearReturnFromPrice(ticker, year, options)
 }
 
-async function calculateReturnWithMeta(
+/**
+ * Back-compatible view: just the value. Keeps `/api/market/history?mode=calYear` and the golden
+ * tests on their original signature.
+ */
+export async function fetchCalendarYearReturn(
+  ticker: string,
+  year: number
+): Promise<{ value: number | null }> {
+  const { value } = await fetchCalendarYearReturnDetailed(ticker, year)
+  return { value }
+}
+
+export interface PeriodReturn {
+  value: number | null
+  years: number | null
+  /** Why `value` is null, when it is. See `SeriesStatus`. */
+  status: SeriesStatus
+  provider: SeriesProvider
+  attempts: number
+}
+
+/**
+ * ONE implementation of "the return of `period` for `ticker`", with the explicit state attached.
+ *
+ * `calculateReturn` (used by `/api/market/history?mode=return`) and the per-period branch of
+ * `/api/market/returns` both go through this function, so the watchlist figure cannot drift from
+ * the bulk figure: it is literally the same arithmetic over the same URL.
+ */
+export async function calculateReturnDetailed(
   ticker: string,
   period: PeriodKey,
-  options: FetchHistoryOptions
-): Promise<{ value: number | null; years: number | null; attempts: number }> {
-  const { points: history, attempts } = await fetchHistoryWithMeta(ticker, period, options)
-  if (history.length < 2) return { value: null, years: null, attempts }
+  options: FetchHistoryOptions = {}
+): Promise<PeriodReturn> {
+  const series = await fetchHistorySeries(ticker, period, options)
+  const history = series.data
+  const meta = { provider: series.provider, attempts: series.attempts }
+
+  // A provider failure stays a provider failure; anything else with too few bars is a real empty.
+  if (history.length < 2) {
+    return {
+      value: null,
+      years: null,
+      status: series.status === 'ok' ? 'no_data' : series.status,
+      ...meta,
+    }
+  }
 
   // Use adjclose for both endpoints so splits and dividends are factored in
   // consistently (total return methodology). Mixing adjclose base with a live
@@ -304,13 +410,22 @@ async function calculateReturnWithMeta(
   const baseClose = history[0].close
   const endClose = history[history.length - 1].close
 
-  if (!baseClose || baseClose === 0) return { value: null, years: null, attempts }
+  if (!baseClose || baseClose === 0) return { value: null, years: null, status: 'no_data', ...meta }
 
   const value = ((endClose - baseClose) / baseClose) * 100
   const startMs = new Date(history[0].date).getTime()
   const endMs = new Date(history[history.length - 1].date).getTime()
   const years = (endMs - startMs) / (365.25 * 24 * 60 * 60 * 1000)
 
+  return { value, years, status: 'ok', ...meta }
+}
+
+async function calculateReturnWithMeta(
+  ticker: string,
+  period: PeriodKey,
+  options: FetchHistoryOptions
+): Promise<{ value: number | null; years: number | null; attempts: number }> {
+  const { value, years, attempts } = await calculateReturnDetailed(ticker, period, options)
   return { value, years, attempts }
 }
 
@@ -396,8 +511,8 @@ export async function calculateMultiReturns(
 
   let history: HistoricalDataPoint[] = []
   try {
-    const res = await fetchHistoryWithMeta(ticker, '1Y', base)
-    history = res.points
+    const res = await fetchHistorySeries(ticker, '1Y', base)
+    history = res.data
     budget -= res.attempts
   } catch {
     history = []

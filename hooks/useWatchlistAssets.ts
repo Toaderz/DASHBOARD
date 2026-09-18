@@ -4,6 +4,39 @@ import { useEffect, useState, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import type { AssetMetadata, AssetWithCategory, Watchlist, WatchlistShare } from '@/types'
 
+/**
+ * Columns `updateWatchlist` may write. Everything else is dropped, silently and on purpose — a
+ * caller that passes `user_id` is buggy, not authorised, and rejecting the whole request would
+ * turn a rename into an error for no benefit.
+ *
+ * `satisfies` ties the list to `Watchlist`, so renaming a column here is a compile error rather
+ * than a silently ignored field.
+ */
+export const WATCHLIST_UPDATABLE_COLUMNS = ['name', 'description', 'selected_metrics'] as const
+type WatchlistUpdatableColumn = (typeof WATCHLIST_UPDATABLE_COLUMNS)[number]
+const _updatableAreRealColumns: readonly (keyof Watchlist)[] = WATCHLIST_UPDATABLE_COLUMNS
+void _updatableAreRealColumns
+
+export type WatchlistPatch = Partial<Pick<Watchlist, WatchlistUpdatableColumn>>
+
+/** Projects an arbitrary caller object onto the allowlist. Exported so it is testable directly. */
+export function pickWatchlistUpdates(updates: Partial<Watchlist>): WatchlistPatch {
+  const patch: WatchlistPatch = {}
+  for (const column of WATCHLIST_UPDATABLE_COLUMNS) {
+    if (!Object.prototype.hasOwnProperty.call(updates, column)) continue
+    const value = updates[column]
+    if (value === undefined) continue
+    // Each branch is assigned separately so the column/value types stay tied together.
+    if (column === 'name') { if (typeof value === 'string') patch.name = value; continue }
+    if (column === 'description') {
+      if (typeof value === 'string' || value === null) patch.description = value
+      continue
+    }
+    if (Array.isArray(value)) patch.selected_metrics = value as Watchlist['selected_metrics']
+  }
+  return patch
+}
+
 export function useWatchlists() {
   const [watchlists, setWatchlists] = useState<Watchlist[]>([])
   const [loading, setLoading] = useState(true)
@@ -58,9 +91,19 @@ export function useWatchlists() {
   }
 
   const updateWatchlist = async (id: string, updates: Partial<Watchlist>) => {
+    // A-3: never hand the caller's object to `.update()` verbatim. RLS stops another user's row
+    // from being touched, but it says nothing about WHICH COLUMNS of your own row you may rewrite:
+    // `updateWatchlist(id, { user_id: someoneElse })` would have donated the watchlist away, and
+    // `{ created_at: … }` / `{ id: … }` would have rewritten its identity. The allowlist below is
+    // the only set of columns this function is allowed to change.
+    const patch = pickWatchlistUpdates(updates)
+    if (Object.keys(patch).length === 0) {
+      return { data: null, error: new Error('No updatable fields') }
+    }
+
     const { data, error } = await supabase
       .from('watchlists')
-      .update(updates)
+      .update(patch)
       .eq('id', id)
       .select()
       .single()

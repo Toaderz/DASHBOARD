@@ -28,6 +28,123 @@ const FUNDAMENTALS_CONCURRENCY = 4
 /** No NEW fundamentals fetch starts after this many ms into the request. */
 const FUNDAMENTALS_DEADLINE_MS = 6_000
 
+/**
+ * ── In-flight de-duplication (the lease) ────────────────────────────────────
+ *
+ * Ordering candidates by `fundamentals_fetched_at ASC NULLS FIRST` and cutting to 12 is
+ * deterministic — which means two concurrent invocations pick *exactly* the same 12 tickers.
+ * The client polls this endpoint every 5 s from every open tab, so the duplication is GUARANTEED,
+ * not incidental: N tabs ⇒ N identical `quoteSummary` bursts against Yahoo, N identical writes.
+ *
+ * `price_cache.fundamentals_refresh_started_at` (added by migration 002) is the lease. A single
+ * `UPDATE … WHERE ticker IN (…) AND (started_at IS NULL OR started_at < cutoff) RETURNING ticker`
+ * both claims and reports what was claimed: Postgres serialises concurrent updates of the same
+ * row, so the loser re-evaluates its WHERE after the winner commits, finds a fresh timestamp and
+ * gets that row back in NO result set. The two returned sets are therefore disjoint by
+ * construction — no advisory locks, no extra table, one round trip.
+ */
+
+/**
+ * A lease older than this is treated as abandoned, not as active work.
+ *
+ * Chosen from what an invocation can actually survive, not from taste: Vercel caps this handler at
+ * 10 s by default (60 s maximum) and Netlify kills a synchronous function at ~10 s regardless of
+ * `maxDuration`. So 90 s is comfortably longer than any request that is still alive — a lease that
+ * old cannot belong to a running process, it belongs to one that was killed mid-flight. It is also
+ * short enough that a crash costs at most ~90 s of deferral for those tickers, which is invisible:
+ * the candidate list is ordered by staleness, so the next poll simply works on other rows
+ * meanwhile. Nothing can be locked out permanently — the cutoff frees every row unconditionally,
+ * and the happy path releases explicitly.
+ */
+const FUNDAMENTALS_LEASE_STALE_MS = 90_000
+
+/**
+ * The lease is claimed over EXACTLY the batch we intend to work on — deliberately not over a wider
+ * window.
+ *
+ * Over-claiming (say 3×) looks like it helps the loser of a race find free rows, and it does the
+ * opposite: Postgres serialises the two UPDATEs, so the winner walks away holding all 36 rows and
+ * the loser matches none of them until the winner's surplus release lands a round trip later. With
+ * a batch-sized claim the loser simply gets whatever the winner did not take (often nothing) and
+ * returns immediately — which IS the success condition here. Total Yahoo work stays at one budget
+ * per 5 s poll no matter how many tabs are open; the warm-up rate is unchanged and the duplication
+ * is gone. That is the whole point.
+ */
+
+type CacheClient = ReturnType<typeof createCacheClient>['client']
+
+interface LeaseClaim {
+  /** Tickers this request may work on. */
+  owned: Set<string>
+  /** `false` ⇒ leasing is unavailable (no service role, or the DB rejected it) → fail OPEN. */
+  enforced: boolean
+  /** The exact timestamp written, so the release only clears OUR lease. */
+  claimIso: string
+}
+
+/**
+ * Claims the lease. Fails OPEN on purpose: the lease is an efficiency control, not a correctness
+ * or security one, so a database that cannot serve it must never stop fundamentals from ever
+ * refreshing again. Falling open restores exactly the pre-lease behaviour (and logs it).
+ */
+async function claimFundamentalsLease(
+  client: CacheClient,
+  canWrite: boolean,
+  tickers: string[],
+  now: number,
+  cid: string
+): Promise<LeaseClaim> {
+  const claimIso = new Date(now).toISOString()
+  if (!canWrite || tickers.length === 0) {
+    return { owned: new Set(tickers), enforced: false, claimIso }
+  }
+  const cutoff = new Date(now - FUNDAMENTALS_LEASE_STALE_MS).toISOString()
+  try {
+    const { data, error } = await client
+      .from('price_cache')
+      .update({ fundamentals_refresh_started_at: claimIso })
+      .in('ticker', tickers)
+      // Quoted so the timestamp's `:` and `.` are read as value, not as PostgREST syntax.
+      .or(`fundamentals_refresh_started_at.is.null,fundamentals_refresh_started_at.lt."${cutoff}"`)
+      .select('ticker')
+    if (error) {
+      obsWarn({ event: OBS.CACHE_WRITE_SKIPPED, cid, endpoint: 'quote', reason: `lease_claim: ${error.message}` })
+      return { owned: new Set(tickers), enforced: false, claimIso }
+    }
+    const owned = new Set((data ?? []).map((r: { ticker: string }) => r.ticker))
+    return { owned, enforced: true, claimIso }
+  } catch (err) {
+    obsWarn({ event: OBS.CACHE_WRITE_SKIPPED, cid, endpoint: 'quote', reason: `lease_claim: ${errMessage(err)}` })
+    return { owned: new Set(tickers), enforced: false, claimIso }
+  }
+}
+
+/**
+ * Releases a lease we hold. `.eq(started_at, claimIso)` makes this idempotent and impossible to
+ * misuse: it clears only rows still carrying OUR stamp, so a re-run, or a row another request has
+ * since re-claimed, is left alone.
+ */
+async function releaseFundamentalsLease(
+  client: CacheClient,
+  claim: LeaseClaim,
+  tickers: string[],
+  cid: string
+): Promise<void> {
+  if (!claim.enforced || tickers.length === 0) return
+  try {
+    const { error } = await client
+      .from('price_cache')
+      .update({ fundamentals_refresh_started_at: null })
+      .in('ticker', tickers)
+      .eq('fundamentals_refresh_started_at', claim.claimIso)
+    if (error) {
+      obsWarn({ event: OBS.CACHE_WRITE_ERROR, cid, endpoint: 'quote', count: tickers.length, reason: `lease_release: ${error.message}` })
+    }
+  } catch (err) {
+    obsWarn({ event: OBS.CACHE_WRITE_ERROR, cid, endpoint: 'quote', count: tickers.length, reason: `lease_release: ${errMessage(err)}` })
+  }
+}
+
 // Yahoo instrumentType → AssetType (para backfill de assets_metadata).
 function instrumentToAssetType(t: string | null | undefined): string {
   switch ((t ?? '').toUpperCase()) {
@@ -249,20 +366,39 @@ export async function GET(request: NextRequest) {
       return a.fetchedAt - b.fetchedAt
     })
 
-    const batch = fundamentalsCandidates.slice(0, FUNDAMENTALS_BUDGET)
+    // Claim the staleest `FUNDAMENTALS_BUDGET` candidates, and work ONLY on what we actually own.
+    // This is what makes two concurrent invocations (the client polls every 5 s, from every open
+    // tab) do DISJOINT work instead of the same 12 `quoteSummary` calls each.
+    //
+    // One edge worth naming: an UPDATE cannot lease a row that does not exist yet. In practice the
+    // price upsert in step 2 creates the row for any brand-new ticker earlier in THIS request, so
+    // the only case that slips is a symbol Yahoo has no quote for at all — which by definition has
+    // no fundamentals either, and is retried on the next poll through the price path regardless.
+    const intended = fundamentalsCandidates.slice(0, FUNDAMENTALS_BUDGET)
+    const claim = await claimFundamentalsLease(supabaseAdmin, canWrite, intended.map((c) => c.ticker), now, cid)
+    const batch = intended.filter((c) => claim.owned.has(c.ticker))
+
     if (fundamentalsCandidates.length > batch.length) {
       obsWarn({
         event: OBS.BUDGET_EXHAUSTED, cid, endpoint: 'quote',
-        count: fundamentalsCandidates.length - batch.length, reason: 'fundamentals_deferred_to_next_request',
+        count: fundamentalsCandidates.length - batch.length,
+        lease_enforced: claim.enforced,
+        lease_skipped: intended.length - batch.length,
+        reason: 'fundamentals_deferred_to_next_request',
       })
     }
 
     const deadline = now + FUNDAMENTALS_DEADLINE_MS
     let refreshed = 0
     let failed = 0
+    /**
+     * Tickers we hold a lease on whose recording upsert never ran — the deadline cut them off, or
+     * the fetch threw. Without an explicit release they would sit leased until the 90 s cutoff.
+     */
+    const toRelease: string[] = []
 
     await mapWithConcurrency(batch, FUNDAMENTALS_CONCURRENCY, async ({ ticker, fetchedAt }) => {
-      if (Date.now() >= deadline) return
+      if (Date.now() >= deadline) { toRelease.push(ticker); return }
       try {
         let f = await fetchFundamentals(ticker)
         const signal = hasFundamentalsSignal(f)
@@ -295,15 +431,19 @@ export async function GET(request: NextRequest) {
         }
 
         if (!canWrite) {
+          // No service role ⇒ the lease was never enforced either, so there is nothing to release.
           obsWarn({ event: OBS.CACHE_WRITE_SKIPPED, cid, endpoint: 'quote', ticker, reason: 'no_service_role' })
           return
         }
 
         // `fundamentals_fetched_at` always advances, signal or not, so a ticker Yahoo has nothing
         // for rotates to the back of the queue instead of being retried on every single request.
+        // `fundamentals_refresh_started_at: null` releases the lease in the SAME write that records
+        // the work, so success and release can never disagree. Idempotent: writing null twice is
+        // indistinguishable from writing it once.
         const row = signal
-          ? { ticker, ...f, fundamentals_fetched_at: new Date().toISOString() }
-          : { ticker, fundamentals_fetched_at: new Date().toISOString() }
+          ? { ticker, ...f, fundamentals_fetched_at: new Date().toISOString(), fundamentals_refresh_started_at: null }
+          : { ticker, fundamentals_fetched_at: new Date().toISOString(), fundamentals_refresh_started_at: null }
 
         const { error: fundamentalsErr } = await supabaseAdmin
           .from('price_cache')
@@ -313,11 +453,22 @@ export async function GET(request: NextRequest) {
         }
       } catch (err) {
         failed++
+        // The upsert that would have released the lease never ran → release it explicitly below.
+        toRelease.push(ticker)
         obsError({ event: OBS.FUNDAMENTALS_FAILURE, cid, endpoint: 'quote', ticker, reason: errMessage(err) })
       }
     })
 
-    obsInfo({ event: OBS.FUNDAMENTALS_REFRESH, cid, endpoint: 'quote', count: refreshed, failed, budget: FUNDAMENTALS_BUDGET })
+    // Hand back everything we hold but did not record. Together with the 90 s cutoff (the backstop
+    // for a process that dies outright, or for an upsert that itself failed) this is what
+    // guarantees no ticker is ever locked out permanently.
+    if (toRelease.length > 0) await releaseFundamentalsLease(supabaseAdmin, claim, toRelease, cid)
+
+    obsInfo({
+      event: OBS.FUNDAMENTALS_REFRESH, cid, endpoint: 'quote',
+      count: refreshed, failed, budget: FUNDAMENTALS_BUDGET,
+      leased: batch.length, lease_enforced: claim.enforced, released: toRelease.length,
+    })
   }
 
   obsInfo({
