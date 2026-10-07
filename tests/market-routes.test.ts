@@ -175,3 +175,48 @@ describe('SEC-02 POST /api/market/returns', () => {
   })
 })
 
+// ── SEC-03 quote ──────────────────────────────────────────────────────────────
+describe('SEC-03 GET /api/market/quote', () => {
+  it('sin sesión → 401, sin Supabase ni Yahoo', async () => {
+    const res = await quoteGET(get('/api/market/quote?tickers=AAPL'))
+    expect(res.status).toBe(401)
+    expect(externalCalls()).toBe(0)
+    expect(h.createSupabaseClient).not.toHaveBeenCalled()
+  })
+  it('más de 1000 tickers → 400', async () => {
+    h.user = { id: 'u1' }
+    const tickers = Array.from({ length: 1001 }, (_, i) => `T${i}`).join(',')
+    const res = await quoteGET(get(`/api/market/quote?tickers=${tickers}`))
+    expect(res.status).toBe(400)
+    expect(externalCalls()).toBe(0)
+  })
+  it('todos inválidos → 400', async () => {
+    h.user = { id: 'u1' }
+    const res = await quoteGET(get(`/api/market/quote?tickers=${'A'.repeat(300)}`))
+    expect(res.status).toBe(400)
+  })
+  it('sin SUPABASE_SERVICE_ROLE_KEY NO cae a la clave anon', async () => {
+    h.user = { id: 'u1' }
+    delete process.env.SUPABASE_SERVICE_ROLE_KEY
+    const res = await quoteGET(get('/api/market/quote?tickers=AAPL'))
+    expect(res.status).toBe(500)
+    for (const call of h.createSupabaseClient.mock.calls) expect(call[1]).not.toBe(ANON_KEY)
+  })
+  it('arranque en frío con 200 tickers respeta la concurrencia de fundamentals', async () => {
+    h.user = { id: 'u1' }
+    let active = 0
+    let peak = 0
+    h.fetchFundamentals.mockImplementation(async () => {
+      active++
+      peak = Math.max(peak, active)
+      await new Promise((r) => setTimeout(r, 2))
+      active--
+      return {}
+    })
+    const tickers = Array.from({ length: 200 }, (_, i) => `T${i}`).join(',')
+    const res = await quoteGET(get(`/api/market/quote?tickers=${tickers}`))
+    expect(res.status).toBe(200)
+    expect(h.fetchFundamentals).toHaveBeenCalledTimes(200)
+    expect(peak).toBeLessThanOrEqual(8)
+  })
+})

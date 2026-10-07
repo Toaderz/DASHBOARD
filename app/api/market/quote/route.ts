@@ -1,11 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
 import { fetchBatchQuotes, fetchFundamentals } from '@/lib/market/finnhub'
 import { fetchHistoricalData } from '@/lib/market/history'
+import { parseTickerList } from '@/lib/market/validation'
+import { guardApi } from '@/lib/api/guard'
+import { getAdminClient } from '@/lib/supabase/admin'
+import { mapWithConcurrency } from '@/lib/utils/concurrency'
 
 const CACHE_TTL_MS = 60_000
 // Re-fetch fundamentals if they've never been fetched or are older than 24 h
 const FUNDAMENTALS_TTL_MS = 24 * 60 * 60_000
+// Beating-Peers consulta la unión activos ∪ peers (~475 observados); por encima del tope se rechaza (400).
+const MAX_TICKERS = 1000
+const FUNDAMENTALS_CONCURRENCY = 8
+// useRealtimePrices sondea cada 5 s desde varios componentes: barrera de contención, no control fino.
+const LIMIT_PER_MIN = 600
 
 // Yahoo instrumentType → AssetType (para backfill de assets_metadata).
 function instrumentToAssetType(t: string | null | undefined): string {
@@ -16,13 +24,6 @@ function instrumentToAssetType(t: string | null | undefined): string {
     case 'CRYPTOCURRENCY': return 'crypto'
     default: return 'stock'
   }
-}
-
-function getAdminClient() {
-  return createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-  )
 }
 
 function rowToQuote(row: Record<string, unknown>) {
@@ -63,6 +64,9 @@ function rowToQuote(row: Record<string, unknown>) {
 }
 
 export async function GET(request: NextRequest) {
+  const guard = await guardApi('quote', LIMIT_PER_MIN)
+  if ('response' in guard) return guard.response
+
   const { searchParams } = request.nextUrl
   const tickersParam = searchParams.get('tickers')
 
@@ -70,8 +74,21 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'Missing tickers param' }, { status: 400 })
   }
 
-  const tickers = tickersParam.split(',').map((t) => t.trim()).filter(Boolean)
-  const supabaseAdmin = getAdminClient()
+  const parsed = parseTickerList(tickersParam, MAX_TICKERS)
+  if (parsed.tooMany) {
+    return NextResponse.json({ error: `Too many tickers (max ${MAX_TICKERS})` }, { status: 400 })
+  }
+  if (parsed.tickers.length === 0) {
+    return NextResponse.json({ error: 'No valid tickers' }, { status: 400 })
+  }
+  const tickers = parsed.tickers
+
+  let supabaseAdmin: ReturnType<typeof getAdminClient>
+  try {
+    supabaseAdmin = getAdminClient()
+  } catch {
+    return NextResponse.json({ error: 'Server misconfigured' }, { status: 500 })
+  }
 
   // 1. Check Supabase price_cache
   const { data: cached } = await supabaseAdmin
@@ -176,8 +193,8 @@ export async function GET(request: NextRequest) {
   // 3. Fetch all fundamentals (market_cap, pe, beta, profit_margins for stocks;
   //    expense_ratio, aum, sector_weightings, top_holdings for ETFs) — fire in parallel
   if (needsFundamentals.length > 0) {
-    const results = await Promise.allSettled(
-      needsFundamentals.map(async (ticker) => {
+    await mapWithConcurrency(needsFundamentals, FUNDAMENTALS_CONCURRENCY, async (ticker) => {
+      try {
         let f = await fetchFundamentals(ticker)
         // If fundProfile didn't return inceptionDate, derive from first available history point
         if (f.inception_date == null) {
@@ -196,10 +213,9 @@ export async function GET(request: NextRequest) {
           .from('price_cache')
           .upsert({ ticker, ...f, fundamentals_fetched_at: new Date().toISOString() }, { onConflict: 'ticker' })
         if (fundamentalsErr) console.error('[quote] Fundamentals upsert error:', ticker, fundamentalsErr.message)
-      })
-    )
-    results.forEach((r) => {
-      if (r.status === 'rejected') console.error('[quote] Fundamentals fetch error:', r.reason)
+      } catch (err) {
+        console.error('[quote] Fundamentals fetch error:', ticker, err)
+      }
     })
   }
 

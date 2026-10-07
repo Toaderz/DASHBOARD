@@ -2,6 +2,9 @@ import type { QuoteData, SearchResult, AssetType, SectorWeight, Holding } from '
 // yahoo-finance2 handles Yahoo Finance auth (crumb/cookies) automatically
 import YahooFinanceLib from 'yahoo-finance2'
 import { toGlobalCategory } from './morningstar-categories'
+import { mapWithConcurrency } from '@/lib/utils/concurrency'
+
+const BATCH_QUOTE_CONCURRENCY = 12
 
 const yf = new YahooFinanceLib({
   suppressNotices: ['yahooSurvey'],
@@ -238,13 +241,12 @@ export async function fetchFundamentals(ticker: string): Promise<Fundamentals> {
 export async function fetchBatchQuotes(tickers: string[]): Promise<Map<string, QuoteData>> {
   if (tickers.length === 0) return new Map()
 
-  const settled = await Promise.allSettled(tickers.map((t) => fetchQuoteV8Chart(t)))
-  const map = new Map<string, QuoteData>()
-  settled.forEach((result, i) => {
-    if (result.status === 'fulfilled' && result.value) {
-      map.set(tickers[i], result.value)
-    }
+  // Concurrencia acotada: antes lanzaba un fetch por ticker a la vez (cientos en frío).
+  const quotes = await mapWithConcurrency(tickers, BATCH_QUOTE_CONCURRENCY, async (t) => {
+    try { return await fetchQuoteV8Chart(t) } catch { return null }
   })
+  const map = new Map<string, QuoteData>()
+  quotes.forEach((q, i) => { if (q) map.set(tickers[i], q) })
   return map
 }
 
