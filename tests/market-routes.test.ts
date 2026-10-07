@@ -105,3 +105,36 @@ describe('SEC-05 GET /api/market/history', () => {
   })
 })
 
+// ── SEC-04 export ─────────────────────────────────────────────────────────────
+describe('SEC-04 GET /api/market/export', () => {
+  it('sin sesión → 401 y cero llamadas externas', async () => {
+    const res = await exportGET(get('/api/market/export?tickers=AAPL&period=1Y'))
+    expect(res.status).toBe(401)
+    expect(externalCalls()).toBe(0)
+  })
+  it('más de 50 tickers → 400, ya no se lanzan 200 a la vez', async () => {
+    h.user = { id: 'u1' }
+    const tickers = Array.from({ length: 200 }, (_, i) => `T${i}`).join(',')
+    const res = await exportGET(get(`/api/market/export?tickers=${tickers}&period=1Y`))
+    expect(res.status).toBe(400)
+    expect(externalCalls()).toBe(0)
+  })
+  it('respeta la concurrencia con 50 tickers', async () => {
+    h.user = { id: 'u1' }
+    let active = 0
+    let peak = 0
+    h.fetchHistoricalData.mockImplementation(async () => {
+      active++
+      peak = Math.max(peak, active)
+      await new Promise((r) => setTimeout(r, 2))
+      active--
+      return []
+    })
+    const tickers = Array.from({ length: 50 }, (_, i) => `T${i}`).join(',')
+    const res = await exportGET(get(`/api/market/export?tickers=${tickers}&period=1Y&format=json`))
+    expect(res.status).toBe(200)
+    expect(h.fetchHistoricalData).toHaveBeenCalledTimes(50)
+    expect(peak).toBeLessThanOrEqual(6)
+  })
+})
+

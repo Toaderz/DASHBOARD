@@ -1,11 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { fetchHistoricalData, type PeriodKey } from '@/lib/market/history'
+import { parseTickerList } from '@/lib/market/validation'
+import { guardApi } from '@/lib/api/guard'
+import { mapWithConcurrency } from '@/lib/utils/concurrency'
 
 const VALID_PERIODS: PeriodKey[] = ['1W', '1M', '1Y', '3Y', '5Y', 'YTD', '10Y', 'MAX']
+
+const MAX_TICKERS = 50
+const FETCH_CONCURRENCY = 6
+const LIMIT_PER_MIN = 10
 
 // GET /api/market/export?tickers=MSFT,AAPL,NVDA&period=5Y&format=csv
 // Returns historical OHLCV data for multiple tickers as CSV or JSON
 export async function GET(request: NextRequest) {
+  const guard = await guardApi('export', LIMIT_PER_MIN)
+  if ('response' in guard) return guard.response
+
   const { searchParams } = request.nextUrl
   const tickersParam = searchParams.get('tickers')
   const period = (searchParams.get('period') ?? '5Y') as PeriodKey
@@ -19,24 +29,28 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: `Invalid period. Valid: ${VALID_PERIODS.join(', ')}` }, { status: 400 })
   }
 
-  const tickers = tickersParam
-    .split(',')
-    .map((t) => t.trim().toUpperCase())
-    .filter(Boolean)
-    .slice(0, 200) // cap to avoid abuse
+  const parsed = parseTickerList(tickersParam, MAX_TICKERS)
+  if (parsed.tooMany) {
+    return NextResponse.json({ error: `Too many tickers (max ${MAX_TICKERS})` }, { status: 400 })
+  }
+  if (parsed.tickers.length === 0) {
+    return NextResponse.json({ error: 'No valid tickers' }, { status: 400 })
+  }
+  const tickers = parsed.tickers
 
-  const results = await Promise.allSettled(
-    tickers.map(async (ticker) => {
-      const data = await fetchHistoricalData(ticker, period)
-      return { ticker, data }
-    })
-  )
+  const results = await mapWithConcurrency(tickers, FETCH_CONCURRENCY, async (ticker) => {
+    try {
+      return { ticker, data: await fetchHistoricalData(ticker, period) }
+    } catch {
+      return null
+    }
+  })
 
   const rows: Record<string, string>[] = []
 
   for (const result of results) {
-    if (result.status === 'rejected') continue
-    const { ticker, data } = result.value
+    if (!result) continue
+    const { ticker, data } = result
     for (const point of data) {
       rows.push({
         ticker,
