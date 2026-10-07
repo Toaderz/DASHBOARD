@@ -6,6 +6,7 @@ import { ExternalLink, ChevronDown, ChevronUp } from 'lucide-react'
 import { Card } from '@/components/ui/card'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { cn } from '@/lib/utils/cn'
+import { safeHttpUrl } from '@/lib/utils/url'
 import type { MarketNews } from '@/types'
 
 // Signal = urgency. Documented V2 exception: red/amber carry meaning; weak → neutral bone.
@@ -58,13 +59,23 @@ const markdownComponents = {
     <strong {...props} className="font-semibold text-foreground" />
   ),
   hr: () => <hr className="my-6 border-border" />,
-  a: (props: ComponentPropsWithoutRef<'a'>) => (
-    <a {...props} target="_blank" rel="noopener noreferrer" className="text-foreground underline decoration-bone/40 underline-offset-2 hover:decoration-foreground" />
-  ),
-  img: (props: ComponentPropsWithoutRef<'img'>) => (
+  // N-04: solo http(s). Un enlace con otro protocolo se pinta como texto, sin href.
+  a: ({ href, ...props }: ComponentPropsWithoutRef<'a'>) => {
+    const safe = safeHttpUrl(href)
+    return safe ? (
+      <a {...props} href={safe} target="_blank" rel="noopener noreferrer" className="text-foreground underline decoration-bone/40 underline-offset-2 hover:decoration-foreground" />
+    ) : (
+      <span {...props} />
+    )
+  },
+  img: ({ src, ...props }: ComponentPropsWithoutRef<'img'>) => {
+    const safe = safeHttpUrl(src)
+    if (!safe) return null
+    return (
     // eslint-disable-next-line @next/next/no-img-element
     <img
       {...props}
+      src={safe}
       alt={props.alt ?? ''}
       loading="lazy"
       // Sin Referer: los CDN de noticias (Reuters/CNBC) bloquean el hotlink cross-origin por Referer.
@@ -73,7 +84,8 @@ const markdownComponents = {
       onError={(e) => { e.currentTarget.style.display = 'none' }}
       className="my-5 max-h-[55vh] w-full rounded-card bg-ink-base object-contain"
     />
-  ),
+    )
+  },
 }
 
 interface Props {
@@ -172,7 +184,7 @@ export function NewsCard({ news, userTickers, index, featured = false }: Props) 
           {expanded ? 'Cerrar análisis' : 'Ver análisis'}
         </button>
         <a
-          href={news.source_url}
+          href={safeHttpUrl(news.source_url)}
           target="_blank"
           rel="noopener noreferrer"
           className="ml-auto flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
@@ -228,7 +240,7 @@ export function NewsCard({ news, userTickers, index, featured = false }: Props) 
                 {news.published_at && ` · ${new Date(news.published_at).toLocaleDateString('es-MX', { day: 'numeric', month: 'short', year: 'numeric' })}`}
               </span>
               <a
-                href={news.source_url}
+                href={safeHttpUrl(news.source_url)}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="flex items-center gap-1 hover:text-foreground transition-colors"
