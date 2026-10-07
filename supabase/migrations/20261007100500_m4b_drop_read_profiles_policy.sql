@@ -1,0 +1,21 @@
+-- M4b · SEC-08 · Borrar la política authenticated_read_profiles (paso 3 de 3)
+--
+-- ORDEN: SOLO después de (1) M4a aplicada y (2) el código de la rama desplegado y verificado.
+-- Si se aplica antes, la UI de compartir listas muestra correos vacíos y "Team Evolve" falla.
+--
+-- ── PRECHECK ─────────────────────────────────────────────────────────────────────────────
+--   -- Debe devolver 1 fila (la política existe) antes de aplicar:
+--   select policyname from pg_policies where schemaname = 'public' and tablename = 'profiles'
+--     and policyname = 'authenticated_read_profiles';
+--   -- Y las 3 funciones de M4a deben existir (3 filas):
+--   select proname from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+--   where n.nspname = 'public' and proname in ('get_shared_owner_emails','get_share_recipients','get_team_member_ids');
+--
+-- ── REVERSA (exacta) ─────────────────────────────────────────────────────────────────────
+--   create policy "authenticated_read_profiles" on public.profiles
+--     for select using (auth.uid() is not null);
+--
+-- ── POSTCHECK: la lista compartida sigue mostrando el correo del dueño; compartir y Team Evolve funcionan;
+--    el Anexo C, prueba de lectura de perfiles ajenos, pasa a devolver 0 filas.
+
+drop policy if exists "authenticated_read_profiles" on public.profiles;

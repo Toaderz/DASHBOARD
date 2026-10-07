@@ -24,9 +24,9 @@ export function useWatchlists() {
     if (user) {
       const sharedOwnerIds = [...new Set(wls.filter((w) => w.user_id !== user.id).map((w) => w.user_id))]
       if (sharedOwnerIds.length) {
-        const { data: profiles } = await supabase.from('profiles').select('id, email').in('id', sharedOwnerIds)
+        const { data: owners } = await supabase.rpc('get_shared_owner_emails')
         const emails: Record<string, string> = {}
-        for (const p of profiles ?? []) if (p.email) emails[p.id] = p.email
+        for (const p of (owners ?? []) as { id: string; email: string | null }[]) if (p.email) emails[p.id] = p.email
         setOwnerEmails(emails)
       } else {
         setOwnerEmails({})
@@ -180,14 +180,10 @@ export function useWatchlistShares(watchlistId: string | null) {
       return
     }
 
-    const userIds = sharesData.map((s) => s.shared_with_user_id)
-    const { data: profilesData } = await supabase
-      .from('profiles')
-      .select('id, email')
-      .in('id', userIds)
+    const { data: profilesData } = await supabase.rpc('get_share_recipients', { p_watchlist_id: watchlistId })
 
     const emailById: Record<string, string | null> = {}
-    for (const p of profilesData ?? []) emailById[p.id] = p.email
+    for (const p of (profilesData ?? []) as { id: string; email: string | null }[]) emailById[p.id] = p.email
 
     const merged: WatchlistShare[] = sharesData.map((s) => ({
       ...s,
@@ -223,14 +219,10 @@ export function useWatchlistShares(watchlistId: string | null) {
   }
 
   const addTeamShares = async (): Promise<{ error: string | null; count: number }> => {
-    const { data: { user } } = await supabase.auth.getUser()
-    const { data: teamMembers, error: fetchError } = await supabase
-      .from('profiles')
-      .select('id')
-      .eq('is_team_evolve', true)
-      .neq('id', user?.id ?? '')
+    const { data, error: fetchError } = await supabase.rpc('get_team_member_ids')
     if (fetchError) return { error: fetchError.message, count: 0 }
-    if (!teamMembers?.length) return { error: null, count: 0 }
+    const teamMembers = (data ?? []) as { id: string }[]
+    if (!teamMembers.length) return { error: null, count: 0 }
 
     const existingIds = new Set(shares.map((s) => s.shared_with_user_id))
     const toAdd = teamMembers.filter((m) => !existingIds.has(m.id))
