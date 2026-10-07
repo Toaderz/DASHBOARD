@@ -557,11 +557,13 @@ const EXTRACTION_PROMPT =
   'social share links, cookie/consent banners, ads, and chart/widget text dumps (e.g. "Created with Highcharts").'
 
 // Reject the scrape promise if Firecrawl takes longer than `ms` (stealth + AI extraction is slow).
+// SEC-13: el temporizador se cancela al terminar la llamada (antes quedaba vivo hasta `ms` por cada URL).
 function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
-  return Promise.race([
-    promise,
-    new Promise<T>((_, reject) => setTimeout(() => reject(new Error('scrape timeout')), ms)),
-  ])
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const timeout = new Promise<T>((_, reject) => {
+    timer = setTimeout(() => reject(new Error('scrape timeout')), ms)
+  })
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer))
 }
 
 export async function extractContent(urls: string[]): Promise<Map<string, string>> {
