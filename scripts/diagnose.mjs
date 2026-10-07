@@ -205,9 +205,17 @@ console.log('  (requiere que el dev server esté corriendo en localhost:3000)\n'
 try {
   const apiUrl = `http://localhost:3000/api/market/quote?tickers=${encodeURIComponent(ticker)}`
   info('URL', apiUrl)
-  const res = await fetch(apiUrl, { signal: AbortSignal.timeout(8000) })
+  // La ruta exige sesión. Pasa la cookie de tu navegador (DevTools → Application → Cookies,
+  // copia las `sb-...-auth-token*` como "nombre=valor; nombre=valor") en DIAGNOSE_COOKIE.
+  const cookie = process.env.DIAGNOSE_COOKIE
+  const res = await fetch(apiUrl, {
+    signal: AbortSignal.timeout(8000),
+    headers: cookie ? { Cookie: cookie } : {},
+  })
   info('HTTP status', res.status)
-  if (!res.ok) {
+  if (res.status === 401) {
+    bad('API route', 'HTTP 401 — la ruta exige sesión; define DIAGNOSE_COOKIE con tu cookie de sesión y repite')
+  } else if (!res.ok) {
     bad('API route', `HTTP ${res.status}`)
     const txt = await res.text()
     info('body', txt.slice(0, 400))
