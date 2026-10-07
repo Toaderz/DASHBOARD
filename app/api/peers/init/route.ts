@@ -319,7 +319,16 @@ export async function POST(request: NextRequest) {
       sector: m.sector ?? null, region: m.region ?? null, industry: m.industry ?? null,
       benchmark: m.benchmark ?? null, manager: m.manager ?? null,
     }))
-    await supabase.from('assets_metadata').upsert(metaRows, { onConflict: 'ticker', ignoreDuplicates: true })
+    // Cliente de servicio: el INSERT abierto de assets_metadata para usuarios se elimina (migración M5).
+    const metaAdmin = getAdminClient()
+    if (!metaAdmin) {
+      console.error('[peers/init] SUPABASE_SERVICE_ROLE_KEY no configurada: no se pudo asegurar assets_metadata')
+    } else {
+      const { error: metaError } = await metaAdmin
+        .from('assets_metadata')
+        .upsert(metaRows, { onConflict: 'ticker', ignoreDuplicates: true })
+      if (metaError) console.error('[peers/init] assets_metadata upsert error:', metaError.message)
+    }
   }
 
   // 5c. Insertar auto-peers en la watchlist (reset idempotente por peer_of, luego insert).

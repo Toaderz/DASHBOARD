@@ -1,0 +1,24 @@
+-- M5 · SEC-15 · Borrar el INSERT abierto de assets_metadata
+-- Certeza: CONFIRMADO (Anexo A, 1b): "auth users insert assets" permite a cualquier autenticado insertar filas.
+--
+-- ORDEN: SOLO después de desplegar el código de la rama, que mueve TODAS las escrituras a servidor:
+--   · components/dashboard/WatchlistView.tsx  → POST /api/assets/register
+--   · hooks/usePeerSet.ts                     → POST /api/assets/register
+--   · app/api/peers/init/route.ts (paso 5b)   → ahora con el cliente de servicio (antes usaba la sesión del usuario)
+--   Nota: el inventario original hablaba de dos escrituras de cliente; el grep del 2026-10-07 encontró una TERCERA
+--   (peers/init, que corría como el usuario). Las demás (quote, pipeline de noticias) ya usan service_role.
+-- Si se aplica antes del despliegue, agregar activos o peers falla por la clave foránea.
+-- Las seed_* y handle_new_user* son SECURITY DEFINER y no dependen de esta política.
+--
+-- ── PRECHECK ─────────────────────────────────────────────────────────────────────────────
+--   select policyname from pg_policies where schemaname = 'public' and tablename = 'assets_metadata';
+--   -- Debe incluir "auth users insert assets" y "public read assets".
+--
+-- ── REVERSA (exacta) ─────────────────────────────────────────────────────────────────────
+--   create policy "auth users insert assets" on public.assets_metadata
+--     for insert with check (auth.uid() is not null);
+--
+-- ── POSTCHECK: agregar un ticker nuevo a una lista y añadir un peer desde el modal siguen funcionando;
+--    el Anexo C, prueba de INSERT en assets_metadata, pasa a "Bloqueado".
+
+drop policy if exists "auth users insert assets" on public.assets_metadata;

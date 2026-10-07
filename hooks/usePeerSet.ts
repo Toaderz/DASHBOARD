@@ -143,10 +143,11 @@ export function usePeerSet(assetTicker: string | null, seed: AssetMetadata[]) {
       .eq('asset_ticker', base)
       .eq('source', 'user')
     if (!locs?.length) return
-    await supabase.from('assets_metadata').upsert(
-      { ticker: peer, name: name || peer, type },
-      { onConflict: 'ticker', ignoreDuplicates: true }
-    )
+    await fetch('/api/assets/register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ticker: peer, name: name || peer, type }),
+    }).catch(() => undefined)
     const rows = locs.map((l: { watchlist_id: string; sort_order: number | null }) => ({
       watchlist_id: l.watchlist_id,
       asset_ticker: peer,

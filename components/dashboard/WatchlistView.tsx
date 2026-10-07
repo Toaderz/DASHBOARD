@@ -3,7 +3,6 @@
 import { useState, useCallback } from 'react'
 import { useWatchlistAssets } from '@/hooks/useWatchlistAssets'
 import { WatchlistTable } from '@/components/dashboard/WatchlistTable'
-import { createClient } from '@/lib/supabase/client'
 import type { AssetMetadata, MetricKey, Watchlist, AssetType } from '@/types'
 
 interface WatchlistViewProps {
@@ -14,18 +13,18 @@ interface WatchlistViewProps {
 export function WatchlistView({ watchlist: initialWatchlist, allAssets }: WatchlistViewProps) {
   const [watchlist, setWatchlist] = useState<Watchlist>(initialWatchlist)
   const { assets, addAsset, removeAsset } = useWatchlistAssets(watchlist.id)
-  const supabase = createClient()
 
   const handleAddAsset = useCallback(
     async (ticker: string, name: string, type: AssetType) => {
-      // Upsert into assets_metadata first
-      await supabase.from('assets_metadata').upsert(
-        { ticker, name, type },
-        { onConflict: 'ticker', ignoreDuplicates: true }
-      )
+      // Registrar en assets_metadata primero (vía servidor: el navegador ya no puede insertar ahí)
+      await fetch('/api/assets/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ticker, name, type }),
+      }).catch(() => undefined)
       await addAsset(ticker)
     },
-    [addAsset, supabase]
+    [addAsset]
   )
 
   const handleRemoveAsset = useCallback(
