@@ -24,7 +24,8 @@
 --     values (u, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated',
 --       'precheck_' || replace(u::text,'-','') || '@test.invalid', '', now(), '{}', '{}', now(), now(), '', '', '', '');
 --     paso := 'insert profiles (dispara las 3 seeds)';
---     insert into public.profiles (id, email) values (u, 'precheck_' || replace(u::text,'-','') || '@test.invalid');
+--     insert into public.profiles (id, email) values (u, 'precheck_' || replace(u::text,'-','') || '@test.invalid')
+--     on conflict (id) do nothing;  -- si M0 ya existe, el trigger de auth.users ya creo el perfil
 --     select count(*) into wl from public.watchlists where user_id = u;
 --     select count(*) into wa from public.watchlist_assets a join public.watchlists w on w.id = a.watchlist_id where w.user_id = u;
 --     raise exception 'OK_ROLLBACK: % listas, % activos', wl, wa;
