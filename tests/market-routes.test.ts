@@ -1,0 +1,107 @@
+import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { NextRequest } from 'next/server'
+
+// ── Mocks: ninguna prueba toca red, Supabase ni Yahoo ─────────────────────────
+const h = vi.hoisted(() => ({
+  user: null as { id: string } | null,
+  fetchHistoricalData: vi.fn(),
+  calculateReturn: vi.fn(),
+  fetchCalendarYearReturn: vi.fn(),
+  calculateMultiReturns: vi.fn(),
+  fetchBatchQuotes: vi.fn(),
+  fetchFundamentals: vi.fn(),
+  createSupabaseClient: vi.fn(),
+}))
+
+vi.mock('@/lib/supabase/server', () => ({
+  createClient: async () => ({ auth: { getUser: async () => ({ data: { user: h.user } }) } }),
+}))
+vi.mock('@/lib/market/history', () => ({
+  fetchHistoricalData: h.fetchHistoricalData,
+  calculateReturn: h.calculateReturn,
+  fetchCalendarYearReturn: h.fetchCalendarYearReturn,
+  calculateMultiReturns: h.calculateMultiReturns,
+}))
+vi.mock('@/lib/market/finnhub', () => ({
+  fetchBatchQuotes: h.fetchBatchQuotes,
+  fetchFundamentals: h.fetchFundamentals,
+}))
+vi.mock('@supabase/supabase-js', () => ({ createClient: h.createSupabaseClient }))
+
+import { GET as historyGET } from '@/app/api/market/history/route'
+import { GET as exportGET } from '@/app/api/market/export/route'
+import { POST as returnsPOST } from '@/app/api/market/returns/route'
+import { GET as quoteGET } from '@/app/api/market/quote/route'
+import { resetRateLimit } from '@/lib/api/rate-limit'
+
+function chain() {
+  const q: Record<string, unknown> = {}
+  const self = () => q
+  q.select = self
+  q.in = async () => ({ data: [], error: null })
+  q.upsert = async () => ({ error: null })
+  return q
+}
+
+const get = (path: string) => new NextRequest(`http://localhost${path}`)
+const post = (path: string, body: unknown) =>
+  new NextRequest(`http://localhost${path}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+
+const ANON_KEY = 'anon-key-FAKE'
+const SERVICE_KEY = 'service-key-FAKE'
+
+beforeEach(() => {
+  vi.clearAllMocks()
+  resetRateLimit()
+  h.user = null
+  process.env.NEXT_PUBLIC_SUPABASE_URL = 'http://127.0.0.1:1'
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = ANON_KEY
+  process.env.SUPABASE_SERVICE_ROLE_KEY = SERVICE_KEY
+  h.createSupabaseClient.mockReturnValue({ from: () => chain() })
+  h.fetchHistoricalData.mockResolvedValue([])
+  h.calculateReturn.mockResolvedValue({ value: 1.5, years: 1 })
+  h.fetchCalendarYearReturn.mockResolvedValue({ value: 2.5 })
+  h.calculateMultiReturns.mockResolvedValue({ returns: { '1Y': 1 }, years: {} })
+  h.fetchBatchQuotes.mockResolvedValue(new Map())
+  h.fetchFundamentals.mockResolvedValue({})
+})
+
+const externalCalls = () =>
+  h.fetchHistoricalData.mock.calls.length +
+  h.calculateReturn.mock.calls.length +
+  h.fetchCalendarYearReturn.mock.calls.length +
+  h.calculateMultiReturns.mock.calls.length +
+  h.fetchBatchQuotes.mock.calls.length +
+  h.fetchFundamentals.mock.calls.length
+
+// ── SEC-05 history ────────────────────────────────────────────────────────────
+describe('SEC-05 GET /api/market/history', () => {
+  it('sin sesión → 401 y cero llamadas externas', async () => {
+    const res = await historyGET(get('/api/market/history?ticker=AAPL&period=1Y'))
+    expect(res.status).toBe(401)
+    expect(externalCalls()).toBe(0)
+  })
+  it('ticker de 300 caracteres → 400', async () => {
+    h.user = { id: 'u1' }
+    const res = await historyGET(get(`/api/market/history?ticker=${'A'.repeat(300)}&period=1Y`))
+    expect(res.status).toBe(400)
+    expect(externalCalls()).toBe(0)
+  })
+  it.each(['99999', '-5', '1800', 'abc'])('year=%s → 400', async (y) => {
+    h.user = { id: 'u1' }
+    const res = await historyGET(get(`/api/market/history?ticker=AAPL&mode=calYear&year=${y}`))
+    expect(res.status).toBe(400)
+    expect(externalCalls()).toBe(0)
+  })
+  it('petición válida → 200 y normaliza el ticker', async () => {
+    h.user = { id: 'u1' }
+    const res = await historyGET(get('/api/market/history?ticker=aapl&mode=return&period=1Y'))
+    expect(res.status).toBe(200)
+    expect(h.calculateReturn).toHaveBeenCalledWith('AAPL', '1Y', 0)
+  })
+})
+
