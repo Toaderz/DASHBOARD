@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest, NextResponse, after } from 'next/server'
 import { fetchBatchQuotes, fetchFundamentals } from '@/lib/market/finnhub'
 import { fetchHistoricalData } from '@/lib/market/history'
 import { parseTickerList } from '@/lib/market/validation'
@@ -12,6 +12,12 @@ const FUNDAMENTALS_TTL_MS = 24 * 60 * 60_000
 // Beating-Peers consulta la unión activos ∪ peers (~475 observados); por encima del tope se rechaza (400).
 const MAX_TICKERS = 1000
 const FUNDAMENTALS_CONCURRENCY = 8
+// Hasta este número de tickers con fundamentals vencidos se esperan en la respuesta; por encima, en segundo plano.
+const INLINE_FUNDAMENTALS_MAX = 10
+// Tickers con fundamentals en curso en esta instancia → instante de inicio. Evita repetir el trabajo en cada
+// sondeo de 5 s. Caduca a los 2 min por si la plataforma corta la tarea en segundo plano antes de terminar.
+const fundamentalsInFlight = new Map<string, number>()
+const IN_FLIGHT_TTL_MS = 2 * 60_000
 // useRealtimePrices sondea cada 5 s desde varios componentes: barrera de contención, no control fino.
 const LIMIT_PER_MIN = 600
 
@@ -191,9 +197,35 @@ export async function GET(request: NextRequest) {
   }
 
   // 3. Fetch all fundamentals (market_cap, pe, beta, profit_margins for stocks;
-  //    expense_ratio, aum, sector_weightings, top_holdings for ETFs) — fire in parallel
-  if (needsFundamentals.length > 0) {
-    await mapWithConcurrency(needsFundamentals, FUNDAMENTALS_CONCURRENCY, async (ticker) => {
+  //    expense_ratio, aum, sector_weightings, top_holdings for ETFs).
+  //    Pocos tickers (modal, comparar): se esperan y van en esta respuesta. Muchos (Beating Peers pide
+  //    ~475): bloqueaban la respuesta minutos y con ella el 1D; se hacen DESPUÉS de responder y el
+  //    siguiente sondeo (5 s) ya los lee de price_cache. `inFlight` evita relanzarlos en cada sondeo.
+  const pending = needsFundamentals.filter((t) => now - (fundamentalsInFlight.get(t) ?? 0) > IN_FLIGHT_TTL_MS)
+  if (pending.length > 0 && pending.length <= INLINE_FUNDAMENTALS_MAX) {
+    await refreshFundamentals(pending, freshMap, supabaseAdmin)
+  } else if (pending.length > 0) {
+    pending.forEach((t) => fundamentalsInFlight.set(t, now))
+    const job = () =>
+      refreshFundamentals(pending, null, supabaseAdmin).finally(() =>
+        pending.forEach((t) => fundamentalsInFlight.delete(t))
+      )
+    try {
+      after(job)
+    } catch {
+      void job() // fuera de una petición (pruebas): se lanza sin esperar
+    }
+  }
+
+  return NextResponse.json(Object.fromEntries(freshMap))
+}
+
+async function refreshFundamentals(
+  tickers: string[],
+  freshMap: Map<string, object> | null,
+  supabaseAdmin: ReturnType<typeof getAdminClient>
+) {
+  await mapWithConcurrency(tickers, FUNDAMENTALS_CONCURRENCY, async (ticker) => {
       try {
         let f = await fetchFundamentals(ticker)
         // If fundProfile didn't return inceptionDate, derive from first available history point
@@ -204,8 +236,8 @@ export async function GET(request: NextRequest) {
           } catch { /* ignore */ }
         }
         // Always merge into freshMap so the response has the latest values
-        const existing = freshMap.get(ticker) as Record<string, unknown> | undefined
-        if (existing) freshMap.set(ticker, { ...existing, ...f })
+        const existing = freshMap?.get(ticker) as Record<string, unknown> | undefined
+        if (existing) freshMap?.set(ticker, { ...existing, ...f })
         // Upsert fundamentals columns only (preserves price/volume data in cache).
         // fundamentals_fetched_at marks this row as "fundamentals attempted" so the
         // cache trigger doesn't loop forever on partially-populated rows.
@@ -217,7 +249,4 @@ export async function GET(request: NextRequest) {
         console.error('[quote] Fundamentals fetch error:', ticker, err)
       }
     })
-  }
-
-  return NextResponse.json(Object.fromEntries(freshMap))
 }

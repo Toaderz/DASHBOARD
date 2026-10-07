@@ -216,7 +216,16 @@ describe('SEC-03 GET /api/market/quote', () => {
     const tickers = Array.from({ length: 200 }, (_, i) => `T${i}`).join(',')
     const res = await quoteGET(get(`/api/market/quote?tickers=${tickers}`))
     expect(res.status).toBe(200)
-    expect(h.fetchFundamentals).toHaveBeenCalledTimes(200)
+    // Con muchos tickers los fundamentals van en segundo plano: la respuesta no los espera.
+    expect(h.fetchFundamentals.mock.calls.length).toBeLessThan(200)
+    await vi.waitFor(() => expect(h.fetchFundamentals).toHaveBeenCalledTimes(200), { timeout: 5000 })
     expect(peak).toBeLessThanOrEqual(8)
+  })
+  it('con pocos tickers los fundamentals se esperan y van en la respuesta', async () => {
+    h.user = { id: 'u1' }
+    h.fetchFundamentals.mockResolvedValue({ expense_ratio: 0.5 })
+    const res = await quoteGET(get('/api/market/quote?tickers=AAPL,MSFT'))
+    expect(res.status).toBe(200)
+    expect(h.fetchFundamentals).toHaveBeenCalledTimes(2)
   })
 })
