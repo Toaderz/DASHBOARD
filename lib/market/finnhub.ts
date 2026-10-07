@@ -4,7 +4,8 @@ import YahooFinanceLib from 'yahoo-finance2'
 import { toGlobalCategory } from './morningstar-categories'
 import { mapWithConcurrency } from '@/lib/utils/concurrency'
 
-const BATCH_QUOTE_CONCURRENCY = 12
+// 12 hacía que el 1D de Top/Bottom (113 tickers) y Beating Peers (~475) tardara varios segundos en frío.
+const BATCH_QUOTE_CONCURRENCY = 32
 
 const yf = new YahooFinanceLib({
   suppressNotices: ['yahooSurvey'],

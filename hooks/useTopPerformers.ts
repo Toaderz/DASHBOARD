@@ -93,7 +93,9 @@ export function useTopPerformers(
   activePeriod: MetricKey,
   fxRates: Record<string, FxSpotRate>,
   fxPeriodReturns: Record<string, Partial<Record<MetricKey, number | null>>>,
-  annualize: boolean
+  annualize: boolean,
+  // false mientras llega la primera respuesta de precios: el 1D sale de ahí y debe mostrarse como cargando.
+  pricesFetched = true
 ) {
   // Stores all tickers' raw local returns (not USD-converted, not annualized)
   const historyCache = useRef<Partial<Record<MetricKey, RawEntry[]>>>({})
@@ -235,6 +237,8 @@ export function useTopPerformers(
   return {
     top,
     bottom,
-    loading: activePeriod === '1D' ? false : loadingPeriods.has(activePeriod),
+    loading: activePeriod === '1D'
+      ? tickers.length > 0 && (!pricesFetched || (Object.keys(prices).length > 0 && !rawResults['1D']))
+      : loadingPeriods.has(activePeriod),
   }
 }

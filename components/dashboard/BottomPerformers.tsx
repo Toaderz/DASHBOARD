@@ -23,7 +23,7 @@ export function BottomPerformers() {
 
   const { tickers, loading: loadingTickers } = useAllWatchlistTickers()
   const tickerKeys = tickers.map(t => t.ticker)
-  const { prices } = useRealtimePrices(tickerKeys)
+  const { prices, isFetched: pricesFetched } = useRealtimePrices(tickerKeys)
 
   const currencies = useMemo(
     () => [...new Set(Object.values(prices).map(p => p.currency).filter((c): c is string => !!c && c !== 'USD'))],
@@ -35,7 +35,7 @@ export function BottomPerformers() {
   const isAnnualized = annualize || forceAnnualize
 
   const { bottom, loading } = useTopPerformers(
-    tickers, prices, activePeriod, fxRates, fxPeriodReturns, annualize
+    tickers, prices, activePeriod, fxRates, fxPeriodReturns, annualize, pricesFetched
   )
 
   // Period options for the SegmentedControl (same values/order as TOP_PERIODS)

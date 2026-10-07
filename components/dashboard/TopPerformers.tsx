@@ -30,7 +30,7 @@ export function TopPerformers() {
 
   const { tickers, loading: loadingTickers } = useAllWatchlistTickers()
   const tickerKeys = tickers.map(t => t.ticker)
-  const { prices } = useRealtimePrices(tickerKeys)
+  const { prices, isFetched: pricesFetched } = useRealtimePrices(tickerKeys)
 
   // Derive unique non-USD currencies from loaded price data for FX conversion
   const currencies = useMemo(
@@ -43,7 +43,7 @@ export function TopPerformers() {
   const isAnnualized = annualize || forceAnnualize
 
   const { top, loading } = useTopPerformers(
-    tickers, prices, activePeriod, fxRates, fxPeriodReturns, annualize
+    tickers, prices, activePeriod, fxRates, fxPeriodReturns, annualize, pricesFetched
   )
 
   // Period options for the SegmentedControl (same values/order as TOP_PERIODS)

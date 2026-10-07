@@ -43,7 +43,7 @@ export function OverviewDashboard() {
 
   const { tickers, loading: loadingTickers } = useAllWatchlistTickers()
   const tickerKeys = useMemo(() => tickers.map((t) => t.ticker), [tickers])
-  const { prices } = useRealtimePrices(tickerKeys)
+  const { prices, isFetched: pricesFetched } = useRealtimePrices(tickerKeys)
 
   // Non-USD currencies present in the loaded prices → FX conversion to USD.
   const currencies = useMemo(
@@ -53,7 +53,7 @@ export function OverviewDashboard() {
   const { fxRates, fxPeriodReturns } = useFxData(currencies, FX_PERIODS)
 
   const { top, bottom, loading: loadingReturns } = useTopPerformers(
-    tickers, prices, period, fxRates, fxPeriodReturns, false
+    tickers, prices, period, fxRates, fxPeriodReturns, false, pricesFetched
   )
 
   const { results: peerResults, loading: loadingPeers } = usePeerComparison()
