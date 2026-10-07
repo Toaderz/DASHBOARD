@@ -138,3 +138,40 @@ describe('SEC-04 GET /api/market/export', () => {
   })
 })
 
+// ── SEC-02 returns ────────────────────────────────────────────────────────────
+describe('SEC-02 POST /api/market/returns', () => {
+  it('sin sesión → 401, sin Supabase ni Yahoo', async () => {
+    const res = await returnsPOST(post('/api/market/returns', { tickers: ['AAPL'] }))
+    expect(res.status).toBe(401)
+    expect(externalCalls()).toBe(0)
+    expect(h.createSupabaseClient).not.toHaveBeenCalled()
+  })
+  it('todos los tickers inválidos → 400', async () => {
+    h.user = { id: 'u1' }
+    const res = await returnsPOST(post('/api/market/returns', { tickers: ['A'.repeat(300)] }))
+    expect(res.status).toBe(400)
+    expect(externalCalls()).toBe(0)
+  })
+  it('más de 1500 tickers → 400', async () => {
+    h.user = { id: 'u1' }
+    const tickers = Array.from({ length: 1501 }, (_, i) => `T${i}`)
+    const res = await returnsPOST(post('/api/market/returns', { tickers }))
+    expect(res.status).toBe(400)
+    expect(externalCalls()).toBe(0)
+  })
+  it('sin SUPABASE_SERVICE_ROLE_KEY NO cae a la clave anon', async () => {
+    h.user = { id: 'u1' }
+    delete process.env.SUPABASE_SERVICE_ROLE_KEY
+    const res = await returnsPOST(post('/api/market/returns', { tickers: ['AAPL'] }))
+    expect(res.status).toBe(500)
+    for (const call of h.createSupabaseClient.mock.calls) expect(call[1]).not.toBe(ANON_KEY)
+  })
+  it('petición válida → 200 con la clave de servicio', async () => {
+    h.user = { id: 'u1' }
+    const res = await returnsPOST(post('/api/market/returns', { tickers: ['aapl', 'AAPL', 'spy'] }))
+    expect(res.status).toBe(200)
+    expect(h.createSupabaseClient.mock.calls[0][1]).toBe(SERVICE_KEY)
+    expect(h.calculateMultiReturns).toHaveBeenCalledTimes(2)
+  })
+})
+

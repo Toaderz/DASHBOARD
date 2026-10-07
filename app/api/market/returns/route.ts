@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
 import { calculateMultiReturns, type MultiReturns } from '@/lib/market/history'
+import { parseTickerList } from '@/lib/market/validation'
+import { guardApi } from '@/lib/api/guard'
+import { getAdminClient } from '@/lib/supabase/admin'
+import { mapWithConcurrency } from '@/lib/utils/concurrency'
 
 // The full Beating-Peers union (several hundred tickers) can need many cold Yahoo fetches on a
 // cache miss; allow headroom over Vercel's default so a partial-cold load completes instead of
@@ -11,38 +14,16 @@ export const maxDuration = 60
 const RETURNS_TTL_MS = 6 * 60 * 60_000
 // Cap concurrent Yahoo fetches to avoid rate limiting on cold loads.
 const FETCH_CONCURRENCY = 8
-// Upper bound on tickers per request — purely an abuse guard. Beating-Peers sends the full
-// union (assets ∪ all peers) which is legitimately several hundred for a real portfolio
-// (~475 observed). The old 400 cap silently TRUNCATED that union, so any peer that landed
-// past position 400 rendered "— sin dato" forever. Set well above realistic unions; truncation
-// is logged (never silent) so a future overflow surfaces instead of dropping data quietly.
+// Upper bound on tickers per request. Beating-Peers sends the full union (assets ∪ all peers),
+// legitimately several hundred (~475 observed). Above the cap the request is REJECTED (400), never
+// silently truncated: a truncated union rendered peers as "— sin dato" forever.
 const MAX_TICKERS = 1500
-
-function getAdminClient() {
-  return createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-  )
-}
-
-async function mapWithConcurrency<T, R>(
-  items: T[],
-  limit: number,
-  fn: (item: T) => Promise<R>
-): Promise<R[]> {
-  const results: R[] = new Array(items.length)
-  let cursor = 0
-  async function worker() {
-    while (cursor < items.length) {
-      const i = cursor++
-      results[i] = await fn(items[i])
-    }
-  }
-  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker))
-  return results
-}
+const LIMIT_PER_MIN = 120
 
 export async function POST(request: NextRequest) {
+  const guard = await guardApi('returns', LIMIT_PER_MIN)
+  if ('response' in guard) return guard.response
+
   let body: { tickers?: unknown }
   try {
     body = await request.json()
@@ -50,20 +31,24 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
   }
 
-  const raw = Array.isArray(body.tickers) ? body.tickers : []
-  // Dedup + normalize. Cap is an abuse guard, not a functional limit — log if we ever hit it
-  // so truncation is never silent (a truncated union = peers silently showing "— sin dato").
-  const deduped = [...new Set(raw.filter((t): t is string => typeof t === 'string' && t.length > 0))]
-  if (deduped.length > MAX_TICKERS) {
-    console.warn(`[returns] ticker union ${deduped.length} exceeds MAX_TICKERS ${MAX_TICKERS} — truncating; some peers will be missing`)
+  const parsed = parseTickerList(body?.tickers, MAX_TICKERS)
+  if (parsed.tooMany) {
+    return NextResponse.json({ error: `Too many tickers (max ${MAX_TICKERS})` }, { status: 400 })
   }
-  const tickers = deduped.slice(0, MAX_TICKERS)
+  const tickers = parsed.tickers
 
   if (tickers.length === 0) {
-    return NextResponse.json({})
+    return parsed.invalid > 0
+      ? NextResponse.json({ error: 'No valid tickers' }, { status: 400 })
+      : NextResponse.json({})
   }
 
-  const supabaseAdmin = getAdminClient()
+  let supabaseAdmin: ReturnType<typeof getAdminClient>
+  try {
+    supabaseAdmin = getAdminClient()
+  } catch {
+    return NextResponse.json({ error: 'Server misconfigured' }, { status: 500 })
+  }
   const now = Date.now()
   const out: Record<string, MultiReturns> = {}
   const staleOrMissing: string[] = []
