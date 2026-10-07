@@ -1,5 +1,6 @@
--- M3 · SEC-09 · Un solo perfil por correo (sin distinguir mayúsculas)
+-- M3 · SEC-14 · Un solo perfil por correo (sin distinguir mayúsculas)
 -- Certeza: el precheck de duplicados dio 0 filas (CONFIRMADO por Alejandro, 2026-10-07).
+-- Nota: el ID correcto es SEC-14 (email sin UNIQUE); el commit anterior lo etiquetó SEC-09 por error.
 --
 -- ORDEN: después de M0. Independiente del código. Si el precheck devuelve filas, NO aplicar.
 -- Nota: /api/users/find busca con .eq('email', correo en minúsculas); el índice no cambia ese comportamiento.
