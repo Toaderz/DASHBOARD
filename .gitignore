@@ -33,3 +33,12 @@ skills-lock.json
 
 # Temporales de diseño / handoff
 evolve_design_temp/
+
+# Entornos y claves (N-07): nada de .env* salvo el ejemplo
+.env
+.env.*
+!.env.local.example
+*.pem
+
+# Estado local del CLI de Supabase (incluye URLs de conexion)
+supabase/.temp/
